@@ -1,1 +1,1 @@
-#define REVISION "v1.0.0"
+#define REVISION "null.1:r0:2be6958f7a4c:2011-11-30"

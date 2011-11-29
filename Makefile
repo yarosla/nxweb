@@ -11,13 +11,13 @@ LDFLAGS_RELEASE=$(LIBS)
 LDFLAGS_DEBUG=$(LIBS)
 
 INC_MAIN=nxweb/nxweb.h nxweb/nxweb_internal.h nxweb/nx_queue.h
-SRC_MAIN=nxweb/main.c nxweb/nxweb.c nxweb/http.c nxweb/misc.c nxweb/nx_queue.c
+SRC_MAIN=nxweb/main.c nxweb/nxweb.c nxweb/http.c nxweb/misc.c nxweb/nx_queue.c modules.c
+
+###
+# List active modules here; also include them in modules.c file
 
 INC_MODULES=
 SRC_MODULES=hello.c
-
-# CFLAGS=$(CFLAGS_RELEASE)
-# LDFLAGS=$(LDFLAGS_RELEASE)
 
 OBJ_DEBUG_DIR=obj/Debug
 BIN_DEBUG_DIR=bin/Debug

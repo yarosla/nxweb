@@ -36,19 +36,19 @@
 #include <pthread.h>
 #include <sys/stat.h>
 
-#include <ev.h>
-
 #include "nxweb/nxweb.h"
 
-const char* ERROR_LOG_FILE="error.log";
-
-static void shutdown_server(nxweb_request *req) {
+static nxweb_result shutdown_server(nxweb_uri_handler_phase phase, nxweb_request *req) {
+  if (phase!=NXWEB_PH_CONTENT) return NXWEB_OK;
   nxweb_set_response_content_type(req, "text/plain");
   nxweb_response_append(req, "bye");
   nxweb_shutdown();
+  return NXWEB_OK;
 }
 
-static void hello(nxweb_request *req) {
+static nxweb_result hello(nxweb_uri_handler_phase phase, nxweb_request *req) {
+  if (phase!=NXWEB_PH_CONTENT) return 0;
+
   nxweb_set_response_content_type(req, "text/html");
   nxweb_response_make_room(req, req->content_length+2000); // optimize buffer allocation
 
@@ -108,14 +108,24 @@ static void hello(nxweb_request *req) {
 
   nxweb_response_append(req, "</body></html>");
 
+  return NXWEB_OK;
 }
 
-const nxweb_uri_handler nxweb_uri_handlers[] = {
+static nxweb_result nxweb_on_server_startup() {
+  // Whatever initialization code
+  return NXWEB_OK;
+}
+
+static const nxweb_uri_handler hello_module_uri_handlers[] = {
   {"/hello", hello, NXWEB_INWORKER|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES},
   {"/shutdown", shutdown_server, NXWEB_INPROCESS}, // provide this handler for server shutdown via http get
   {0, 0, 0}
 };
 
-void nxweb_on_server_startup() {
-  // Whatever initialization code
-}
+/// Module definition
+// List of active modules is maintained in modules.c file.
+
+const nxweb_module hello_module = {
+  .server_startup_callback=nxweb_on_server_startup,
+  .uri_handlers=hello_module_uri_handlers
+};

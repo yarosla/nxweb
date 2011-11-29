@@ -332,41 +332,48 @@ static void socket_write_cb(struct ev_loop *loop, struct ev_io *w, int revents) 
   }
 }
 
-static void default_uri_callback(nxweb_request *req) {
+static nxweb_result default_uri_callback(nxweb_uri_handler_phase phase, nxweb_request *req) {
   nxweb_send_http_error(req, 404, "Not Found");
+  return NXWEB_OK;
 }
 
 static const nxweb_uri_handler default_handler={0, default_uri_callback, NXWEB_INPROCESS};
 
 static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn) {
   nxweb_request* req=conn->request;
-  const nxweb_uri_handler* h;
-  int i;
   char c;
   const char* uri=req->uri;
   int uri_len=strlen(uri);
   req->path_info=0;
-  for (i=0; (h=&nxweb_uri_handlers[i]) && h->uri_prefix; i++) {
-    if (!h->uri_prefix) break; // wild card
+  const nxweb_module* const* module=nxweb_modules;
+  const nxweb_uri_handler* handler=0;
+  while (*module) {
+    handler=(*module)->uri_handlers;
+    while (handler->callback) {
+      if (!handler->uri_prefix || !*handler->uri_prefix) break; // wildcard
 
-    int prefix_len=strlen(h->uri_prefix);
+      int prefix_len=strlen(handler->uri_prefix);
 
-    if (prefix_len==0 || (prefix_len<=uri_len
-        && strncmp(uri, h->uri_prefix, prefix_len)==0
-        && ((c=uri[prefix_len])==0 || c=='?' || c=='/'))) {
-      req->path_info=uri+prefix_len;
-      break;
+      if (prefix_len==0 || (prefix_len<=uri_len
+          && strncmp(uri, handler->uri_prefix, prefix_len)==0
+          && ((c=uri[prefix_len])==0 || c=='?' || c=='/'))) {
+        req->path_info=uri+prefix_len;
+        break;
+      }
+
+      handler++;
     }
+    module++;
   }
-  if (!h->callback) {
-    h=&default_handler;
+  if (!handler || !handler->callback) {
+    handler=&default_handler;
   }
-  req->handler=h;
-  if (h->flags & NXWEB_PARSE_PARAMETERS) nxweb_parse_request_parameters(req, 0);
-  if (h->flags & NXWEB_PARSE_COOKIES) nxweb_parse_request_cookies(req);
+  req->handler=handler;
+  if (handler->flags & NXWEB_PARSE_PARAMETERS) nxweb_parse_request_parameters(req, 0);
+  if (handler->flags & NXWEB_PARSE_COOKIES) nxweb_parse_request_cookies(req);
   conn->cstate=NXWEB_CS_HANDLING;
-  if (h->flags & NXWEB_INPROCESS) {
-    h->callback(req);
+  if (handler->flags & NXWEB_INPROCESS) {
+    handler->callback(NXWEB_PH_CONTENT, req);
     start_sending_response(loop, conn);
   }
   else {
@@ -650,7 +657,7 @@ static void* worker_thread_main(void* pdata) {
     conn=job? job->conn : 0;
     pthread_mutex_unlock(&job_queue_mux);
     if (conn) {
-      conn->request->handler->callback(conn->request);
+      conn->request->handler->callback(NXWEB_PH_CONTENT, conn->request);
       ev_async_send(conn->loop, &conn->watch_async_data_ready);
     }
   }
@@ -775,7 +782,13 @@ void _nxweb_main() {
   ev_io_init(&watch_accept, main_accept_cb, listen_fd, EV_READ);
   ev_io_start(loop, &watch_accept);
 
-  nxweb_on_server_startup();
+  const nxweb_module* const * module=nxweb_modules;
+  while (*module) {
+    if ((*module)->server_startup_callback) {
+      (*module)->server_startup_callback();
+    }
+    module++;
+  }
 
   ev_run(loop, 0);
 

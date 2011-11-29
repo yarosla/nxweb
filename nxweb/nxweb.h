@@ -147,20 +147,34 @@ typedef struct nxweb_request {
   unsigned chunked_request:1;
 } nxweb_request;
 
+typedef enum nxweb_uri_handler_phase {
+  NXWEB_PH_CONTENT=100
+} nxweb_uri_handler_phase;
+
+typedef enum nxweb_result {
+  NXWEB_OK=0
+} nxweb_result;
+
 enum nxweb_uri_handler_flags {
   NXWEB_INWORKER=0, // execute handler in worker thread (for lengthy or blocking operations)
   NXWEB_INPROCESS=1, // execute handler in event thread (must be fast and non-blocking!)
   NXWEB_PARSE_PARAMETERS=2, // parse query string and (url-encoded) post data before calling this handler
   NXWEB_PRESERVE_URI=4, // modifier for NXWEB_PARSE_PARAMETERS; preserver conn->uri string while parsing (allocate copy)
   NXWEB_PARSE_COOKIES=8 // parse cookie header before calling this handler
-  };
+};
 
 typedef struct nxweb_uri_handler {
   const char* uri_prefix;
-  void (*callback)(nxweb_request* req);
+  nxweb_result (*callback)(nxweb_uri_handler_phase phase, nxweb_request* req);
   enum nxweb_uri_handler_flags flags;
 } nxweb_uri_handler;
 
+typedef struct nxweb_module {
+  nxweb_result (*server_startup_callback)(void);
+  const nxweb_uri_handler* uri_handlers;
+} nxweb_module;
+
+extern const nxweb_module* const nxweb_modules[];
 
 // Public API
 void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
@@ -184,11 +198,6 @@ char* nxweb_trunc_space(char* str); // does it inplace
 
 extern const unsigned char PIXEL_GIF[43]; // transparent pixel
 
-// Implemented by the web application:
-
-void nxweb_on_server_startup(); // called on startup
-
 extern const char* ERROR_LOG_FILE; // path to log file
-extern const nxweb_uri_handler nxweb_uri_handlers[]; // uri handlers
 
 #endif // NXWEB_H_INCLUDED
