@@ -1,0 +1,90 @@
+# depslib dependency file v1.0
+1322601570 source:/home/ys/dev/cb/nxweb/hello.c
+	<stdio.h>
+	<unistd.h>
+	<fcntl.h>
+	<stdlib.h>
+	<assert.h>
+	<string.h>
+	<time.h>
+	<stdarg.h>
+	<signal.h>
+	<pthread.h>
+	<sys/stat.h>
+	<ev.h>
+	"nxweb/nxweb.h"
+
+1322587962 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+	<obstack.h>
+	<ev.h>
+	"revision.h"
+
+1322580620 /home/ys/dev/cb/nxweb/nxweb/revision.h
+
+1322581352 source:/home/ys/dev/cb/nxweb/nxweb/http.c
+	<stddef.h>
+	<stdlib.h>
+	<stdio.h>
+	<assert.h>
+	<string.h>
+	<printf.h>
+	"nxweb_internal.h"
+
+1322588957 /home/ys/dev/cb/nxweb/nxweb/nxweb_internal.h
+	"nxweb.h"
+	"nx_queue.h"
+
+1322502784 /home/ys/dev/cb/nxweb/nxweb/nx_queue.h
+
+1322581180 source:/home/ys/dev/cb/nxweb/nxweb/main.c
+	<stdlib.h>
+	<stdio.h>
+	<argp.h>
+	<unistd.h>
+	<fcntl.h>
+	<sys/types.h>
+	<sys/wait.h>
+	<curl/curl.h>
+	"nxweb_internal.h"
+
+1322600930 source:/home/ys/dev/cb/nxweb/nxweb/misc.c
+	<stdlib.h>
+	<stdio.h>
+	<unistd.h>
+	<fcntl.h>
+	<string.h>
+	<time.h>
+	<stdarg.h>
+	<pthread.h>
+	<netinet/in.h>
+	<netinet/tcp.h>
+	<arpa/inet.h>
+	"nxweb_internal.h"
+
+1322502784 source:/home/ys/dev/cb/nxweb/nxweb/nx_queue.c
+	<stdlib.h>
+	<string.h>
+	<assert.h>
+	"nx_queue.h"
+
+1322592495 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
+	<stddef.h>
+	<stdio.h>
+	<unistd.h>
+	<fcntl.h>
+	<stdlib.h>
+	<assert.h>
+	<string.h>
+	<time.h>
+	<stdarg.h>
+	<signal.h>
+	<pthread.h>
+	<sys/stat.h>
+	<errno.h>
+	<sys/socket.h>
+	<sys/types.h>
+	<netinet/in.h>
+	<netinet/tcp.h>
+	<arpa/inet.h>
+	"nxweb_internal.h"
+
