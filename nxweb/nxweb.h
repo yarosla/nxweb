@@ -81,6 +81,29 @@ enum nxweb_response_state {
   NXWEB_RS_WRITING_RESPONSE_BODY
 };
 
+typedef enum nxweb_uri_handler_phase {
+  NXWEB_PH_CONTENT=100
+} nxweb_uri_handler_phase;
+
+typedef enum nxweb_result {
+  NXWEB_OK=0,
+  NXWEB_NEXT=1,
+  NXWEB_BREAK=2,
+  NXWEB_ERROR=-1
+} nxweb_result;
+
+enum nxweb_uri_handler_flags {
+  NXWEB_INWORKER=0, // execute handler in worker thread (for lengthy or blocking operations)
+  NXWEB_INPROCESS=1, // execute handler in event thread (must be fast and non-blocking!)
+  NXWEB_PARSE_PARAMETERS=2, // parse query string and (url-encoded) post data before calling this handler
+  NXWEB_PRESERVE_URI=4, // modifier for NXWEB_PARSE_PARAMETERS; preserver conn->uri string while parsing (allocate copy)
+  NXWEB_PARSE_COOKIES=8, // parse cookie header before calling this handler
+  NXWEB_HANDLE_GET=0x10,
+  NXWEB_HANDLE_POST=0x20,
+  NXWEB_HANDLE_ANY=0x40,
+  _NXWEB_HANDLE_MASK=0x70
+};
+
 typedef struct nxweb_connection {
   int fd;
   char remote_addr[16]; // 255.255.255.255
@@ -128,6 +151,7 @@ typedef struct nxweb_request {
   int response_code;
   const char* response_status;
   const char* response_content_type;
+  const char* response_content_charset;
   nxweb_http_header* response_headers;
 
   char* in_headers;
@@ -136,10 +160,15 @@ typedef struct nxweb_request {
 
   nx_chunk* write_chunk;
   int write_pos; // whithin out_headers or write_chunk (determined by headers_sent flag)
+  int sendfile_fd;
+  off_t sendfile_offset;
+  size_t sendfile_length;
 
   enum nxweb_response_state rstate;
 
   const struct nxweb_uri_handler* handler;
+  const struct nxweb_module* const* handler_module;
+  enum nxweb_result handler_result;
 
   // booleans
   unsigned http11:1;
@@ -147,22 +176,6 @@ typedef struct nxweb_request {
   unsigned expect_100_continue:1;
   unsigned chunked_request:1;
 } nxweb_request;
-
-typedef enum nxweb_uri_handler_phase {
-  NXWEB_PH_CONTENT=100
-} nxweb_uri_handler_phase;
-
-typedef enum nxweb_result {
-  NXWEB_OK=0
-} nxweb_result;
-
-enum nxweb_uri_handler_flags {
-  NXWEB_INWORKER=0, // execute handler in worker thread (for lengthy or blocking operations)
-  NXWEB_INPROCESS=1, // execute handler in event thread (must be fast and non-blocking!)
-  NXWEB_PARSE_PARAMETERS=2, // parse query string and (url-encoded) post data before calling this handler
-  NXWEB_PRESERVE_URI=4, // modifier for NXWEB_PARSE_PARAMETERS; preserver conn->uri string while parsing (allocate copy)
-  NXWEB_PARSE_COOKIES=8 // parse cookie header before calling this handler
-};
 
 typedef struct nxweb_uri_handler {
   const char* uri_prefix;
@@ -174,6 +187,12 @@ typedef struct nxweb_module {
   nxweb_result (*server_startup_callback)(void);
   const nxweb_uri_handler* uri_handlers;
 } nxweb_module;
+
+typedef struct nxweb_mime_type {
+  const char* ext;
+  const char* mime;
+  unsigned charset_required:1;
+} nxweb_mime_type;
 
 extern const nxweb_module* const nxweb_modules[];
 
@@ -187,12 +206,17 @@ const char* nxweb_get_request_cookie(nxweb_request *req, const char* name);
 
 void nxweb_send_http_error(nxweb_request *req, int code, const char* message);
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location);
+int nxweb_send_file(nxweb_request *req, const char* fpath);
 void nxweb_set_response_status(nxweb_request *req, int code, const char* message);
 void nxweb_set_response_content_type(nxweb_request *req, const char* content_type);
+void nxweb_set_response_charset(nxweb_request *req, const char* charset);
 void nxweb_add_response_header(nxweb_request *req, const char* name, const char* value);
 void nxweb_response_make_room(nxweb_request *req, int size);
 void nxweb_response_printf(nxweb_request *req, const char* fmt, ...); // __attribute__((format (printf, 2, 3)));
 void nxweb_response_append(nxweb_request *req, const char* text);
+
+const nxweb_mime_type* nxweb_get_mime_type(const char* type_name);
+const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext);
 
 char* nxweb_url_decode(char* src, char* dst); // can do it inplace (dst=0)
 char* nxweb_trunc_space(char* str); // does it inplace

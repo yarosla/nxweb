@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1322605237 source:/home/ys/dev/cb/nxweb/hello.c
+1322668944 source:/home/ys/dev/cb/nxweb/hello.c
 	<stdio.h>
 	<unistd.h>
 	<fcntl.h>
@@ -13,20 +13,22 @@
 	<sys/stat.h>
 	"nxweb/nxweb.h"
 
-1322608498 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+1322668595 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
 	<obstack.h>
 	<ev.h>
 	"revision.h"
 
-1322605893 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1322614957 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
-1322601826 source:/home/ys/dev/cb/nxweb/nxweb/http.c
+1322669733 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
 	<stdlib.h>
 	<stdio.h>
 	<assert.h>
 	<string.h>
 	<printf.h>
+	<fcntl.h>
+	<unistd.h>
 	"nxweb_internal.h"
 
 1322588957 /home/ys/dev/cb/nxweb/nxweb/nxweb_internal.h
@@ -35,18 +37,17 @@
 
 1322502784 /home/ys/dev/cb/nxweb/nxweb/nx_queue.h
 
-1322581180 source:/home/ys/dev/cb/nxweb/nxweb/main.c
+1322613371 source:/home/ys/dev/cb/nxweb/nxweb/main.c
 	<stdlib.h>
 	<stdio.h>
 	<argp.h>
 	<unistd.h>
 	<fcntl.h>
-	<sys/types.h>
 	<sys/wait.h>
-	<curl/curl.h>
+	<sys/types.h>
 	"nxweb_internal.h"
 
-1322600930 source:/home/ys/dev/cb/nxweb/nxweb/misc.c
+1322614684 source:/home/ys/dev/cb/nxweb/nxweb/misc.c
 	<stdlib.h>
 	<stdio.h>
 	<unistd.h>
@@ -66,7 +67,7 @@
 	<assert.h>
 	"nx_queue.h"
 
-1322613210 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
+1322670099 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
 	<stddef.h>
 	<stdio.h>
 	<unistd.h>
@@ -85,8 +86,26 @@
 	<netinet/in.h>
 	<netinet/tcp.h>
 	<arpa/inet.h>
+	<sys/sendfile.h>
 	"nxweb_internal.h"
 
-1322605326 source:/home/ys/dev/cb/nxweb/modules.c
+1322669877 source:/home/ys/dev/cb/nxweb/modules.c
+	"nxweb/nxweb.h"
+
+1322675016 source:/home/ys/dev/cb/nxweb/nxweb/mime.c
+	"nxweb.h"
+
+1322669860 source:/home/ys/dev/cb/nxweb/sendfile.c
+	<stdio.h>
+	<unistd.h>
+	<fcntl.h>
+	<stdlib.h>
+	<assert.h>
+	<string.h>
+	<time.h>
+	<stdarg.h>
+	<signal.h>
+	<pthread.h>
+	<sys/stat.h>
 	"nxweb/nxweb.h"
 

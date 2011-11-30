@@ -25,12 +25,16 @@
  */
 
 #define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
 #include <printf.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "nxweb_internal.h"
 
@@ -74,6 +78,7 @@ void nx_simple_map_add(nx_simple_map_entry map[], const char* name, const char* 
 // uri could be preserved if requested by preserve_uri
 void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
 
+  if (req->parameters) return; // already parsed
   if (req->rstate!=NXWEB_RS_INITIAL) return; // illegal state
 
   obstack* ob=&req->conn->data;
@@ -96,10 +101,11 @@ void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
       if (next) *next++='\0';
       value=strchr(name, '=');
       if (value) *value++='\0';
+      else value=name+strlen(name); // ""
       if (*name) {
         nxweb_url_decode(name, 0);
         nxweb_trunc_space(name);
-        if (value) nxweb_url_decode(value, 0);
+        nxweb_url_decode(value, 0);
         param->name=name;
         param->value=value;
         param=obstack_alloc(ob, sizeof(nxweb_http_parameter));
@@ -112,10 +118,11 @@ void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
       if (next) *next++='\0';
       value=strchr(name, '=');
       if (value) *value++='\0';
+      else value=name+strlen(name); // ""
       if (*name) {
         nxweb_url_decode(name, 0);
         nxweb_trunc_space(name);
-        if (value) nxweb_url_decode(value, 0);
+        nxweb_url_decode(value, 0);
         param->name=name;
         param->value=value;
         param=obstack_alloc(ob, sizeof(nxweb_http_parameter));
@@ -131,6 +138,7 @@ void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
 // Modifies conn->cookie content (does url_decode inplace)
 void nxweb_parse_request_cookies(nxweb_request *req) {
 
+  if (req->cookies) return; // already parsed
   if (req->rstate!=NXWEB_RS_INITIAL) return; // illegal state
 
   obstack* ob=&req->conn->data;
@@ -338,6 +346,34 @@ int _nxweb_verify_chunked(const char* buf, int buf_len) {
   return -1;
 }
 
+int nxweb_send_file(nxweb_request *req, const char* fpath) {
+  if (fpath==0) { // cancel sendfile
+    if (req->sendfile_fd) close(req->sendfile_fd);
+    req->sendfile_fd=0;
+    req->sendfile_length=0;
+    req->response_content_type=0;
+    return 0;
+  }
+
+  struct stat finfo;
+  if (stat(fpath, &finfo)==-1) {
+    return -1;
+  }
+  if (S_ISDIR(finfo.st_mode)) {
+    return -2;
+  }
+  if (!S_ISREG(finfo.st_mode)) {
+    return -3;
+  }
+
+  int fd=open(fpath, O_RDONLY|O_NONBLOCK);
+  if (fd==-1) return -1;
+  req->sendfile_fd=fd;
+  req->sendfile_length=finfo.st_size;
+  req->response_content_type=nxweb_get_mime_type_by_ext(fpath)->mime;
+  return 0;
+}
+
 void nxweb_set_response_status(nxweb_request *req, int code, const char* message) {
   req->response_code=code;
   req->response_status=message;
@@ -345,6 +381,10 @@ void nxweb_set_response_status(nxweb_request *req, int code, const char* message
 
 void nxweb_set_response_content_type(nxweb_request *req, const char* content_type) {
   req->response_content_type=content_type;
+}
+
+void nxweb_set_response_charset(nxweb_request *req, const char* charset) {
+  req->response_content_charset=charset;
 }
 
 void nxweb_add_response_header(nxweb_request *req, const char* name, const char* value) {
@@ -461,11 +501,20 @@ void _nxweb_prepare_response_headers(nxweb_request *req) {
       _nxweb_write_response_headers_raw(req, "%s: %s\r\n", req->response_headers[i].name, req->response_headers[i].value);
     }
   }
+  const nxweb_mime_type* mtype=nxweb_get_mime_type(req->response_content_type);
+  if (req->response_content_charset && mtype && mtype->charset_required) {
+    _nxweb_write_response_headers_raw(req,
+             "Content-Type: %s; charset=%s\r\n",
+             mtype->mime, req->response_content_charset);
+  }
+  else {
+    _nxweb_write_response_headers_raw(req,
+             "Content-Type: %s\r\n",
+             mtype? mtype->mime : req->response_content_type);
+  }
   _nxweb_write_response_headers_raw(req,
-           "Content-Type: %s\r\n"
            "Content-Length: %u\r\n\r\n",
-           req->response_content_type? req->response_content_type : "text/html",
-           (unsigned)nx_chunks_length(req->out_body_chunk));
+           (unsigned)(nx_chunks_length(req->out_body_chunk)+req->sendfile_length));
   writing_response_headers_complete(req);
 }
 
@@ -520,13 +569,24 @@ void nxweb_send_http_error(nxweb_request *req, int code, const char* message) {
 }
 
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location) {
-  _nxweb_write_response_headers_raw(req,
-           "HTTP/1.1 %d %s\r\n"
-           "Connection: %s\r\n"
-           "Location: %s\r\n\r\n",
-           code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
-           req->conn->keep_alive?"keep-alive":"close",
-           location);
+  if (!strncmp(location, "http", 4)) { // absolute uri
+    _nxweb_write_response_headers_raw(req,
+             "HTTP/1.1 %d %s\r\n"
+             "Connection: %s\r\n"
+             "Location: %s\r\n\r\n",
+             code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
+             req->conn->keep_alive?"keep-alive":"close",
+             location);
+  }
+  else { // uri without host
+    _nxweb_write_response_headers_raw(req,
+             "HTTP/1.1 %d %s\r\n"
+             "Connection: %s\r\n"
+             "Location: http://%s%s\r\n\r\n",
+             code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
+             req->conn->keep_alive?"keep-alive":"close",
+             req->host, location);
+  }
 }
 
 //int nxweb_response_append_escape_html(nxweb_request *req, const char* text) {

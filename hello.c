@@ -117,8 +117,8 @@ static nxweb_result nxweb_on_server_startup() {
 }
 
 static const nxweb_uri_handler hello_module_uri_handlers[] = {
-  {"/hello", hello, NXWEB_INWORKER|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES},
-  {"/shutdown", shutdown_server, NXWEB_INPROCESS}, // server shutdown via http get; not good for real world
+  {"/hello", hello, NXWEB_INWORKER|NXWEB_HANDLE_ANY|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES},
+  {"/shutdown", shutdown_server, NXWEB_INPROCESS|NXWEB_HANDLE_GET}, // server shutdown via http get; not good for real world
   {0, 0, 0}
 };
 

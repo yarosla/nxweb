@@ -48,6 +48,9 @@
 		<Unit filename="nxweb/main.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="nxweb/mime.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Unit filename="nxweb/misc.c">
 			<Option compilerVar="CC" />
 		</Unit>
@@ -61,6 +64,9 @@
 		<Unit filename="nxweb/nxweb.h" />
 		<Unit filename="nxweb/nxweb_internal.h" />
 		<Unit filename="nxweb/revision.h" />
+		<Unit filename="sendfile.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Extensions>
 			<envvars />
 			<code_completion />

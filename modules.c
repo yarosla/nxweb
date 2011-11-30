@@ -27,7 +27,7 @@
 #include "nxweb/nxweb.h"
 
 
-extern const nxweb_module hello_module;
+extern const nxweb_module hello_module, sendfile_module;
 
 /// NXWEB LOG FILE PATH
 
@@ -39,6 +39,7 @@ const char* ERROR_LOG_FILE="error.log";
 // Do not forget to include modules in Makefile
 
 const nxweb_module* const nxweb_modules[] = {
+  &sendfile_module,
   &hello_module,
   0
 };

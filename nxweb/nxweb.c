@@ -24,6 +24,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define _FILE_OFFSET_BITS 64
+
 #include <stddef.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -42,6 +44,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <sys/sendfile.h>
 
 #include "nxweb_internal.h"
 
@@ -98,7 +101,8 @@ static void socket_write_cb(struct ev_loop *loop, ev_io *w, int revents);
 static void read_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents);
 static void keep_alive_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents);
 static void write_response_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents);
-
+static void data_ready_cb(struct ev_loop *loop, struct ev_async *w, int revents);
+static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn);
 
 
 static nxweb_connection* new_connection(struct ev_loop *loop, int client_fd, struct in_addr* sin_addr) {
@@ -117,6 +121,7 @@ static nxweb_connection* new_connection(struct ev_loop *loop, int client_fd, str
 
   // init but not start:
   ev_io_init(&conn->watch_socket_write, socket_write_cb, conn->fd, EV_WRITE);
+  ev_async_init(&conn->watch_async_data_ready, data_ready_cb);
 
   __sync_add_and_fetch(&num_connections, 1);
 
@@ -134,6 +139,8 @@ static void close_connection(struct ev_loop *loop, nxweb_connection* conn) {
   if (conn->cstate==NXWEB_CS_TIMEOUT || conn->cstate==NXWEB_CS_ERROR) _nxweb_close_bad_socket(conn->fd);
   else _nxweb_close_good_socket(conn->fd);
 
+  if (conn->request->sendfile_fd) close(conn->request->sendfile_fd);
+
   obstack_free(&conn->data, 0);
   // check if obstack has been initialized; free it if it was
   if (conn->user_data.chunk) obstack_free(&conn->user_data, 0);
@@ -141,8 +148,9 @@ static void close_connection(struct ev_loop *loop, nxweb_connection* conn) {
   free(conn);
 
   int connections_left=__sync_sub_and_fetch(&num_connections, 1);
-  if (connections_left<=0) {
-    nxweb_log_error("%d connections open", connections_left);
+  assert(connections_left>=0);
+  if (connections_left==0) { // for debug only
+    nxweb_log_error("all connections closed");
   }
 }
 
@@ -159,6 +167,7 @@ static void conn_request_received(struct ev_loop *loop, nxweb_connection* conn, 
 }
 
 static void rearm_connection(struct ev_loop *loop, nxweb_connection* conn) {
+  if (conn->request->sendfile_fd) close(conn->request->sendfile_fd);
   obstack_free(&conn->data, conn->request);
   conn->request=0;
 
@@ -237,8 +246,16 @@ static void keep_alive_timeout_cb(struct ev_loop *loop, struct ev_timer *w, int 
 
 static void data_ready_cb(struct ev_loop *loop, struct ev_async *w, int revents) {
   nxweb_connection *conn=((nxweb_connection*)(((char*)w)-offsetof(nxweb_connection, watch_async_data_ready)));
+  nxweb_request* req=conn->request;
 
   ev_async_stop(loop, w);
+
+  if (req->handler_result==NXWEB_NEXT) {
+    // dispatch again
+    dispatch_request(loop, conn);
+    return;
+  }
+
   start_sending_response(loop, conn);
 }
 
@@ -297,6 +314,11 @@ static void socket_write_cb(struct ev_loop *loop, struct ev_io *w, int revents) 
           ev_timer_again(loop, &conn->watch_write_response_time);
         }
       }
+      else if (req->sendfile_fd && req->sendfile_offset<req->sendfile_length && !req->head_method) {
+        bytes_avail=req->sendfile_length - req->sendfile_offset;
+        bytes_sent=sendfile(conn->fd, req->sendfile_fd, &req->sendfile_offset, bytes_avail);
+        //nxweb_log_error("sendfile: %d bytes sent", bytes_sent); // debug only
+      }
       else { // all sent
         if (conn->sending_100_continue) {
           if (conn->cstate==NXWEB_CS_SENDING_HEADERS) {
@@ -337,63 +359,83 @@ static nxweb_result default_uri_callback(nxweb_uri_handler_phase phase, nxweb_re
   return NXWEB_OK;
 }
 
-static const nxweb_uri_handler default_handler={0, default_uri_callback, NXWEB_INPROCESS};
+static const nxweb_uri_handler default_handler={0, default_uri_callback, NXWEB_INPROCESS|NXWEB_HANDLE_ANY};
 
-static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn) {
-  nxweb_request* req=conn->request;
+static const nxweb_uri_handler* find_handler(nxweb_request* req) {
+  if (req->handler==&default_handler) return 0; // no more handlers
   char c;
   const char* uri=req->uri;
   int uri_len=strlen(uri);
-  req->path_info=0;
-  const nxweb_module* const* module=nxweb_modules;
-  const nxweb_uri_handler* handler=0;
+  req->path_info=uri;
+  const nxweb_module* const* module=req->handler_module? req->handler_module : nxweb_modules;
+  const nxweb_uri_handler* handler=req->handler? req->handler+1 : (*module? (*module)->uri_handlers : 0);
   while (*module) {
-    handler=(*module)->uri_handlers;
-    while (handler->callback) {
-      if (!handler->uri_prefix || !*handler->uri_prefix) break; // wildcard
-
+    while (handler && handler->callback && handler->uri_prefix) {
       int prefix_len=strlen(handler->uri_prefix);
-
       if (prefix_len==0 || (prefix_len<=uri_len
           && strncmp(uri, handler->uri_prefix, prefix_len)==0
           && ((c=uri[prefix_len])==0 || c=='?' || c=='/'))) {
         req->path_info=uri+prefix_len;
-        break;
+        req->handler=handler;
+        req->handler_module=module; // save position
+        return handler;
       }
-
       handler++;
     }
     module++;
+    handler=(*module)? (*module)->uri_handlers : 0;
   }
-  if (!handler || !handler->callback) {
-    handler=&default_handler;
-  }
+  handler=&default_handler;
   req->handler=handler;
-  if (handler->flags & NXWEB_PARSE_PARAMETERS) nxweb_parse_request_parameters(req, 0);
-  if (handler->flags & NXWEB_PARSE_COOKIES) nxweb_parse_request_cookies(req);
-  conn->cstate=NXWEB_CS_HANDLING;
-  if (handler->flags & NXWEB_INPROCESS) {
-    handler->callback(NXWEB_PH_CONTENT, req);
-    start_sending_response(loop, conn);
-  }
-  else {
-    // go async
-    if (!ev_is_active(&conn->watch_async_data_ready)) ev_async_init(&conn->watch_async_data_ready, data_ready_cb);
-    ev_async_start(loop, &conn->watch_async_data_ready);
-    // hand over to worker thread
-    pthread_mutex_lock(&job_queue_mux);
-    nxweb_job* job=nxweb_job_queue_push_alloc(&job_queue);
-    if (job) {
-      job->conn=conn;
-      pthread_cond_signal(&job_queue_cond);
-      pthread_mutex_unlock(&job_queue_mux);
-      return;
+  req->handler_module=module; // save position
+  return handler;
+}
+
+static int prepare_request_for_handler(struct ev_loop *loop, nxweb_request* req) {
+  const nxweb_uri_handler* handler=req->handler;
+  unsigned flags=handler->flags;
+  if ((flags&_NXWEB_HANDLE_MASK) && !(flags&NXWEB_HANDLE_ANY)) {
+    if ((!(flags&NXWEB_HANDLE_GET) || (!!strcasecmp(req->method, "GET") && !!strcasecmp(req->method, "HEAD")))
+      && (!(flags&NXWEB_HANDLE_POST) || !!strcasecmp(req->method, "POST"))) {
+        nxweb_send_http_error(req, 405, "Method Not Allowed");
+        start_sending_response(loop, req->conn);
+        return -1;
     }
-    else { // queue full
-      pthread_mutex_unlock(&job_queue_mux);
-      nxweb_send_http_error(req, 503, "Service Unavailable");
+  }
+  if (flags&NXWEB_PARSE_PARAMETERS) nxweb_parse_request_parameters(req, 0);
+  if (flags&NXWEB_PARSE_COOKIES) nxweb_parse_request_cookies(req);
+  return 0;
+}
+
+static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn) {
+  nxweb_request* req=conn->request;
+  while (1) {
+    const nxweb_uri_handler* handler=find_handler(req);
+    assert(handler!=0); // default handler never returns NXWEB_NEXT
+    if (prepare_request_for_handler(loop, req)) return;
+    if (handler->flags&NXWEB_INPROCESS) {
+      req->handler_result=handler->callback(NXWEB_PH_CONTENT, req);
+      if (req->handler_result==NXWEB_NEXT) continue;
       start_sending_response(loop, conn);
     }
+    else {
+      // go async
+      ev_async_start(loop, &conn->watch_async_data_ready);
+      // hand over to worker thread
+      pthread_mutex_lock(&job_queue_mux);
+      nxweb_job* job=nxweb_job_queue_push_alloc(&job_queue);
+      if (job) {
+        job->conn=conn;
+        pthread_cond_signal(&job_queue_cond);
+        pthread_mutex_unlock(&job_queue_mux);
+      }
+      else { // queue full
+        pthread_mutex_unlock(&job_queue_mux);
+        nxweb_send_http_error(req, 503, "Service Unavailable");
+        start_sending_response(loop, conn);
+      }
+    }
+    break;
   }
 }
 
@@ -526,6 +568,7 @@ static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents) {
           // receiving request complete
           if (req->chunked_request) _nxweb_decode_chunked_request(req);
           conn_request_received(loop, conn, 0);
+          conn->cstate=NXWEB_CS_HANDLING;
           dispatch_request(loop, conn);
           return;
         }
@@ -577,6 +620,7 @@ static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents) {
           req->request_body=obstack_finish(ob);
           if (req->chunked_request) _nxweb_decode_chunked_request(req);
           conn_request_received(loop, conn, 0);
+          conn->cstate=NXWEB_CS_HANDLING;
           dispatch_request(loop, conn);
           return;
         }
@@ -657,7 +701,7 @@ static void* worker_thread_main(void* pdata) {
     conn=job? job->conn : 0;
     pthread_mutex_unlock(&job_queue_mux);
     if (conn) {
-      conn->request->handler->callback(NXWEB_PH_CONTENT, conn->request);
+      conn->request->handler_result=conn->request->handler->callback(NXWEB_PH_CONTENT, conn->request);
       ev_async_send(conn->loop, &conn->watch_async_data_ready);
     }
   }
