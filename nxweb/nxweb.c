@@ -713,11 +713,6 @@ void _nxweb_main() {
   int i;
 
   pid_t pid=getpid();
-  FILE* f=fopen(NXWEB_PID_FILE, "w");
-  if (f) {
-    fprintf(f, "%d", (int)pid);
-    fclose(f);
-  }
 
   main_loop=loop;
 
@@ -785,9 +780,20 @@ void _nxweb_main() {
   }
 
   int listen_fd=_nxweb_bind_socket(NXWEB_LISTEN_PORT);
+  if (listen_fd==-1) {
+    // simulate succesful exit (error have been logged)
+    // otherwise launcher will keep trying
+    return;
+  }
   ev_io watch_accept;
   ev_io_init(&watch_accept, main_accept_cb, listen_fd, EV_READ);
   ev_io_start(loop, &watch_accept);
+
+  FILE* f=fopen(NXWEB_PID_FILE, "w");
+  if (f) {
+    fprintf(f, "%d", (int)pid);
+    fclose(f);
+  }
 
   const nxweb_module* const * module=nxweb_modules;
   while (*module) {

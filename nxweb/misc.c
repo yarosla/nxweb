@@ -150,21 +150,33 @@ int _nxweb_bind_socket(int port) {
   struct sockaddr_in listen_addr;
   int reuseaddr_on=1;
   listen_fd=socket(AF_INET, SOCK_STREAM, 0);
-  if (listen_fd<0)
-    nxweb_die("listen failed");
-  if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr_on, sizeof(reuseaddr_on))==-1)
-    nxweb_die("setsockopt failed");
+  if (listen_fd<0) {
+    nxweb_log_error("listen failed");
+    return -1;
+  }
+  if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr_on, sizeof(reuseaddr_on))==-1) {
+    nxweb_log_error("setsockopt failed");
+    return -1;
+  }
   memset(&listen_addr, 0, sizeof(listen_addr));
   listen_addr.sin_family=AF_INET;
   listen_addr.sin_addr.s_addr=INADDR_ANY;
   listen_addr.sin_port=htons(port);
-  if (bind(listen_fd, (struct sockaddr*)&listen_addr, sizeof(listen_addr))<0)
-    nxweb_die("bind failed");
-  if (listen(listen_fd, 1024)<0)
-    nxweb_die("listen failed");
-  if (_nxweb_set_non_block(listen_fd)<0)
-    nxweb_die("failed to set server socket to non-blocking");
-  if (_nxweb_setup_listening_socket(listen_fd)<0)
-    nxweb_die("failed to setup listening socket");
+  if (bind(listen_fd, (struct sockaddr*)&listen_addr, sizeof(listen_addr))<0) {
+    nxweb_log_error("bind failed");
+    return -1;
+  }
+  if (listen(listen_fd, 1024)<0) {
+    nxweb_log_error("listen failed");
+    return -1;
+  }
+  if (_nxweb_set_non_block(listen_fd)<0) {
+    nxweb_log_error("failed to set server socket to non-blocking");
+    return -1;
+  }
+  if (_nxweb_setup_listening_socket(listen_fd)<0) {
+    nxweb_log_error("failed to setup listening socket");
+    return -1;
+  }
   return listen_fd;
 }
