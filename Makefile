@@ -2,10 +2,15 @@ CC=gcc
 LD=gcc
 
 BASE_NAME=nxweb
-LIBS=-lev -lpthread -lcurl
 
-CFLAGS_RELEASE=-pthread -Wno-strict-aliasing -DUSE_CURL -O2 -s
-CFLAGS_DEBUG=-pthread -Wno-strict-aliasing -DUSE_CURL -g
+###
+# Library dependencies:
+#  - libev 4 (http://software.schmorp.de/pkg/libev.html)
+
+LIBS=-lev -lpthread
+
+CFLAGS_RELEASE=-pthread -Wno-strict-aliasing -O2 -s
+CFLAGS_DEBUG=-pthread -Wno-strict-aliasing -g
 
 LDFLAGS_RELEASE=$(LIBS)
 LDFLAGS_DEBUG=$(LIBS)

@@ -47,6 +47,7 @@ typedef struct obstack obstack;
 #define OUTPUT_CHUNK_MIN_ROOM 256
 #define NXWEB_JOBS_QUEUE_SIZE 8192
 #define NXWEB_ACCEPT_QUEUE_SIZE 8192
+#define NXWEB_PID_FILE "nxweb.pid"
 
 typedef struct nx_simple_map_entry {
   const char* name;

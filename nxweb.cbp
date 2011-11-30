@@ -31,12 +31,10 @@
 		<Compiler>
 			<Add option="-Wall" />
 			<Add option="-pthread -Wno-strict-aliasing" />
-			<Add option="-DUSE_CURL" />
 		</Compiler>
 		<Linker>
 			<Add library="pthread" />
 			<Add library="ev" />
-			<Add library="curl" />
 		</Linker>
 		<Unit filename="hello.c">
 			<Option compilerVar="CC" />

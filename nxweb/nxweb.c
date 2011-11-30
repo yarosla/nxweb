@@ -712,11 +712,18 @@ void _nxweb_main() {
   struct ev_loop *loop=EV_DEFAULT;
   int i;
 
+  pid_t pid=getpid();
+  FILE* f=fopen(NXWEB_PID_FILE, "w");
+  if (f) {
+    fprintf(f, "%d", (int)pid);
+    fclose(f);
+  }
+
   main_loop=loop;
 
-  nxweb_log_error("*** NXWEB startup: port=%d ev_backend=%x N_NET_THREADS=%d N_WORKER_THREADS=%d"
+  nxweb_log_error("*** NXWEB startup: pid=%d port=%d ev_backend=%x N_NET_THREADS=%d N_WORKER_THREADS=%d"
                   " short=%d int=%d long=%d size_t=%d conn=%d req=%d nxweb_accept=%d",
-                  NXWEB_LISTEN_PORT, ev_backend(loop), N_NET_THREADS, N_WORKER_THREADS,
+                  (int)pid, NXWEB_LISTEN_PORT, ev_backend(loop), N_NET_THREADS, N_WORKER_THREADS,
                   (int)sizeof(short), (int)sizeof(int), (int)sizeof(long), (int)sizeof(size_t),
                   (int)sizeof(nxweb_connection), (int)sizeof(nxweb_request), (int)sizeof(nxweb_accept));
 

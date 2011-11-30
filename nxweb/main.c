@@ -29,24 +29,20 @@
 #include <argp.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-
-#ifdef USE_CURL
-#include <curl/curl.h>
-#endif
+#include <sys/types.h>
 
 #include "nxweb_internal.h"
 
 static void open_log_file(const char* log_file) {
   int fd=open(log_file, O_WRONLY|O_CREAT|O_APPEND, 0664);
-  if(fd==-1) {
+  if (fd==-1) {
     nxweb_die("open(log_file) failed");
   }
   close(STDIN_FILENO);
   close(STDOUT_FILENO);
   close(STDERR_FILENO);
-  if(dup2(fd, STDOUT_FILENO)==-1 || dup2(fd, STDERR_FILENO)==-1) {
+  if (dup2(fd, STDOUT_FILENO)==-1 || dup2(fd, STDERR_FILENO)==-1) {
     nxweb_die("dup2(stdout/err) failed");
   }
   close(fd);
@@ -58,17 +54,17 @@ static void continue_as_daemon(const char* work_dir, const char* log_file) {
 
   /* Fork off the parent process */
   pid=fork();
-  if(pid<0) {
+  if (pid<0) {
     exit(EXIT_FAILURE);
   }
   /* If we got a good PID, then we can exit the parent process. */
-  if(pid>0) {
+  if (pid>0) {
     exit(EXIT_SUCCESS);
   }
 
   /* Create a new SID for the child process */
   sid=setsid();
-  if(sid<0) {
+  if (sid<0) {
     nxweb_die("setsid() failed");
   }
 
@@ -76,7 +72,7 @@ static void continue_as_daemon(const char* work_dir, const char* log_file) {
   umask(0);
 
   /* Change the current working directory */
-  if(work_dir && chdir(work_dir)<0) {
+  if (work_dir && chdir(work_dir)<0) {
     nxweb_die("chdir(work_dir) failed");
   }
 
@@ -90,20 +86,20 @@ static void continue_as_daemon(const char* work_dir, const char* log_file) {
 static int launcher(void (*main_func)()) {
   pid_t pid=fork();
 
-  if(pid<0) {
+  if (pid<0) {
     exit(EXIT_FAILURE);
   } else if(pid>0) { // we are the parent
     int status;
 
-    if(waitpid(pid, &status, 0)==-1) {
+    if (waitpid(pid, &status, 0)==-1) {
       nxweb_log_error("waitpid failure");
       exit(EXIT_FAILURE);
     }
 
-    if(WIFEXITED(status)) {
+    if (WIFEXITED(status)) {
       nxweb_log_error("Server exited, status=%d", WEXITSTATUS(status));
       return WEXITSTATUS(status);
-    } else if(WIFSIGNALED(status)) {
+    } else if (WIFSIGNALED(status)) {
       nxweb_log_error("Server killed by signal %d", WTERMSIG(status));
       return 1;
     }
@@ -178,33 +174,32 @@ int main(int argc, char* argv[]) {
   argp_parse(&argp, argc, argv, 0, 0, &args);
 
   if (args.shutdown) {
-#ifdef USE_CURL
-    // issue http GET /shutdown to itself
-    CURL *curl;
-    CURLcode res;
-
-    curl=curl_easy_init();
-    if(curl) {
-      curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:" NXWEB_LISTEN_PORT_S "/shutdown");
-      res=curl_easy_perform(curl);
-      /* always cleanup */
-      curl_easy_cleanup(curl);
-      if (res) printf("curl error %d\n", res);
-      else printf("\nOK\n");
+    if (args.work_dir && chdir(args.work_dir)<0) {
+      nxweb_die("chdir(work_dir) failed");
     }
-#else
-    printf("To shutdown the server use the following HTTP GET request:\n"
-           "  http://localhost:" NXWEB_LISTEN_PORT_S "/shutdown\n");
-#endif
-    return EXIT_SUCCESS;
+    FILE* f=fopen(NXWEB_PID_FILE, "r");
+    if (f) {
+      char pid_str[20];
+      pid_t pid=0;
+      if (fgets(pid_str, sizeof(pid_str), f))
+        pid=strtol(pid_str, 0, 10);
+      fclose(f);
+      if (pid) {
+        kill(pid, SIGTERM);
+        unlink(NXWEB_PID_FILE);
+        return EXIT_SUCCESS;
+      }
+    }
+    fprintf(stderr, "Could not find PID of running %s\n", argv[0]);
+    return EXIT_FAILURE;
   }
 
   if (args.daemon) {
     continue_as_daemon(args.work_dir, args.log_file);
-    while(launcher(_nxweb_main)) sleep(2);  // sleep 2 sec and launch again until child exits with EXIT_SUCCESS
+    while (launcher(_nxweb_main)) sleep(2);  // sleep 2 sec and launch again until child exits with EXIT_SUCCESS
   }
   else {
-    if(args.work_dir && chdir(args.work_dir)<0) {
+    if (args.work_dir && chdir(args.work_dir)<0) {
       nxweb_die("chdir(work_dir) failed");
     }
     open_log_file(args.log_file);
