@@ -34,6 +34,7 @@
 #include <string.h>
 #include <printf.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "nxweb_internal.h"
@@ -346,7 +347,7 @@ int _nxweb_verify_chunked(const char* buf, int buf_len) {
   return -1;
 }
 
-int nxweb_send_file(nxweb_request *req, const char* fpath) {
+int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo) {
   if (fpath==0) { // cancel sendfile
     if (req->sendfile_fd) close(req->sendfile_fd);
     req->sendfile_fd=0;
@@ -355,22 +356,26 @@ int nxweb_send_file(nxweb_request *req, const char* fpath) {
     return 0;
   }
 
-  struct stat finfo;
-  if (stat(fpath, &finfo)==-1) {
-    return -1;
+  // if no finfo provided by the caller, get it here
+  struct stat _finfo;
+  if (!finfo) {
+    if (stat(fpath, &_finfo)==-1) return -1;
+    finfo=&_finfo;
   }
-  if (S_ISDIR(finfo.st_mode)) {
+  if (S_ISDIR(finfo->st_mode)) {
     return -2;
   }
-  if (!S_ISREG(finfo.st_mode)) {
+  if (!S_ISREG(finfo->st_mode)) {
     return -3;
   }
 
   int fd=open(fpath, O_RDONLY|O_NONBLOCK);
   if (fd==-1) return -1;
   req->sendfile_fd=fd;
-  req->sendfile_length=finfo.st_size;
+  req->sendfile_length=finfo->st_size;
+  req->sendfile_last_modified=finfo->st_mtime;
   req->response_content_type=nxweb_get_mime_type_by_ext(fpath)->mime;
+
   return 0;
 }
 
@@ -488,11 +493,20 @@ void _nxweb_finalize_response_writing_state(nxweb_request *req) {
 }
 
 void _nxweb_prepare_response_headers(nxweb_request *req) {
-  _nxweb_write_response_headers_raw(req, "HTTP/1.1 %d %s\r\n"
+  char date_buf[64];
+  time_t t;
+  struct tm tm;
+  time(&t);
+  gmtime_r(&t, &tm);
+  strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
+
+  _nxweb_write_response_headers_raw(req, "HTTP/1.%d %d %s\r\n"
            "Server: nxweb/" REVISION "\r\n"
+           "Date: %s\r\n"
            "Connection: %s\r\n",
-           req->response_code? req->response_code : 200,
+           req->http11, req->response_code? req->response_code : 200,
            req->response_status? req->response_status : "OK",
+           date_buf,
            req->conn->keep_alive?"keep-alive":"close");
   if (req->response_headers) {
     // write added headers
@@ -511,6 +525,11 @@ void _nxweb_prepare_response_headers(nxweb_request *req) {
     _nxweb_write_response_headers_raw(req,
              "Content-Type: %s\r\n",
              mtype? mtype->mime : req->response_content_type);
+  }
+  if (req->sendfile_last_modified) {
+    gmtime_r(&req->sendfile_last_modified, &tm);
+    strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
+    _nxweb_write_response_headers_raw(req, "Last-Modified: %s\r\n", date_buf);
   }
   _nxweb_write_response_headers_raw(req,
            "Content-Length: %u\r\n\r\n",
@@ -571,22 +590,25 @@ void nxweb_send_http_error(nxweb_request *req, int code, const char* message) {
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location) {
   if (!strncmp(location, "http", 4)) { // absolute uri
     _nxweb_write_response_headers_raw(req,
-             "HTTP/1.1 %d %s\r\n"
+             "HTTP/1.%d %d %s\r\n"
              "Connection: %s\r\n"
+             "Content-Length: 0\r\n"
              "Location: %s\r\n\r\n",
-             code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
+             req->http11, code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
              req->conn->keep_alive?"keep-alive":"close",
              location);
   }
   else { // uri without host
     _nxweb_write_response_headers_raw(req,
-             "HTTP/1.1 %d %s\r\n"
+             "HTTP/1.%d %d %s\r\n"
              "Connection: %s\r\n"
+             "Content-Length: 0\r\n"
              "Location: http://%s%s\r\n\r\n",
-             code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
+             req->http11, code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
              req->conn->keep_alive?"keep-alive":"close",
              req->host, location);
   }
+  writing_response_headers_complete(req);
 }
 
 //int nxweb_response_append_escape_html(nxweb_request *req, const char* text) {

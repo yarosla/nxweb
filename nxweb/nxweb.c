@@ -202,11 +202,12 @@ static nxweb_request* new_request(struct ev_loop *loop, nxweb_connection* conn) 
 }
 
 static void start_sending_response(struct ev_loop *loop, nxweb_connection *conn) {
+
+  _nxweb_finalize_response_writing_state(conn->request);
+
   if (!conn->request->out_headers) {
     _nxweb_prepare_response_headers(conn->request);
   }
-
-  _nxweb_finalize_response_writing_state(conn->request);
 
   //conn->request->write_pos=0;
   //conn->request->header_sent=0;

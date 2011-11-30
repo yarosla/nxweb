@@ -38,7 +38,24 @@
 
 #include "nxweb/nxweb.h"
 
+#define INDEX_FILE "index.htm"
+
 static const char* document_root="html"; // relative to work-dir
+
+static int remove_dots_from_uri_path(char* path) {
+  if (!*path) return 0; // end of path
+  if (*path!='/') return -1; // invalid path
+  while (1) {
+    if (path[1]=='.' && path[2]=='.' && (path[3]=='/' || path[3]=='\0')) { // /..(/.*)?$
+      memmove(path, path+3, strlen(path+3)+1);
+      return 1;
+    }
+    char* p1=strchr(path+1, '/');
+    if (!p1) return 0;
+    if (!remove_dots_from_uri_path(p1)) return 0;
+    memmove(path, p1, strlen(p1)+1);
+  }
+}
 
 static nxweb_result send_file(nxweb_uri_handler_phase phase, nxweb_request *req) {
   if (phase!=NXWEB_PH_CONTENT) return NXWEB_OK;
@@ -57,36 +74,49 @@ static nxweb_result send_file(nxweb_uri_handler_phase phase, nxweb_request *req)
   nxweb_url_decode(p, 0);
   plen=strlen(p);
   if (plen>0 && p[plen-1]=='/') { // directory index
-    strcat(p+plen, "index.htm");
+    strcat(p+plen, INDEX_FILE);
   }
 
-  // TODO remove double dots /../
+  if (remove_dots_from_uri_path(p)) {
+    nxweb_log_error("final path=[%s] is bad", p);
+    nxweb_send_http_error(req, 404, "Not Found");
+    return NXWEB_OK;
+  }
+  nxweb_log_error("final path=[%s]", p);
 
-  nxweb_set_response_charset(req, "utf-8"); // set default charset for text files
-
-  int result=nxweb_send_file(req, fpath);
-  if (result==-2) { // it is directory
+  struct stat finfo;
+  if (stat(fpath, &finfo)==-1) {
+    return NXWEB_NEXT; // no such file; skip to next handler
+  }
+  if (S_ISDIR(finfo.st_mode)) {
     strcat(p, "/");
     nxweb_send_redirect(req, 302, p);
+    return NXWEB_OK;
   }
-  else if (result==-1) { // file not found
-    return NXWEB_NEXT; // skip to next handler
-  }
-  else if (result!=0) { // symlink or ...?
+  if (!S_ISREG(finfo.st_mode)) { // symlink or ...?
     nxweb_send_http_error(req, 403, "Forbidden");
     return NXWEB_OK;
   }
 
   if (strcasecmp(req->method, "GET")) {
-    nxweb_send_file(req, 0);
     nxweb_send_http_error(req, 405, "Method Not Allowed");
     return NXWEB_OK;
   }
+
+  nxweb_set_response_charset(req, "utf-8"); // set default charset for text files
+
+  int result=nxweb_send_file(req, fpath, &finfo);
+  if (result!=0) { // should not happen
+    nxweb_log_error("[%s] stat() was OK, but open() failed", fpath);
+    nxweb_send_http_error(req, 500, "Internal Server Error");
+    return NXWEB_OK;
+  }
+
   return NXWEB_OK;
 }
 
 static const nxweb_uri_handler sendfile_module_uri_handlers[] = {
-  {"", send_file, NXWEB_INWORKER}, // wildcard uri; only handles GET
+  {"", send_file, NXWEB_INWORKER}, // wildcard uri
   {0, 0, 0}
 };
 

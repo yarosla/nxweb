@@ -163,6 +163,7 @@ typedef struct nxweb_request {
   int sendfile_fd;
   off_t sendfile_offset;
   size_t sendfile_length;
+  time_t sendfile_last_modified;
 
   enum nxweb_response_state rstate;
 
@@ -206,7 +207,7 @@ const char* nxweb_get_request_cookie(nxweb_request *req, const char* name);
 
 void nxweb_send_http_error(nxweb_request *req, int code, const char* message);
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location);
-int nxweb_send_file(nxweb_request *req, const char* fpath);
+int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo);
 void nxweb_set_response_status(nxweb_request *req, int code, const char* message);
 void nxweb_set_response_content_type(nxweb_request *req, const char* content_type);
 void nxweb_set_response_charset(nxweb_request *req, const char* charset);

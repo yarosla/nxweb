@@ -39,7 +39,10 @@ const char* ERROR_LOG_FILE="error.log";
 // Do not forget to include modules in Makefile
 
 const nxweb_module* const nxweb_modules[] = {
-  &sendfile_module,
   &hello_module,
+  &sendfile_module, // this module involves filesystem calls
+                    // which might slow down request processing
+                    // for further modules in the chain,
+                    // so preferably put it last
   0
 };
