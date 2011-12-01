@@ -78,11 +78,9 @@ static nxweb_result send_file(nxweb_uri_handler_phase phase, nxweb_request *req)
   }
 
   if (remove_dots_from_uri_path(p)) {
-    nxweb_log_error("final path=[%s] is bad", p);
     nxweb_send_http_error(req, 404, "Not Found");
     return NXWEB_OK;
   }
-  nxweb_log_error("final path=[%s]", p);
 
   struct stat finfo;
   if (stat(fpath, &finfo)==-1) {

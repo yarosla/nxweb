@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1322668944 source:/home/ys/dev/cb/nxweb/hello.c
+1322692728 source:/home/ys/dev/cb/nxweb/hello.c
 	<stdio.h>
 	<unistd.h>
 	<fcntl.h>
@@ -13,12 +13,12 @@
 	<sys/stat.h>
 	"nxweb/nxweb.h"
 
-1322685727 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+1322696838 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
 	<obstack.h>
 	<ev.h>
 	"revision.h"
 
-1322677329 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1322689757 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
 1322683835 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
@@ -96,7 +96,7 @@
 1322675016 source:/home/ys/dev/cb/nxweb/nxweb/mime.c
 	"nxweb.h"
 
-1322686604 source:/home/ys/dev/cb/nxweb/sendfile.c
+1322695289 source:/home/ys/dev/cb/nxweb/sendfile.c
 	<stdio.h>
 	<unistd.h>
 	<fcntl.h>
