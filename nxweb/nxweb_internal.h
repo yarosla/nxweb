@@ -30,11 +30,14 @@
 #include "nxweb.h"
 #include "nx_queue.h"
 
+typedef struct nx_queue nxweb_accept_queue;
+
 typedef struct nxweb_net_thread {
   pthread_t thread_id;
   struct ev_loop* loop;
   ev_async watch_shutdown;
   ev_async watch_accept;
+  nxweb_accept_queue* accept_queue;
 } nxweb_net_thread;
 
 typedef struct nxweb_job {

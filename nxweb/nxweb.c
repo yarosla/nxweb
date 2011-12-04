@@ -53,36 +53,28 @@ typedef struct nxweb_accept {
   struct in_addr sin_addr;
 } nxweb_accept;
 
-typedef struct nxweb_accept_queue {
-  nx_queue q;
-  nxweb_accept jobs[NXWEB_ACCEPT_QUEUE_SIZE];
-} nxweb_accept_queue;
-
-static inline void nxweb_accept_queue_init(nxweb_accept_queue* jq) {
-  nx_queue_init(&jq->q, sizeof(nxweb_accept), NXWEB_ACCEPT_QUEUE_SIZE);
+static inline nxweb_accept_queue* nxweb_accept_queue_new(int size) {
+  return nx_queue_new(sizeof(nxweb_accept), size);
 }
 
 static inline int nxweb_accept_queue_push(nxweb_accept_queue* jq, const nxweb_accept* accpt) {
-  return nx_queue_push(&jq->q, accpt);
+  return nx_queue_push(jq, accpt);
 }
 
 static inline int nxweb_accept_queue_pop(nxweb_accept_queue* jq, nxweb_accept* accpt) {
-  return nx_queue_pop(&jq->q, accpt);
+  return nx_queue_pop(jq, accpt);
 }
 
 static inline int nxweb_accept_queue_is_empty(nxweb_accept_queue* jq) {
-  return nx_queue_is_empty(&jq->q);
+  return nx_queue_is_empty(jq);
 }
 
 static inline int nxweb_accept_queue_is_full(nxweb_accept_queue* jq) {
-  return nx_queue_is_full(&jq->q);
+  return nx_queue_is_full(jq);
 }
 
 static pthread_t main_thread_id=0;
 static struct ev_loop *main_loop=0;
-
-static nxweb_accept_queue accept_queue;
-static pthread_mutex_t accept_queue_mux;
 
 static nxweb_job_queue job_queue;
 static pthread_mutex_t job_queue_mux;
@@ -683,11 +675,10 @@ static void net_thread_accept_cb(struct ev_loop *loop, struct ev_async *w, int r
   nxweb_accept a;
   nxweb_connection *conn;
   int result;
+  nxweb_net_thread* tdata=w->data;
 
   while (1) {
-    pthread_mutex_lock(&accept_queue_mux);
-    result=nxweb_accept_queue_pop(&accept_queue, &a);
-    pthread_mutex_unlock(&accept_queue_mux);
+    result=nxweb_accept_queue_pop(tdata->accept_queue, &a);
 
     if (!result) {
       conn=new_connection(loop, a.client_fd, &a.sin_addr);
@@ -719,14 +710,11 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 
     nxweb_net_thread* tdata=&net_threads[ev_next_thread_idx];
 
-    pthread_mutex_lock(&accept_queue_mux);
-    if (nxweb_accept_queue_push(&accept_queue, &accept_msg)) {
-      pthread_mutex_unlock(&accept_queue_mux);
+    if (nxweb_accept_queue_push(tdata->accept_queue, &accept_msg)) {
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("accept queue full; dropping connection");
       continue;
     }
-    pthread_mutex_unlock(&accept_queue_mux);
 
     ev_async_send(tdata->loop, &tdata->watch_accept);
 
@@ -768,10 +756,11 @@ static void* worker_thread_main(void* pdata) {
   return 0;
 }
 
-static void* ev_thread_main(void* pdata) {
+static void* net_thread_main(void* pdata) {
   nxweb_net_thread* tdata=(nxweb_net_thread*)pdata;
   ev_run(tdata->loop, 0);
   ev_loop_destroy(tdata->loop);
+  free(tdata->accept_queue);
   nxweb_log_error("net thread exited");
   return 0;
 }
@@ -817,6 +806,7 @@ void _nxweb_main() {
   pid_t pid=getpid();
 
   main_loop=loop;
+  main_thread_id=pthread_self();
 
   nxweb_log_error("*** NXWEB startup: pid=%d port=%d ev_backend=%x N_NET_THREADS=%d N_WORKER_THREADS=%d"
                   " short=%d int=%d long=%d size_t=%d conn=%d req=%d nxweb_accept=%d",
@@ -837,21 +827,21 @@ void _nxweb_main() {
     exit(EXIT_FAILURE);
   }
 
-  nxweb_accept_queue_init(&accept_queue);
-  pthread_mutex_init(&accept_queue_mux, 0);
+  nxweb_net_thread* tdata;
 
   for (i=0; i<N_NET_THREADS; i++) {
-    net_threads[i].loop=ev_loop_new(EVFLAG_AUTO);
+    tdata=&net_threads[i];
+    tdata->loop=ev_loop_new(EVFLAG_AUTO);
+    tdata->accept_queue=nxweb_accept_queue_new(NXWEB_ACCEPT_QUEUE_SIZE);
 
-    ev_async_init(&net_threads[i].watch_shutdown, net_thread_shutdown_cb);
-    ev_async_start(net_threads[i].loop, &net_threads[i].watch_shutdown);
-    ev_async_init(&net_threads[i].watch_accept, net_thread_accept_cb);
-    ev_async_start(net_threads[i].loop, &net_threads[i].watch_accept);
+    ev_async_init(&tdata->watch_shutdown, net_thread_shutdown_cb);
+    ev_async_start(tdata->loop, &tdata->watch_shutdown);
+    ev_async_init(&tdata->watch_accept, net_thread_accept_cb);
+    tdata->watch_accept.data=tdata;
+    ev_async_start(tdata->loop, &tdata->watch_accept);
 
-    pthread_create(&net_threads[i].thread_id, 0, ev_thread_main, &net_threads[i]);
+    pthread_create(&tdata->thread_id, 0, net_thread_main, tdata);
   }
-
-  main_thread_id=pthread_self();
 
   nxweb_job_queue_init(&job_queue);
   pthread_mutex_init(&job_queue_mux, 0);

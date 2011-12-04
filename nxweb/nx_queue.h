@@ -27,10 +27,15 @@
 #ifndef NX_QUEUE_H_INCLUDED
 #define NX_QUEUE_H_INCLUDED
 
-// Can store up to size-1 items
+// Can store up to queue_max_size-1 items
+
+// This queue it safe for non-blocking use
+// as long as there is only one producer thread (does push)
+// and only one consumer thread (does pop)
 
 typedef struct nx_queue {
-  int item_size, size, head, tail;
+  int item_size, size;
+  volatile int head, tail;
   char items[];
 } nx_queue;
 

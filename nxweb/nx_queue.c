@@ -33,6 +33,10 @@
 
 // Can store up to queue_max_size-1 items
 
+// This queue it safe for non-blocking use
+// as long as there is only one producer thread (does push)
+// and only one consumer thread (does pop)
+
 nx_queue* nx_queue_new(int item_size, int queue_max_size) {
   assert(item_size>0);
   assert(queue_max_size>2);
