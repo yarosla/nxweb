@@ -43,6 +43,7 @@
 		<Unit filename="modules.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="nxweb/config.h" />
 		<Unit filename="nxweb/http.c">
 			<Option compilerVar="CC" />
 		</Unit>

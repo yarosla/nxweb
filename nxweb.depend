@@ -13,12 +13,13 @@
 	<sys/stat.h>
 	"nxweb/nxweb.h"
 
-1322862510 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+1323005882 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
 	<obstack.h>
 	<ev.h>
 	"revision.h"
+	"config.h"
 
-1322959156 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1323005260 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
 1322927216 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
@@ -69,7 +70,7 @@
 	<assert.h>
 	"nx_queue.h"
 
-1322994666 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
+1323002639 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
 	<stddef.h>
 	<stdio.h>
 	<unistd.h>
@@ -110,4 +111,6 @@
 	<pthread.h>
 	<sys/stat.h>
 	"nxweb/nxweb.h"
+
+1323005990 /home/ys/dev/cb/nxweb/nxweb/config.h
 
