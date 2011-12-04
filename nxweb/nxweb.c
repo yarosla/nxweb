@@ -181,9 +181,9 @@ static void close_connection(struct ev_loop *loop, nxweb_connection* conn) {
 
   int connections_left=__sync_sub_and_fetch(&num_connections, 1);
   assert(connections_left>=0);
-  if (connections_left==0) { // for debug only
-    nxweb_log_error("all connections closed");
-  }
+//  if (connections_left==0) { // for debug only
+//    nxweb_log_error("all connections closed");
+//  }
 }
 
 static void conn_request_receive_complete(struct ev_loop *loop, nxweb_connection* conn, int unfinished) {
@@ -341,6 +341,9 @@ static void socket_write_cb(struct ev_loop *loop, struct ev_io *w, int revents) 
             close_connection(loop, conn);
           }
           return;
+        }
+        if (bytes_sent==0) {
+          nxweb_log_error("write() returned 0");
         }
         req->write_pos+=bytes_sent;
         if (bytes_sent>0) {
@@ -692,7 +695,7 @@ static void net_thread_accept_cb(struct ev_loop *loop, struct ev_async *w, int r
       if (!conn) {
         nxweb_log_error("can't create new connection (maybe out of memory)");
         _nxweb_close_bad_socket(a.client_fd);
-        return;
+        continue;
       }
     }
     else {
@@ -710,7 +713,7 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
     if (_nxweb_set_non_block(client_fd) || _nxweb_setup_client_socket(client_fd)) {
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("failed to setup client socket");
-      return;
+      continue;
     }
 
     nxweb_net_thread* tdata=&net_threads[ev_next_thread_idx];
@@ -721,7 +724,7 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
       pthread_mutex_unlock(&accept_queue_mux);
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("accept queue full; dropping connection");
-      return;
+      continue;
     }
     accept_msg->client_fd=client_fd;
     memcpy(&accept_msg->sin_addr, &client_addr.sin_addr, sizeof(accept_msg->sin_addr));

@@ -125,10 +125,11 @@ void _nxweb_batch_write_end(int fd) {
 }
 
 void _nxweb_close_good_socket(int fd) {
-  struct linger linger;
-  linger.l_onoff=1;
-  linger.l_linger=10; // timeout for completing writes
-  setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
+//  struct linger linger;
+//  linger.l_onoff=1;
+//  linger.l_linger=10; // timeout for completing writes
+//  setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
+//  shutdown(fd, SHUT_RDWR);
   close(fd);
 }
 

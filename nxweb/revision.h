@@ -1,1 +1,1 @@
-#define REVISION "v1.0.6:r7:cc63aa34cc14:2011-12-01"
+#define REVISION "v1.0.7:r8:369a5b4ffd2b:2011-12-04"
