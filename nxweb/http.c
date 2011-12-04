@@ -30,6 +30,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <assert.h>
 #include <string.h>
 #include <printf.h>
@@ -738,6 +739,8 @@ static int print_url_escaped(FILE *stream, const struct printf_info *info, const
   return len;
 }
 
+#ifdef USE_REGISTER_PRINTF_SPECIFIER
+
 static int print_string_arginfo(const struct printf_info *info, size_t n, int *argtypes, int *size) {
   // We always take exactly one argument and this is a pointer to null-terminated string
   if (n>0) argtypes[0]=PA_STRING;
@@ -748,6 +751,21 @@ void _nxweb_register_printf_extensions() {
   register_printf_specifier('H', print_html_escaped, print_string_arginfo);
   register_printf_specifier('U', print_url_escaped, print_string_arginfo);
 }
+
+#else
+
+static int print_string_arginfo(const struct printf_info *info, size_t n, int *argtypes) {
+  // We always take exactly one argument and this is a pointer to null-terminated string
+  if (n>0) argtypes[0]=PA_STRING;
+  return 1;
+}
+
+void _nxweb_register_printf_extensions() {
+  register_printf_function('H', print_html_escaped, print_string_arginfo);
+  register_printf_function('U', print_url_escaped, print_string_arginfo);
+}
+
+#endif
 
 const unsigned char PIXEL_GIF[43] = {
   0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00,

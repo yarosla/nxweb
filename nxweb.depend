@@ -13,17 +13,18 @@
 	<sys/stat.h>
 	"nxweb/nxweb.h"
 
-1322696838 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+1322862510 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
 	<obstack.h>
 	<ev.h>
 	"revision.h"
 
-1322689757 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1322699919 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
-1322683835 source:/home/ys/dev/cb/nxweb/nxweb/http.c
+1322927216 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
 	<stdlib.h>
 	<stdio.h>
+	<stdarg.h>
 	<assert.h>
 	<string.h>
 	<printf.h>
@@ -48,7 +49,7 @@
 	<sys/types.h>
 	"nxweb_internal.h"
 
-1322614684 source:/home/ys/dev/cb/nxweb/nxweb/misc.c
+1322915991 source:/home/ys/dev/cb/nxweb/nxweb/misc.c
 	<stdlib.h>
 	<stdio.h>
 	<unistd.h>
@@ -68,7 +69,7 @@
 	<assert.h>
 	"nx_queue.h"
 
-1322682905 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
+1322915954 source:/home/ys/dev/cb/nxweb/nxweb/nxweb.c
 	<stddef.h>
 	<stdio.h>
 	<unistd.h>
@@ -96,7 +97,7 @@
 1322675016 source:/home/ys/dev/cb/nxweb/nxweb/mime.c
 	"nxweb.h"
 
-1322695289 source:/home/ys/dev/cb/nxweb/sendfile.c
+1322947601 source:/home/ys/dev/cb/nxweb/sendfile.c
 	<stdio.h>
 	<unistd.h>
 	<fcntl.h>

@@ -114,7 +114,7 @@ static nxweb_result send_file(nxweb_uri_handler_phase phase, nxweb_request *req)
 }
 
 static const nxweb_uri_handler sendfile_module_uri_handlers[] = {
-  {"", send_file, NXWEB_INWORKER}, // wildcard uri
+  {"", send_file, NXWEB_INPROCESS}, // wildcard uri
   {0, 0, 0}
 };
 

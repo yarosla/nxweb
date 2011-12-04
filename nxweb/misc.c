@@ -97,13 +97,10 @@ int _nxweb_setup_listening_socket(int fd) {
 
 int _nxweb_setup_client_socket(int fd) {
 
-//  int rcvbuf, sndbuf;
-//  socklen_t sz;
-//  sz=sizeof(int);
-//  if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void*)&rcvbuf, &sz)) return -1;
-//  sz=sizeof(int);
-//  if (getsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void*)&sndbuf, &sz)) return -1;
-//
+//  int rcvbuf=4096, sndbuf=131072;
+//  if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf))) return -1;
+//  if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf))) return -1;
+
 //  nxweb_log_error("rcvbuf=%d, sndbuf=%d", rcvbuf, sndbuf);
 
 //  struct linger linger;
@@ -111,7 +108,7 @@ int _nxweb_setup_client_socket(int fd) {
 //  linger.l_linger=10; // timeout for completing writes
 //  if (setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger))) return -1;
 
-  // use either TCP_NODELAY or TCP_CORK, not both
+  // can use TCP_NODELAY or TCP_CORK, or both
   int nodelay=1;
   if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay))) return -1;
   return 0;
@@ -132,7 +129,6 @@ void _nxweb_close_good_socket(int fd) {
   linger.l_onoff=1;
   linger.l_linger=10; // timeout for completing writes
   setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
-  //if (setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger))) return;
   close(fd);
 }
 
@@ -141,7 +137,6 @@ void _nxweb_close_bad_socket(int fd) {
   linger.l_onoff=1;
   linger.l_linger=0; // timeout for completing writes
   setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
-  //if (setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger))) return;
   close(fd);
 }
 
@@ -166,7 +161,7 @@ int _nxweb_bind_socket(int port) {
     nxweb_log_error("bind failed");
     return -1;
   }
-  if (listen(listen_fd, 1024)<0) {
+  if (listen(listen_fd, 8192)<0) {
     nxweb_log_error("listen failed");
     return -1;
   }

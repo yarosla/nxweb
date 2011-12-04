@@ -9,8 +9,8 @@ BASE_NAME=nxweb
 
 LIBS=-lev -lpthread
 
-CFLAGS_RELEASE=-pthread -Wno-strict-aliasing -O2 -s
-CFLAGS_DEBUG=-pthread -Wno-strict-aliasing -g
+CFLAGS_RELEASE=-pthread -Wno-strict-aliasing -Wno-deprecated-declarations -O2 -s
+CFLAGS_DEBUG=-pthread -Wno-strict-aliasing -Wno-deprecated-declarations -g
 
 LDFLAGS_RELEASE=$(LIBS)
 LDFLAGS_DEBUG=$(LIBS)

@@ -105,16 +105,48 @@ static void data_ready_cb(struct ev_loop *loop, struct ev_async *w, int revents)
 static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn);
 
 
+//static void* nxweb_malloc(size_t size) {
+//  nxweb_log_error("nxweb_malloc(%d)", (int)size);
+//  return malloc(size);
+//}
+//
+//static void nxweb_free(void* ptr) {
+//  nxweb_log_error("nxweb_free()");
+//  free(ptr);
+//}
+
+static nxweb_request* new_request(nxweb_connection* conn) {
+  nxweb_request* req;
+  //if (!conn->data.chunk) obstack_specify_allocation(&conn->data, DEFAULT_CHUNK_SIZE, 0, nxweb_malloc, nxweb_free);
+  if (!conn->data.chunk) obstack_specify_allocation(&conn->data, DEFAULT_CHUNK_SIZE, 0, malloc, free);
+  req=obstack_alloc(&conn->data, sizeof(nxweb_request));
+  if (!req) return 0;
+  memset(req, 0, sizeof(nxweb_request));
+  req->conn=conn;
+  return req;
+}
+
 static nxweb_connection* new_connection(struct ev_loop *loop, int client_fd, struct in_addr* sin_addr) {
   nxweb_connection* conn=(nxweb_connection*)calloc(1, sizeof(nxweb_connection));
   if (!conn) return 0;
+
+  conn->request=new_request(conn);
+  if (!conn->request) {
+    free(conn);
+    nxweb_log_error("can't create initial request (maybe out of memory)");
+    return 0;
+  }
 
   conn->fd=client_fd;
   inet_ntop(AF_INET, sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
   conn->loop=loop;
 
+  conn->cstate=NXWEB_CS_WAITING_FOR_REQUEST;
+
   ev_io_init(&conn->watch_socket_read, socket_read_cb, client_fd, EV_READ);
   ev_io_start(loop, &conn->watch_socket_read);
+  // attempt reading immediately
+  ev_feed_event(loop, &conn->watch_socket_read, EV_READ);
 
   ev_timer_init(&conn->watch_keep_alive_time, keep_alive_timeout_cb, KEEP_ALIVE_TIMEOUT, KEEP_ALIVE_TIMEOUT);
   ev_timer_start(loop, &conn->watch_keep_alive_time);
@@ -139,7 +171,7 @@ static void close_connection(struct ev_loop *loop, nxweb_connection* conn) {
   if (conn->cstate==NXWEB_CS_TIMEOUT || conn->cstate==NXWEB_CS_ERROR) _nxweb_close_bad_socket(conn->fd);
   else _nxweb_close_good_socket(conn->fd);
 
-  if (conn->request->sendfile_fd) close(conn->request->sendfile_fd);
+  if (conn->request && conn->request->sendfile_fd) close(conn->request->sendfile_fd);
 
   obstack_free(&conn->data, 0);
   // check if obstack has been initialized; free it if it was
@@ -154,7 +186,7 @@ static void close_connection(struct ev_loop *loop, nxweb_connection* conn) {
   }
 }
 
-static void conn_request_received(struct ev_loop *loop, nxweb_connection* conn, int unfinished) {
+static void conn_request_receive_complete(struct ev_loop *loop, nxweb_connection* conn, int unfinished) {
   nxweb_request* req=conn->request;
 
   // finish receiving request headers or content in case of error or timeout
@@ -169,36 +201,23 @@ static void conn_request_received(struct ev_loop *loop, nxweb_connection* conn, 
 static void rearm_connection(struct ev_loop *loop, nxweb_connection* conn) {
   if (conn->request->sendfile_fd) close(conn->request->sendfile_fd);
   obstack_free(&conn->data, conn->request);
-  conn->request=0;
+  conn->request=new_request(conn);
+  if (!conn->request) {
+    nxweb_log_error("can't create new request (maybe out of memory)");
+    conn->cstate=NXWEB_CS_ERROR;
+    close_connection(loop, conn);
+    return;
+  }
 
-  conn->cstate=NXWEB_CS_WAITING_REQUEST;
+  conn->request_count++;
+  conn->cstate=NXWEB_CS_WAITING_FOR_REQUEST;
+
   ev_io_start(loop, &conn->watch_socket_read);
+  // attempt reading immediately
+  ev_feed_event(loop, &conn->watch_socket_read, EV_READ);
+
   ev_timer_init(&conn->watch_keep_alive_time, keep_alive_timeout_cb, KEEP_ALIVE_TIMEOUT, KEEP_ALIVE_TIMEOUT);
   ev_timer_start(loop, &conn->watch_keep_alive_time);
-}
-
-//static void* nxweb_malloc(size_t size) {
-//  nxweb_log_error("nxweb_malloc(%d)", (int)size);
-//  return malloc(size);
-//}
-//
-//static void nxweb_free(void* ptr) {
-//  nxweb_log_error("nxweb_free()");
-//  free(ptr);
-//}
-
-static nxweb_request* new_request(struct ev_loop *loop, nxweb_connection* conn) {
-  //if (!conn->data.chunk) obstack_specify_allocation(&conn->data, DEFAULT_CHUNK_SIZE, 0, nxweb_malloc, nxweb_free);
-  if (!conn->data.chunk) obstack_specify_allocation(&conn->data, DEFAULT_CHUNK_SIZE, 0, malloc, free);
-  conn->request=obstack_alloc(&conn->data, sizeof(nxweb_request));
-  memset(conn->request, 0, sizeof(nxweb_request));
-  conn->request->conn=conn;
-
-  ev_timer_stop(loop, &conn->watch_keep_alive_time);
-  ev_timer_init(&conn->watch_read_request_time, read_request_timeout_cb, READ_REQUEST_TIMEOUT, READ_REQUEST_TIMEOUT);
-  ev_timer_start(loop, &conn->watch_read_request_time);
-
-  return conn->request;
 }
 
 static void start_sending_response(struct ev_loop *loop, nxweb_connection *conn) {
@@ -218,6 +237,8 @@ static void start_sending_response(struct ev_loop *loop, nxweb_connection *conn)
     ev_timer_init(&conn->watch_write_response_time, write_response_timeout_cb, WRITE_RESPONSE_TIMEOUT, WRITE_RESPONSE_TIMEOUT);
     ev_timer_start(loop, &conn->watch_write_response_time);
     ev_io_start(loop, &conn->watch_socket_write);
+    // attempt writing immediately
+    ev_feed_event(loop, &conn->watch_socket_write, EV_WRITE);
   }
 }
 
@@ -232,7 +253,7 @@ static void read_request_timeout_cb(struct ev_loop *loop, struct ev_timer *w, in
   nxweb_connection *conn=((nxweb_connection*)(((char*)w)-offsetof(nxweb_connection, watch_read_request_time)));
 
   nxweb_log_error("connection [%s] request timeout", conn->remote_addr);
-  conn_request_received(loop, conn, 1);
+  conn_request_receive_complete(loop, conn, 1);
   conn->keep_alive=0;
   nxweb_send_http_error(conn->request, 408, "Request Timeout");
   start_sending_response(loop, conn);
@@ -241,7 +262,7 @@ static void read_request_timeout_cb(struct ev_loop *loop, struct ev_timer *w, in
 static void keep_alive_timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
   nxweb_connection *conn=((nxweb_connection*)(((char*)w)-offsetof(nxweb_connection, watch_keep_alive_time)));
   conn->cstate=NXWEB_CS_TIMEOUT;
-  nxweb_log_error("keep-alive connection [%s] closed", conn->remote_addr);
+  nxweb_log_error("keep-alive connection [%s] closed; request_count=%d", conn->remote_addr, conn->request_count);
   close_connection(loop, conn);
 }
 
@@ -310,6 +331,17 @@ static void socket_write_cb(struct ev_loop *loop, struct ev_io *w, int revents) 
       bytes=next_write_bytes(req, &bytes_avail);
       if (bytes_avail) {
         bytes_sent=write(conn->fd, bytes, bytes_avail);
+        if (bytes_sent<0) {
+          _nxweb_batch_write_end(conn->fd);
+          if (errno!=EAGAIN) {
+            char buf[1024];
+            strerror_r(errno, buf, sizeof(buf));
+            nxweb_log_error("write() returned %d: %d %s", bytes_sent, errno, buf);
+            conn->cstate=NXWEB_CS_ERROR;
+            close_connection(loop, conn);
+          }
+          return;
+        }
         req->write_pos+=bytes_sent;
         if (bytes_sent>0) {
           ev_timer_again(loop, &conn->watch_write_response_time);
@@ -319,6 +351,15 @@ static void socket_write_cb(struct ev_loop *loop, struct ev_io *w, int revents) 
         bytes_avail=req->sendfile_length - req->sendfile_offset;
         bytes_sent=sendfile(conn->fd, req->sendfile_fd, &req->sendfile_offset, bytes_avail);
         //nxweb_log_error("sendfile: %d bytes sent", bytes_sent); // debug only
+        if (bytes_sent<0) {
+          _nxweb_batch_write_end(conn->fd);
+          if (errno!=EAGAIN) {
+            char buf[1024];
+            strerror_r(errno, buf, sizeof(buf));
+            nxweb_log_error("write() returned %d: %d %s", bytes_sent, errno, buf);
+          }
+          return;
+        }
       }
       else { // all sent
         if (conn->sending_100_continue) {
@@ -343,7 +384,6 @@ static void socket_write_cb(struct ev_loop *loop, struct ev_io *w, int revents) 
           rearm_connection(loop, conn);
         }
         else {
-          _nxweb_batch_write_end(conn->fd);
           conn->cstate=NXWEB_CS_CLOSING;
           //nxweb_log_error("connection closed OK");
           close_connection(loop, conn);
@@ -451,7 +491,7 @@ static int next_room_for_read(struct ev_loop *loop, nxweb_connection* conn, void
       // do not expand; initial buffer should be enough
       // request headers too long
       nxweb_log_error("connection [%s] rejected (request headers too long)", conn->remote_addr);
-      conn_request_received(loop, conn, 1);
+      conn_request_receive_complete(loop, conn, 1);
       conn->cstate=NXWEB_CS_ERROR;
       conn->keep_alive=0;
       nxweb_send_http_error(req, 400, "Bad Request");
@@ -465,7 +505,7 @@ static int next_room_for_read(struct ev_loop *loop, nxweb_connection* conn, void
       if (add_size<=0) {
         // Too long
         obstack_free(ob, obstack_finish(ob));
-        conn_request_received(loop, conn, 0);
+        conn_request_receive_complete(loop, conn, 0);
         conn->cstate=NXWEB_CS_ERROR;
         conn->keep_alive=0;
         nxweb_send_http_error(req, 413, "Request Entity Too Large");
@@ -483,15 +523,19 @@ static int next_room_for_read(struct ev_loop *loop, nxweb_connection* conn, void
   return 0;
 }
 
-static int do_read(struct ev_loop *loop, nxweb_connection* conn, void* room, int size) {
+static int read_bytes_from_socket(struct ev_loop *loop, nxweb_connection* conn, void* room, int size) {
 
   int bytes_received=read(conn->fd, room, size);
 
   if (bytes_received<0) { // EAGAIN or ...?
-    char buf[1024];
-    strerror_r(errno, buf, sizeof(buf));
-    nxweb_log_error("read() returned %d: %d %s", bytes_received, errno, buf);
-    return -1; // EAGAIN or ...?
+    if (errno!=EAGAIN) {
+      char buf[1024];
+      strerror_r(errno, buf, sizeof(buf));
+      nxweb_log_error("read() returned %d: %d %s", bytes_received, errno, buf);
+      conn->cstate=NXWEB_CS_ERROR;
+      close_connection(loop, conn);
+    }
+    return -1;
   }
 
   if (!bytes_received) { // connection closed by client
@@ -524,116 +568,118 @@ static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents) {
   nxweb_connection *conn=((nxweb_connection*)(((char*)w)-offsetof(nxweb_connection, watch_socket_read)));
   nxweb_request* req=conn->request;
   obstack* ob=&conn->data;
+  void* room;
+  int room_size, bytes_received;
 
-  if (revents & EV_READ) {
-    if (!req) { // just started receiving new request
-      req=new_request(loop, conn);
+  do {
+    if (next_room_for_read(loop, conn, &room, &room_size)) return;
+    bytes_received=read_bytes_from_socket(loop, conn, room, room_size);
+    if (bytes_received<=0) return;
+    obstack_blank_fast(ob, bytes_received);
+
+    if (conn->cstate==NXWEB_CS_WAITING_FOR_REQUEST) {
+      // start receiving request
+      ev_timer_stop(loop, &conn->watch_keep_alive_time);
+      ev_timer_init(&conn->watch_read_request_time, read_request_timeout_cb, READ_REQUEST_TIMEOUT, READ_REQUEST_TIMEOUT);
+      ev_timer_start(loop, &conn->watch_read_request_time);
       conn->cstate=NXWEB_CS_RECEIVING_HEADERS;
     }
 
-    void* room;
-    int room_size, bytes_received;
+    if (conn->cstate==NXWEB_CS_RECEIVING_HEADERS) {
+      void* in_headers=obstack_base(ob);
+      int in_headers_size=obstack_object_size(ob);
+      char* end_of_request_headers=_nxweb_find_end_of_http_headers(in_headers, in_headers_size);
 
-    do {
-      if (next_room_for_read(loop, conn, &room, &room_size)) return;
-      bytes_received=do_read(loop, conn, room, room_size);
-      if (bytes_received<=0) return;
-      obstack_blank_fast(ob, bytes_received);
+      if (!end_of_request_headers) {
+        nxweb_log_error("partial headers receive (all ok)"); // rare case; log for debug
+        return;
+      }
 
-      if (conn->cstate==NXWEB_CS_RECEIVING_HEADERS) {
-        void* in_headers=obstack_base(ob);
-        int in_headers_size=obstack_object_size(ob);
-        char* end_of_request_headers=_nxweb_find_end_of_http_headers(in_headers, in_headers_size);
+      // null-terminate and finish
+      obstack_1grow(ob, 0);
+      req->in_headers=obstack_finish(ob);
 
-        if (!end_of_request_headers) {
-          nxweb_log_error("partial headers receive (all ok)"); // rare case; log for debug
-          return;
-        }
+      // parse request
+      if (_nxweb_parse_http_request(req, req->in_headers==in_headers? end_of_request_headers:0, in_headers_size)) {
+        conn_request_receive_complete(loop, conn, 1);
+        conn->cstate=NXWEB_CS_ERROR;
+        conn->keep_alive=0;
+        nxweb_send_http_error(req, 400, "Bad Request");
+        // switch to sending response
+        start_sending_response(loop, conn);
+        return;
+      }
 
-        // null-terminate and finish
+      if (is_request_body_complete(req, req->request_body)) {
+        // receiving request complete
+        if (req->chunked_request) _nxweb_decode_chunked_request(req);
+        conn_request_receive_complete(loop, conn, 0);
+        conn->cstate=NXWEB_CS_HANDLING;
+        dispatch_request(loop, conn);
+        return;
+      }
+
+      // so not all content received with headers
+
+      if (req->content_length > REQUEST_CONTENT_SIZE_LIMIT) {
+        conn_request_receive_complete(loop, conn, 1);
+        conn->cstate=NXWEB_CS_ERROR;
+        conn->keep_alive=0;
+        nxweb_send_http_error(req, 413, "Request Entity Too Large");
+        // switch to sending response
+        start_sending_response(loop, conn);
+        return;
+      }
+
+      if (req->content_length>0) {
+        // body size specified; pre-allocate buffer for the content
+        obstack_make_room(ob, req->content_length+1); // plus null-terminator char
+      }
+
+      if (req->content_received>0) {
+        // copy what we have already received with headers
+        void* new_body_ptr=obstack_next_free(ob);
+        obstack_grow(ob, req->request_body, req->content_received);
+        req->request_body=new_body_ptr;
+      }
+
+      // continue receiving request body
+      conn->cstate=NXWEB_CS_RECEIVING_BODY;
+      ev_timer_again(loop, &conn->watch_read_request_time);
+
+      if (req->expect_100_continue && !req->content_received) {
+        // send 100-continue
+        conn->sending_100_continue=1;
+        req->write_pos=0;
+        ev_timer_init(&conn->watch_write_response_time, write_response_timeout_cb, WRITE_RESPONSE_TIMEOUT, WRITE_RESPONSE_TIMEOUT);
+        ev_timer_start(loop, &conn->watch_write_response_time);
+        ev_io_start(loop, &conn->watch_socket_write);
+        // attempt writing immediately
+        ev_feed_event(loop, &conn->watch_socket_write, EV_WRITE);
+        // do not stop reading
+      }
+    }
+    else if (conn->cstate==NXWEB_CS_RECEIVING_BODY) {
+      req->content_received+=bytes_received;
+      if (is_request_body_complete(req, obstack_base(ob))) {
+        // receiving request complete
+        // append null-terminator and close input buffer
         obstack_1grow(ob, 0);
-        req->in_headers=obstack_finish(ob);
-
-        // parse request
-        if (_nxweb_parse_http_request(req, req->in_headers==in_headers? end_of_request_headers:0, in_headers_size)) {
-          conn_request_received(loop, conn, 1);
-          conn->cstate=NXWEB_CS_ERROR;
-          conn->keep_alive=0;
-          nxweb_send_http_error(req, 400, "Bad Request");
-          // switch to sending response
-          start_sending_response(loop, conn);
-          return;
-        }
-
-        if (is_request_body_complete(req, req->request_body)) {
-          // receiving request complete
-          if (req->chunked_request) _nxweb_decode_chunked_request(req);
-          conn_request_received(loop, conn, 0);
-          conn->cstate=NXWEB_CS_HANDLING;
-          dispatch_request(loop, conn);
-          return;
-        }
-
-        // so not all content received with headers
-
-        if (req->content_length > REQUEST_CONTENT_SIZE_LIMIT) {
-          conn_request_received(loop, conn, 1);
-          conn->cstate=NXWEB_CS_ERROR;
-          conn->keep_alive=0;
-          nxweb_send_http_error(req, 413, "Request Entity Too Large");
-          // switch to sending response
-          start_sending_response(loop, conn);
-          return;
-        }
-
-        if (req->content_length>0) {
-          // body size specified; pre-allocate buffer for the content
-          obstack_make_room(ob, req->content_length+1); // plus null-terminator char
-        }
-
-        if (req->content_received>0) {
-          // copy what we have already received with headers
-          void* new_body_ptr=obstack_next_free(ob);
-          obstack_grow(ob, req->request_body, req->content_received);
-          req->request_body=new_body_ptr;
-        }
-
-        // continue receiving request body
-        conn->cstate=NXWEB_CS_RECEIVING_BODY;
-        ev_timer_again(loop, &conn->watch_read_request_time);
-
-        if (req->expect_100_continue && !req->content_received) {
-          // send 100-continue
-          conn->sending_100_continue=1;
-          req->write_pos=0;
-          ev_timer_init(&conn->watch_write_response_time, write_response_timeout_cb, WRITE_RESPONSE_TIMEOUT, WRITE_RESPONSE_TIMEOUT);
-          ev_timer_start(loop, &conn->watch_write_response_time);
-          ev_io_start(loop, &conn->watch_socket_write);
-          // do not stop reading
-        }
+        req->request_body=obstack_finish(ob);
+        if (req->chunked_request) _nxweb_decode_chunked_request(req);
+        conn_request_receive_complete(loop, conn, 0);
+        conn->cstate=NXWEB_CS_HANDLING;
+        dispatch_request(loop, conn);
+        return;
       }
-      else if (conn->cstate==NXWEB_CS_RECEIVING_BODY) {
-        req->content_received+=bytes_received;
-        if (is_request_body_complete(req, obstack_base(ob))) {
-          // receiving request complete
-          // append null-terminator and close input buffer
-          obstack_1grow(ob, 0);
-          req->request_body=obstack_finish(ob);
-          if (req->chunked_request) _nxweb_decode_chunked_request(req);
-          conn_request_received(loop, conn, 0);
-          conn->cstate=NXWEB_CS_HANDLING;
-          dispatch_request(loop, conn);
-          return;
-        }
-        nxweb_log_error("partial receive request body (all ok)"); // for debug only
-      }
-    } while (bytes_received==room_size);
-  }
+      nxweb_log_error("partial receive request body (all ok)"); // for debug only
+    }
+  } while (bytes_received==room_size);
 }
-
 
 static void net_thread_accept_cb(struct ev_loop *loop, struct ev_async *w, int revents) {
   nxweb_accept a, *pa;
+  nxweb_connection *conn;
 
   while (1) {
     pthread_mutex_lock(&accept_queue_mux);
@@ -642,9 +688,11 @@ static void net_thread_accept_cb(struct ev_loop *loop, struct ev_async *w, int r
     pthread_mutex_unlock(&accept_queue_mux);
 
     if (pa) {
-      if (!new_connection(loop, a.client_fd, &a.sin_addr)) {
-        nxweb_log_error("out of memory for connection");
+      conn=new_connection(loop, a.client_fd, &a.sin_addr);
+      if (!conn) {
+        nxweb_log_error("can't create new connection (maybe out of memory)");
         _nxweb_close_bad_socket(a.client_fd);
+        return;
       }
     }
     else {
@@ -661,7 +709,7 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
   while ((client_fd=accept(w->fd, (struct sockaddr *)&client_addr, &client_len))!=-1) {
     if (_nxweb_set_non_block(client_fd) || _nxweb_setup_client_socket(client_fd)) {
       _nxweb_close_bad_socket(client_fd);
-      nxweb_log_error("failed to set client socket to non-blocking");
+      nxweb_log_error("failed to setup client socket");
       return;
     }
 
@@ -670,8 +718,10 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
     pthread_mutex_lock(&accept_queue_mux);
     accept_msg=nxweb_accept_queue_push_alloc(&accept_queue);
     if (!accept_msg) {
+      pthread_mutex_unlock(&accept_queue_mux);
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("accept queue full; dropping connection");
+      return;
     }
     accept_msg->client_fd=client_fd;
     memcpy(&accept_msg->sin_addr, &client_addr.sin_addr, sizeof(accept_msg->sin_addr));
@@ -680,6 +730,11 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
     ev_async_send(tdata->loop, &tdata->watch_accept);
 
     ev_next_thread_idx=(ev_next_thread_idx+1)%N_NET_THREADS; // round-robin
+  }
+  if (errno!=EAGAIN) {
+    char buf[1024];
+    strerror_r(errno, buf, sizeof(buf));
+    nxweb_log_error("accept() returned -1: errno=%d %s", errno, buf);
   }
 }
 

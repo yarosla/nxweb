@@ -66,7 +66,7 @@ enum nxweb_conn_state {
   NXWEB_CS_CLOSING,
   NXWEB_CS_TIMEOUT,
   NXWEB_CS_ERROR,
-  NXWEB_CS_WAITING_REQUEST,
+  NXWEB_CS_WAITING_FOR_REQUEST,
   NXWEB_CS_RECEIVING_HEADERS,
   NXWEB_CS_RECEIVING_BODY,
   NXWEB_CS_HANDLING,
@@ -121,6 +121,7 @@ typedef struct nxweb_connection {
   struct obstack data; // conn data obstack; can be used by handlers unless request is (adding_response_headers || writing_response_headers || writing_response_body)
   struct obstack user_data; // user data obstack; can be used by handlers; user must init it before use; we call free if it has been initialized
 
+  int request_count; // number of requests served by this connection
   unsigned keep_alive:1;
   unsigned sending_100_continue:1;
   enum nxweb_conn_state cstate;
