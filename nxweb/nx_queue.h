@@ -35,7 +35,7 @@ typedef struct nx_queue {
 } nx_queue;
 
 nx_queue* nx_queue_new(int item_size, int size);
-nx_queue* nx_queue_init(nx_queue* q, int item_size, int size);
+void nx_queue_init(nx_queue* q, int item_size, int size);
 
 static inline int nx_queue_is_empty(const nx_queue* q) {
   return (q->head==q->tail);
@@ -50,9 +50,8 @@ static inline int nx_queue_length(const nx_queue* q) {
   return nitems>=0? nitems : nitems+q->size;
 }
 
-int nx_queue_push(nx_queue* q, const void* item);
-void* nx_queue_push_alloc(nx_queue* q);
-void* nx_queue_pop(nx_queue* q);
+int nx_queue_push(nx_queue* q, const void* item); // returns 0 = success
+int nx_queue_pop(nx_queue* q, void* item); // returns 0 = success
 
 
 #endif // NX_QUEUE_H_INCLUDED

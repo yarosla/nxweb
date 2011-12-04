@@ -62,12 +62,12 @@ static inline void nxweb_accept_queue_init(nxweb_accept_queue* jq) {
   nx_queue_init(&jq->q, sizeof(nxweb_accept), NXWEB_ACCEPT_QUEUE_SIZE);
 }
 
-static inline nxweb_accept* nxweb_accept_queue_push_alloc(nxweb_accept_queue* jq) {
-  return nx_queue_push_alloc(&jq->q);
+static inline int nxweb_accept_queue_push(nxweb_accept_queue* jq, const nxweb_accept* accpt) {
+  return nx_queue_push(&jq->q, accpt);
 }
 
-static inline nxweb_accept* nxweb_accept_queue_pop(nxweb_accept_queue* jq) {
-  return nx_queue_pop(&jq->q);
+static inline int nxweb_accept_queue_pop(nxweb_accept_queue* jq, nxweb_accept* accpt) {
+  return nx_queue_pop(&jq->q, accpt);
 }
 
 static inline int nxweb_accept_queue_is_empty(nxweb_accept_queue* jq) {
@@ -466,10 +466,9 @@ static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn) {
       // go async
       ev_async_start(loop, &conn->watch_async_data_ready);
       // hand over to worker thread
+      nxweb_job job={conn};
       pthread_mutex_lock(&job_queue_mux);
-      nxweb_job* job=nxweb_job_queue_push_alloc(&job_queue);
-      if (job) {
-        job->conn=conn;
+      if (!nxweb_job_queue_push(&job_queue, &job)) {
         pthread_cond_signal(&job_queue_cond);
         pthread_mutex_unlock(&job_queue_mux);
       }
@@ -681,16 +680,16 @@ static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents) {
 }
 
 static void net_thread_accept_cb(struct ev_loop *loop, struct ev_async *w, int revents) {
-  nxweb_accept a, *pa;
+  nxweb_accept a;
   nxweb_connection *conn;
+  int result;
 
   while (1) {
     pthread_mutex_lock(&accept_queue_mux);
-    pa=nxweb_accept_queue_pop(&accept_queue);
-    if (pa) memcpy(&a, pa, sizeof(a));
+    result=nxweb_accept_queue_pop(&accept_queue, &a);
     pthread_mutex_unlock(&accept_queue_mux);
 
-    if (pa) {
+    if (!result) {
       conn=new_connection(loop, a.client_fd, &a.sin_addr);
       if (!conn) {
         nxweb_log_error("can't create new connection (maybe out of memory)");
@@ -708,26 +707,25 @@ static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
   int client_fd;
   struct sockaddr_in client_addr;
   socklen_t client_len=sizeof(client_addr);
-  nxweb_accept* accept_msg;
+  nxweb_accept accept_msg;
   while ((client_fd=accept(w->fd, (struct sockaddr *)&client_addr, &client_len))!=-1) {
     if (_nxweb_set_non_block(client_fd) || _nxweb_setup_client_socket(client_fd)) {
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("failed to setup client socket");
       continue;
     }
+    accept_msg.client_fd=client_fd;
+    memcpy(&accept_msg.sin_addr, &client_addr.sin_addr, sizeof(accept_msg.sin_addr));
 
     nxweb_net_thread* tdata=&net_threads[ev_next_thread_idx];
 
     pthread_mutex_lock(&accept_queue_mux);
-    accept_msg=nxweb_accept_queue_push_alloc(&accept_queue);
-    if (!accept_msg) {
+    if (nxweb_accept_queue_push(&accept_queue, &accept_msg)) {
       pthread_mutex_unlock(&accept_queue_mux);
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("accept queue full; dropping connection");
       continue;
     }
-    accept_msg->client_fd=client_fd;
-    memcpy(&accept_msg->sin_addr, &client_addr.sin_addr, sizeof(accept_msg->sin_addr));
     pthread_mutex_unlock(&accept_queue_mux);
 
     ev_async_send(tdata->loop, &tdata->watch_accept);
@@ -749,17 +747,18 @@ static void net_thread_shutdown_cb(struct ev_loop *loop, struct ev_async *w, int
 }
 
 static void* worker_thread_main(void* pdata) {
-  nxweb_job* job;
+  nxweb_job job;
   nxweb_connection* conn;
+  int result;
 
   while (!shutdown_in_progress) {
     pthread_mutex_lock(&job_queue_mux);
-    while (!(job=nxweb_job_queue_pop(&job_queue)) && !shutdown_in_progress) {
+    while ((result=nxweb_job_queue_pop(&job_queue, &job)) && !shutdown_in_progress) {
       pthread_cond_wait(&job_queue_cond, &job_queue_mux);
     }
-    conn=job? job->conn : 0;
     pthread_mutex_unlock(&job_queue_mux);
-    if (conn) {
+    if (!result) {
+      conn=job.conn;
       conn->request->handler_result=conn->request->handler->callback(NXWEB_PH_CONTENT, conn->request);
       ev_async_send(conn->loop, &conn->watch_async_data_ready);
     }

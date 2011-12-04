@@ -50,12 +50,12 @@ static inline void nxweb_job_queue_init(nxweb_job_queue* jq) {
   nx_queue_init(&jq->q, sizeof(nxweb_job), NXWEB_JOBS_QUEUE_SIZE);
 }
 
-static inline nxweb_job* nxweb_job_queue_push_alloc(nxweb_job_queue* jq) {
-  return nx_queue_push_alloc(&jq->q);
+static inline int nxweb_job_queue_push(nxweb_job_queue* jq, const nxweb_job* job) {
+  return nx_queue_push(&jq->q, job);
 }
 
-static inline nxweb_job* nxweb_job_queue_pop(nxweb_job_queue* jq) {
-  return nx_queue_pop(&jq->q);
+static inline int nxweb_job_queue_pop(nxweb_job_queue* jq, nxweb_job* job) {
+  return nx_queue_pop(&jq->q, job);
 }
 
 static inline int nxweb_job_queue_is_empty(nxweb_job_queue* jq) {

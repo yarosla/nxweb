@@ -42,32 +42,26 @@ nx_queue* nx_queue_new(int item_size, int queue_max_size) {
   return q;
 }
 
-nx_queue* nx_queue_init(nx_queue* q, int item_size, int queue_max_size) {
+void nx_queue_init(nx_queue* q, int item_size, int queue_max_size) {
   assert(item_size>0);
   assert(queue_max_size>2);
   q->item_size=item_size;
   q->size=queue_max_size;
   q->head=q->tail=0;
-  return q;
 }
 
-void* nx_queue_pop(nx_queue* q) {
-  if (nx_queue_is_empty(q)) return 0; // empty
-  void* item=q->items+q->head*q->item_size;
+int nx_queue_pop(nx_queue* q, void* item) {
+  if (nx_queue_is_empty(q)) return -1; // empty
+  memcpy(item, q->items+q->head*q->item_size, q->item_size);
   q->head=(q->head+1)%q->size;
-  return item;
-}
-
-int nx_queue_push(nx_queue* q, const void* item) {
-  void* pitem=nx_queue_push_alloc(q);
-  if (!pitem) return -1; // full
-  memcpy(pitem, item, q->item_size);
   return 0;
 }
 
-void* nx_queue_push_alloc(nx_queue* q) {
-  if (nx_queue_is_full(q)) return 0; // full
+int nx_queue_push(nx_queue* q, const void* item) {
+  if (nx_queue_is_full(q)) return -1; // full
   void* pitem=q->items+q->tail*q->item_size;
+  if (!pitem) return -1; // full
+  memcpy(pitem, item, q->item_size);
   q->tail=(q->tail+1)%q->size;
-  return pitem;
+  return 0;
 }
