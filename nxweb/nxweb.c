@@ -48,31 +48,6 @@
 
 #include "nxweb_internal.h"
 
-typedef struct nxweb_accept {
-  int client_fd;
-  struct in_addr sin_addr;
-} nxweb_accept;
-
-static inline nxweb_accept_queue* nxweb_accept_queue_new(int size) {
-  return nx_queue_new(sizeof(nxweb_accept), size);
-}
-
-static inline int nxweb_accept_queue_push(nxweb_accept_queue* jq, const nxweb_accept* accpt) {
-  return nx_queue_push(jq, accpt);
-}
-
-static inline int nxweb_accept_queue_pop(nxweb_accept_queue* jq, nxweb_accept* accpt) {
-  return nx_queue_pop(jq, accpt);
-}
-
-static inline int nxweb_accept_queue_is_empty(nxweb_accept_queue* jq) {
-  return nx_queue_is_empty(jq);
-}
-
-static inline int nxweb_accept_queue_is_full(nxweb_accept_queue* jq) {
-  return nx_queue_is_full(jq);
-}
-
 static pthread_t main_thread_id=0;
 static struct ev_loop *main_loop=0;
 
@@ -83,7 +58,6 @@ static pthread_cond_t job_queue_cond;
 static volatile sig_atomic_t shutdown_in_progress=0;
 static volatile int num_connections=0;
 
-static int ev_next_thread_idx=0;
 static nxweb_net_thread net_threads[N_NET_THREADS];
 static pthread_t worker_threads[N_WORKER_THREADS];
 
@@ -671,54 +645,24 @@ static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents) {
   } while (bytes_received==room_size);
 }
 
-static void net_thread_accept_cb(struct ev_loop *loop, struct ev_async *w, int revents) {
-  nxweb_accept a;
-  nxweb_connection *conn;
-  int result;
-  nxweb_net_thread* tdata=w->data;
-
-  while (1) {
-    result=nxweb_accept_queue_pop(tdata->accept_queue, &a);
-
-    if (!result) {
-      conn=new_connection(loop, a.client_fd, &a.sin_addr);
-      if (!conn) {
-        nxweb_log_error("can't create new connection (maybe out of memory)");
-        _nxweb_close_bad_socket(a.client_fd);
-        continue;
-      }
-    }
-    else {
-      break;
-    }
-  }
-}
-
-static void main_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
+static void net_thread_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
   int client_fd;
   struct sockaddr_in client_addr;
   socklen_t client_len=sizeof(client_addr);
-  nxweb_accept accept_msg;
-  while ((client_fd=accept(w->fd, (struct sockaddr *)&client_addr, &client_len))!=-1) {
+  nxweb_connection *conn;
+  while (!shutdown_in_progress && (client_fd=accept(w->fd, (struct sockaddr *)&client_addr, &client_len))!=-1) {
     if (_nxweb_set_non_block(client_fd) || _nxweb_setup_client_socket(client_fd)) {
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("failed to setup client socket");
       continue;
     }
-    accept_msg.client_fd=client_fd;
-    memcpy(&accept_msg.sin_addr, &client_addr.sin_addr, sizeof(accept_msg.sin_addr));
 
-    nxweb_net_thread* tdata=&net_threads[ev_next_thread_idx];
-
-    if (nxweb_accept_queue_push(tdata->accept_queue, &accept_msg)) {
+    conn=new_connection(loop, client_fd, &client_addr.sin_addr);
+    if (!conn) {
+      nxweb_log_error("can't create new connection (maybe out of memory)");
       _nxweb_close_bad_socket(client_fd);
-      nxweb_log_error("accept queue full; dropping connection");
       continue;
     }
-
-    ev_async_send(tdata->loop, &tdata->watch_accept);
-
-    ev_next_thread_idx=(ev_next_thread_idx+1)%N_NET_THREADS; // round-robin
   }
   if (errno!=EAGAIN) {
     char buf[1024];
@@ -731,7 +675,7 @@ static void net_thread_shutdown_cb(struct ev_loop *loop, struct ev_async *w, int
   nxweb_net_thread* tdata=((nxweb_net_thread*)(((char*)w)-offsetof(nxweb_net_thread, watch_shutdown)));
 
   ev_async_stop(loop, &tdata->watch_shutdown);
-  ev_async_stop(loop, &tdata->watch_accept);
+  ev_io_stop(loop, &tdata->watch_accept);
 }
 
 static void* worker_thread_main(void* pdata) {
@@ -760,7 +704,6 @@ static void* net_thread_main(void* pdata) {
   nxweb_net_thread* tdata=(nxweb_net_thread*)pdata;
   ev_run(tdata->loop, 0);
   ev_loop_destroy(tdata->loop);
-  free(tdata->accept_queue);
   nxweb_log_error("net thread exited");
   return 0;
 }
@@ -770,10 +713,11 @@ void nxweb_shutdown() {
   pthread_kill(main_thread_id, SIGTERM);
 }
 
-static void do_shutdown() {
+static void sigterm_cb(struct ev_loop *loop, struct ev_signal *w, int revents) {
+  nxweb_log_error("SIGTERM/SIGINT(%d) received", w->signum);
   if (shutdown_in_progress) return;
   shutdown_in_progress=1; // tells net_threads to finish their work
-  ev_break(main_loop, EVBREAK_ONE); // this stops accepting new connections
+  ev_break(main_loop, EVBREAK_ONE); // exit main loop listening to signals
 
   // wake up workers
   pthread_mutex_lock(&job_queue_mux);
@@ -785,11 +729,6 @@ static void do_shutdown() {
     ev_async_send(net_threads[i].loop, &net_threads[i].watch_shutdown);
   }
   alarm(5); // make sure we terminate via SIGALRM if some connections do not close in 5 seconds
-}
-
-static void sigterm_cb(struct ev_loop *loop, struct ev_signal *w, int revents) {
-  nxweb_log_error("SIGTERM/SIGINT(%d) received", w->signum);
-  do_shutdown();
 }
 
 static void on_sigalrm(int sig) {
@@ -809,10 +748,10 @@ void _nxweb_main() {
   main_thread_id=pthread_self();
 
   nxweb_log_error("*** NXWEB startup: pid=%d port=%d ev_backend=%x N_NET_THREADS=%d N_WORKER_THREADS=%d"
-                  " short=%d int=%d long=%d size_t=%d conn=%d req=%d nxweb_accept=%d",
+                  " short=%d int=%d long=%d size_t=%d conn=%d req=%d",
                   (int)pid, NXWEB_LISTEN_PORT, ev_backend(loop), N_NET_THREADS, N_WORKER_THREADS,
                   (int)sizeof(short), (int)sizeof(int), (int)sizeof(long), (int)sizeof(size_t),
-                  (int)sizeof(nxweb_connection), (int)sizeof(nxweb_request), (int)sizeof(nxweb_accept));
+                  (int)sizeof(nxweb_connection), (int)sizeof(nxweb_request));
 
   // Block signals for all threads
   sigset_t set;
@@ -827,18 +766,23 @@ void _nxweb_main() {
     exit(EXIT_FAILURE);
   }
 
+  int listen_fd=_nxweb_bind_socket(NXWEB_LISTEN_PORT);
+  if (listen_fd==-1) {
+    // simulate succesful exit (error have been logged)
+    // otherwise launcher will keep trying
+    return;
+  }
+
   nxweb_net_thread* tdata;
 
   for (i=0; i<N_NET_THREADS; i++) {
     tdata=&net_threads[i];
     tdata->loop=ev_loop_new(EVFLAG_AUTO);
-    tdata->accept_queue=nxweb_accept_queue_new(NXWEB_ACCEPT_QUEUE_SIZE);
 
     ev_async_init(&tdata->watch_shutdown, net_thread_shutdown_cb);
     ev_async_start(tdata->loop, &tdata->watch_shutdown);
-    ev_async_init(&tdata->watch_accept, net_thread_accept_cb);
-    tdata->watch_accept.data=tdata;
-    ev_async_start(tdata->loop, &tdata->watch_accept);
+    ev_io_init(&tdata->watch_accept, net_thread_accept_cb, listen_fd, EV_READ);
+    ev_io_start(tdata->loop, &tdata->watch_accept);
 
     pthread_create(&tdata->thread_id, 0, net_thread_main, tdata);
   }
@@ -870,16 +814,6 @@ void _nxweb_main() {
     nxweb_log_error("Can't unset pthread_sigmask");
     exit(EXIT_FAILURE);
   }
-
-  int listen_fd=_nxweb_bind_socket(NXWEB_LISTEN_PORT);
-  if (listen_fd==-1) {
-    // simulate succesful exit (error have been logged)
-    // otherwise launcher will keep trying
-    return;
-  }
-  ev_io watch_accept;
-  ev_io_init(&watch_accept, main_accept_cb, listen_fd, EV_READ);
-  ev_io_start(loop, &watch_accept);
 
   FILE* f=fopen(NXWEB_PID_FILE, "w");
   if (f) {
