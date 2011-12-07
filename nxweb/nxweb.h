@@ -96,6 +96,7 @@ typedef struct nxweb_connection {
   struct ev_loop* loop;
 
   struct nxweb_request* request;
+  struct nxweb_net_thread* tdata;
 
   ev_timer watch_read_request_time;
   ev_timer watch_write_response_time;

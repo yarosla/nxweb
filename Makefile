@@ -15,7 +15,7 @@ CFLAGS_DEBUG=-pthread -Wno-strict-aliasing -Wno-deprecated-declarations -g
 LDFLAGS_RELEASE=$(LIBS)
 LDFLAGS_DEBUG=$(LIBS)
 
-INC_MAIN=nxweb/nxweb.h nxweb/nxweb_internal.h nxweb/nx_queue.h
+INC_MAIN=nxweb/nxweb.h nxweb/nxweb_internal.h nxweb/config.h nxweb/nx_queue.h
 SRC_MAIN=nxweb/main.c nxweb/nxweb.c nxweb/http.c nxweb/mime.c nxweb/misc.c nxweb/nx_queue.c modules.c
 
 ###

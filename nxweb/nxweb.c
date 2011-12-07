@@ -51,15 +51,10 @@
 static pthread_t main_thread_id=0;
 static struct ev_loop *main_loop=0;
 
-static nxweb_job_queue job_queue;
-static pthread_mutex_t job_queue_mux;
-static pthread_cond_t job_queue_cond;
-
 static volatile sig_atomic_t shutdown_in_progress=0;
 static volatile int num_connections=0;
 
 static nxweb_net_thread net_threads[N_NET_THREADS];
-static pthread_t worker_threads[N_WORKER_THREADS];
 
 // local prototypes:
 static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents);
@@ -92,7 +87,7 @@ static nxweb_request* new_request(nxweb_connection* conn) {
   return req;
 }
 
-static nxweb_connection* new_connection(struct ev_loop *loop, int client_fd, struct in_addr* sin_addr) {
+static nxweb_connection* new_connection(struct ev_loop *loop, nxweb_net_thread* tdata, int client_fd, struct in_addr* sin_addr) {
   nxweb_connection* conn=(nxweb_connection*)calloc(1, sizeof(nxweb_connection));
   if (!conn) return 0;
 
@@ -106,6 +101,7 @@ static nxweb_connection* new_connection(struct ev_loop *loop, int client_fd, str
   conn->fd=client_fd;
   inet_ntop(AF_INET, sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
   conn->loop=loop;
+  conn->tdata=tdata;
 
   conn->cstate=NXWEB_CS_WAITING_FOR_REQUEST;
 
@@ -433,13 +429,13 @@ static void dispatch_request(struct ev_loop *loop, nxweb_connection *conn) {
       ev_async_start(loop, &conn->watch_async_data_ready);
       // hand over to worker thread
       nxweb_job job={conn};
-      pthread_mutex_lock(&job_queue_mux);
-      if (!nxweb_job_queue_push(&job_queue, &job)) {
-        pthread_cond_signal(&job_queue_cond);
-        pthread_mutex_unlock(&job_queue_mux);
+      pthread_mutex_lock(&conn->tdata->job_queue_mux);
+      if (!nxweb_job_queue_push(&conn->tdata->job_queue, &job)) {
+        pthread_cond_signal(&conn->tdata->job_queue_cond);
+        pthread_mutex_unlock(&conn->tdata->job_queue_mux);
       }
       else { // queue full
-        pthread_mutex_unlock(&job_queue_mux);
+        pthread_mutex_unlock(&conn->tdata->job_queue_mux);
         nxweb_send_http_error(req, 503, "Service Unavailable");
         start_sending_response(loop, conn);
       }
@@ -646,6 +642,7 @@ static void socket_read_cb(struct ev_loop *loop, ev_io *w, int revents) {
 }
 
 static void net_thread_accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
+  nxweb_net_thread* tdata=((nxweb_net_thread*)(((char*)w)-offsetof(nxweb_net_thread, watch_accept)));
   int client_fd;
   struct sockaddr_in client_addr;
   socklen_t client_len=sizeof(client_addr);
@@ -657,7 +654,7 @@ static void net_thread_accept_cb(struct ev_loop *loop, struct ev_io *w, int reve
       continue;
     }
 
-    conn=new_connection(loop, client_fd, &client_addr.sin_addr);
+    conn=new_connection(loop, tdata, client_fd, &client_addr.sin_addr);
     if (!conn) {
       nxweb_log_error("can't create new connection (maybe out of memory)");
       _nxweb_close_bad_socket(client_fd);
@@ -679,16 +676,17 @@ static void net_thread_shutdown_cb(struct ev_loop *loop, struct ev_async *w, int
 }
 
 static void* worker_thread_main(void* pdata) {
+  nxweb_net_thread* tdata=(nxweb_net_thread*)pdata;
   nxweb_job job;
   nxweb_connection* conn;
   int result;
 
   while (!shutdown_in_progress) {
-    pthread_mutex_lock(&job_queue_mux);
-    while ((result=nxweb_job_queue_pop(&job_queue, &job)) && !shutdown_in_progress) {
-      pthread_cond_wait(&job_queue_cond, &job_queue_mux);
+    pthread_mutex_lock(&tdata->job_queue_mux);
+    while ((result=nxweb_job_queue_pop(&tdata->job_queue, &job)) && !shutdown_in_progress) {
+      pthread_cond_wait(&tdata->job_queue_cond, &tdata->job_queue_mux);
     }
-    pthread_mutex_unlock(&job_queue_mux);
+    pthread_mutex_unlock(&tdata->job_queue_mux);
     if (!result) {
       conn=job.conn;
       conn->request->handler_result=conn->request->handler->callback(NXWEB_PH_CONTENT, conn->request);
@@ -719,14 +717,15 @@ static void sigterm_cb(struct ev_loop *loop, struct ev_signal *w, int revents) {
   shutdown_in_progress=1; // tells net_threads to finish their work
   ev_break(main_loop, EVBREAK_ONE); // exit main loop listening to signals
 
-  // wake up workers
-  pthread_mutex_lock(&job_queue_mux);
-  pthread_cond_broadcast(&job_queue_cond);
-  pthread_mutex_unlock(&job_queue_mux);
-
   int i;
-  for (i=0; i<N_NET_THREADS; i++) {
-    ev_async_send(net_threads[i].loop, &net_threads[i].watch_shutdown);
+  nxweb_net_thread* tdata;
+  for (i=0, tdata=net_threads; i<N_NET_THREADS; i++, tdata++) {
+    // wake up workers
+    pthread_mutex_lock(&tdata->job_queue_mux);
+    pthread_cond_broadcast(&tdata->job_queue_cond);
+    pthread_mutex_unlock(&tdata->job_queue_mux);
+
+    ev_async_send(tdata->loop, &tdata->watch_shutdown);
   }
   alarm(5); // make sure we terminate via SIGALRM if some connections do not close in 5 seconds
 }
@@ -740,7 +739,7 @@ void _nxweb_main() {
   _nxweb_register_printf_extensions();
 
   struct ev_loop *loop=EV_DEFAULT;
-  int i;
+  int i, j;
 
   pid_t pid=getpid();
 
@@ -774,9 +773,7 @@ void _nxweb_main() {
   }
 
   nxweb_net_thread* tdata;
-
-  for (i=0; i<N_NET_THREADS; i++) {
-    tdata=&net_threads[i];
+  for (i=0, tdata=net_threads; i<N_NET_THREADS; i++, tdata++) {
     tdata->loop=ev_loop_new(EVFLAG_AUTO);
 
     ev_async_init(&tdata->watch_shutdown, net_thread_shutdown_cb);
@@ -784,14 +781,14 @@ void _nxweb_main() {
     ev_io_init(&tdata->watch_accept, net_thread_accept_cb, listen_fd, EV_READ);
     ev_io_start(tdata->loop, &tdata->watch_accept);
 
-    pthread_create(&tdata->thread_id, 0, net_thread_main, tdata);
-  }
+    nxweb_job_queue_init(&tdata->job_queue);
+    pthread_mutex_init(&tdata->job_queue_mux, 0);
+    pthread_cond_init(&tdata->job_queue_cond, 0);
+    for (j=0; j<N_WORKER_THREADS; j++) {
+      pthread_create(&tdata->worker_threads[j], 0, worker_thread_main, tdata);
+    }
 
-  nxweb_job_queue_init(&job_queue);
-  pthread_mutex_init(&job_queue_mux, 0);
-  pthread_cond_init(&job_queue_cond, 0);
-  for (i=0; i<N_WORKER_THREADS; i++) {
-    pthread_create(&worker_threads[i], 0, worker_thread_main, 0);
+    pthread_create(&tdata->thread_id, 0, net_thread_main, tdata);
   }
 
 
@@ -835,9 +832,8 @@ void _nxweb_main() {
 
   for (i=0; i<N_NET_THREADS; i++) {
     pthread_join(net_threads[i].thread_id, NULL);
-  }
-
-  for (i=0; i<N_WORKER_THREADS; i++) {
-    pthread_join(worker_threads[i], NULL);
+    for (j=0; j<N_WORKER_THREADS; j++) {
+      pthread_join(net_threads[i].worker_threads[j], NULL);
+    }
   }
 }

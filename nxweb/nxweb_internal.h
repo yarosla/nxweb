@@ -30,13 +30,6 @@
 #include "nxweb.h"
 #include "nx_queue.h"
 
-typedef struct nxweb_net_thread {
-  pthread_t thread_id;
-  struct ev_loop* loop;
-  ev_async watch_shutdown;
-  ev_io watch_accept;
-} nxweb_net_thread;
-
 typedef struct nxweb_job {
   nxweb_connection* conn;
 } nxweb_job;
@@ -45,6 +38,17 @@ typedef struct nxweb_job_queue {
   nx_queue q;
   nxweb_job jobs[NXWEB_JOBS_QUEUE_SIZE];
 } nxweb_job_queue;
+
+typedef struct nxweb_net_thread {
+  pthread_t thread_id;
+  struct ev_loop* loop;
+  ev_async watch_shutdown;
+  ev_io watch_accept;
+  nxweb_job_queue job_queue;
+  pthread_mutex_t job_queue_mux;
+  pthread_cond_t job_queue_cond;
+  pthread_t worker_threads[N_WORKER_THREADS];
+} nxweb_net_thread;
 
 static inline void nxweb_job_queue_init(nxweb_job_queue* jq) {
   nx_queue_init(&jq->q, sizeof(nxweb_job), NXWEB_JOBS_QUEUE_SIZE);

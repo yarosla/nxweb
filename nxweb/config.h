@@ -3,6 +3,7 @@
 
 #define NXWEB_LISTEN_PORT 8088
 #define N_NET_THREADS 4
+// N_WORKER_THREADS - number of worker threads per each network thread
 #define N_WORKER_THREADS 4
 #define READ_REQUEST_TIMEOUT 10.
 #define WRITE_RESPONSE_TIMEOUT 10.
