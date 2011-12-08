@@ -28,6 +28,7 @@
 #define NXWEB_INTERNAL_H_INCLUDED
 
 #include "nxweb.h"
+#include "misc.h"
 #include "nx_queue.h"
 
 typedef struct nxweb_job {
@@ -78,14 +79,6 @@ int _nxweb_parse_http_request(nxweb_request* req, char* end_of_headers, int byte
 void _nxweb_write_response_headers_raw(nxweb_request* req, const char* fmt, ...) __attribute__((format (printf, 2, 3)));
 void _nxweb_prepare_response_headers(nxweb_request* req);
 void _nxweb_finalize_response_writing_state(nxweb_request *req);
-int _nxweb_set_non_block(int fd);
-int _nxweb_setup_listening_socket(int fd);
-int _nxweb_setup_client_socket(int fd);
-void _nxweb_batch_write_begin(int fd);
-void _nxweb_batch_write_end(int fd);
-void _nxweb_close_good_socket(int fd);
-void _nxweb_close_bad_socket(int fd);
-int _nxweb_bind_socket(int port);
 void _nxweb_register_printf_extensions();
 void _nxweb_decode_chunked_request(nxweb_request* req);
 int _nxweb_decode_chunked(char* buf, int buf_len);
@@ -96,7 +89,6 @@ void nxweb_parse_request_cookies(nxweb_request *req); // Modifies conn->cookie c
 const char* nx_simple_map_get(nx_simple_map_entry map[], const char* name);
 const char* nx_simple_map_get_nocase(nx_simple_map_entry map[], const char* name);
 void nx_simple_map_add(nx_simple_map_entry map[], const char* name, const char* value, int max_entries);
-void nxweb_die(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 
 #define max(a,b) \
 ({ __typeof__ (a) _a = (a); \

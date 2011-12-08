@@ -186,7 +186,6 @@ typedef struct nxweb_mime_type {
 extern const nxweb_module* const nxweb_modules[];
 
 // Public API
-void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 void nxweb_shutdown();
 
 const char* nxweb_get_request_header(nxweb_request *req, const char* name);

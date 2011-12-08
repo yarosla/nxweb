@@ -37,6 +37,7 @@
 #include <sys/stat.h>
 
 #include "nxweb/nxweb.h"
+#include "nxweb/misc.h"
 
 #define INDEX_FILE "index.htm"
 
