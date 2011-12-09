@@ -27,6 +27,8 @@
 #ifndef NX_BUFFER_H_INCLUDED
 #define NX_BUFFER_H_INCLUDED
 
+#include <string.h>
+
 typedef struct nxb_chunk {
   char* end;
   struct nxb_chunk* prev;
@@ -51,11 +53,27 @@ int nxb_printf_va(nxb_buffer* nxb, const char* fmt, va_list ap);
 int nxb_printf(nxb_buffer* nxb, const char* fmt, ...) __attribute__((format (printf, 2, 3)));
 int nxb_realloc_chunk(nxb_buffer* nxb, int min_room);
 
+static inline void* nxb_calloc_obj(nxb_buffer* nxb, int size) {
+  void* obj=nxb_alloc_obj(nxb, size);
+  memset(obj, 0, size);
+  return obj;
+}
+
+static inline void* nxb_copy_obj(nxb_buffer* nxb, const void* src, int size) {
+  void* obj=nxb_alloc_obj(nxb, size);
+  memcpy(obj, src, size);
+  return obj;
+}
+
 static inline void* nxb_finish_obj(nxb_buffer* nxb) {
   void* obj=nxb->base;
   nxb->base=nxb->ptr;
   nxb->chunk->dirty=1;
   return obj;
+}
+
+static inline void nxb_unfinish_obj(nxb_buffer* nxb) {
+  nxb->ptr=nxb->base;
 }
 
 static inline void* nxb_get_room(nxb_buffer* nxb, int* room_size) {
@@ -73,7 +91,18 @@ static inline int nxb_make_room(nxb_buffer* nxb, int min_size) {
   else return 0;
 }
 
-static inline void nxb_append(nxb_buffer* nxb, void* ptr, int size) {
+static inline void nxb_append_char(nxb_buffer* nxb, char c) {
+  if (nxb->end - nxb->ptr < 1) {
+    if (nxb_realloc_chunk(nxb, 1)) return;
+  }
+  *nxb->ptr++=c;
+}
+
+static inline void nxb_append_char_fast(nxb_buffer* nxb, char c) {
+  *nxb->ptr++=c;
+}
+
+static inline void nxb_append(nxb_buffer* nxb, const void* ptr, int size) {
   if (nxb->end - nxb->ptr < size) {
     if (nxb_realloc_chunk(nxb, size)) return;
   }
@@ -82,7 +111,18 @@ static inline void nxb_append(nxb_buffer* nxb, void* ptr, int size) {
 }
 
 static inline void nxb_blank(nxb_buffer* nxb, int size) {
+  if (nxb->end - nxb->ptr < size) {
+    if (nxb_realloc_chunk(nxb, size)) return;
+  }
   nxb->ptr+=size;
+}
+
+static inline void nxb_blank_fast(nxb_buffer* nxb, int size) {
+  nxb->ptr+=size;
+}
+
+static inline void nxb_resize_fast(nxb_buffer* nxb, int size) {
+  nxb->ptr=nxb->base+size;
 }
 
 

@@ -66,6 +66,10 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="nxweb/nx_event.h" />
+		<Unit filename="nxweb/nx_pool.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="nxweb/nx_pool.h" />
 		<Unit filename="nxweb/nx_queue.c">
 			<Option compilerVar="CC" />
 		</Unit>
@@ -74,8 +78,6 @@
 		<Unit filename="nxweb/nxweb2.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="nxweb/nxweb2.h" />
-		<Unit filename="nxweb/nxweb2_internal.h" />
 		<Unit filename="nxweb/nxweb_internal.h" />
 		<Unit filename="nxweb/revision.h" />
 		<Unit filename="sendfile.c">

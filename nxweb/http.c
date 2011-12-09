@@ -56,15 +56,6 @@ const char* nx_simple_map_get_nocase(nx_simple_map_entry map[], const char* name
   return 0;
 }
 
-int nx_chunks_length(nx_chunk* chunk) {
-  int len=0;
-  while (chunk) {
-    len+=chunk->size;
-    chunk=chunk->next;
-  }
-  return len;
-}
-
 void nx_simple_map_add(nx_simple_map_entry map[], const char* name, const char* value, int max_entries) {
   int i;
   for (i=0; i<max_entries-1; i++) {
@@ -83,20 +74,20 @@ void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
   if (req->parameters) return; // already parsed
   if (req->rstate!=NXWEB_RS_INITIAL) return; // illegal state
 
-  obstack* ob=&req->conn->data;
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   char *name, *value, *next;
   char* query_string=strchr(req->uri, '?');
   if (query_string) {
     if (preserve_uri) {
       query_string++;
-      query_string=obstack_copy(ob, query_string, strlen(query_string)+1);
+      query_string=nxb_copy_obj(nxb, query_string, strlen(query_string)+1);
     }
     else {
       *query_string++='\0';
     }
   }
-  nxweb_http_parameter* param=obstack_alloc(ob, sizeof(nxweb_http_parameter));
-  req->parameters=param;
+  // last param must be nulled (nx_buffer allocates objects in reverse direction)
+  nxweb_http_parameter* param=nxb_calloc_obj(nxb, sizeof(nxweb_http_parameter));
   if (query_string) {
     for (name=query_string; name; name=next) {
       next=strchr(name, '&');
@@ -108,9 +99,9 @@ void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
         nxweb_url_decode(name, 0);
         nxweb_trunc_space(name);
         nxweb_url_decode(value, 0);
+        param=nxb_alloc_obj(nxb, sizeof(nxweb_http_parameter));
         param->name=name;
         param->value=value;
-        param=obstack_alloc(ob, sizeof(nxweb_http_parameter));
       }
     }
   }
@@ -125,16 +116,14 @@ void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri) {
         nxweb_url_decode(name, 0);
         nxweb_trunc_space(name);
         nxweb_url_decode(value, 0);
+        param=nxb_alloc_obj(nxb, sizeof(nxweb_http_parameter));
         param->name=name;
         param->value=value;
-        param=obstack_alloc(ob, sizeof(nxweb_http_parameter));
       }
     }
     req->request_body=0;
   }
-  // last param must be nulled
-  param->name=0;
-  param->value=0;
+  req->parameters=param;
 }
 
 // Modifies conn->cookie content (does url_decode inplace)
@@ -143,10 +132,10 @@ void nxweb_parse_request_cookies(nxweb_request *req) {
   if (req->cookies) return; // already parsed
   if (req->rstate!=NXWEB_RS_INITIAL) return; // illegal state
 
-  obstack* ob=&req->conn->data;
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   char *name, *value, *next;
-  nxweb_http_cookie* cookie=obstack_alloc(ob, sizeof(nxweb_http_cookie));
-  req->cookies=cookie;
+  // last cookie must be nulled (nx_buffer allocates objects in reverse direction)
+  nxweb_http_cookie* cookie=nxb_calloc_obj(nxb, sizeof(nxweb_http_cookie));
   if (req->cookie) {
     for (name=req->cookie; name; name=next) {
       next=strchr(name, ';');
@@ -157,16 +146,14 @@ void nxweb_parse_request_cookies(nxweb_request *req) {
         nxweb_url_decode(name, 0);
         nxweb_trunc_space(name);
         if (value) nxweb_url_decode(value, 0);
+        cookie=nxb_alloc_obj(nxb, sizeof(nxweb_http_cookie));
         cookie->name=name;
         cookie->value=value;
-        cookie=obstack_alloc(ob, sizeof(nxweb_http_cookie));
       }
     }
     req->cookie=0;
   }
-  // last cookie must be nulled
-  cookie->name=0;
-  cookie->value=0;
+  req->cookies=cookie;
 }
 
 const char* nxweb_get_request_header(nxweb_request *req, const char* name) {
@@ -192,18 +179,15 @@ char* _nxweb_find_end_of_http_headers(char* buf, int len) {
 }
 
 // Modifies conn->in_buffer content
-int _nxweb_parse_http_request(nxweb_request* req, char* end_of_headers, int bytes_received) {
-  char* head;
+int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_headers, int bytes_received) {
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   char* body=end_of_headers;
-  obstack* ob=&req->conn->data;
 
-  head=req->in_headers;
-  if (!body) body=_nxweb_find_end_of_http_headers(head, bytes_received);
   if (!body) return -1; // no body
   while (*body=='\r' || *body=='\n') *body++='\0';
 
   char* pl;
-  char* first_line=strtok_r(head, "\r\n", &pl);
+  char* first_line=strtok_r(headers, "\r\n", &pl);
 
   char* pc;
   char* method=strtok_r(first_line, " \t", &pc);
@@ -235,8 +219,8 @@ int _nxweb_parse_http_request(nxweb_request* req, char* end_of_headers, int byte
   int keep_alive=http11;
   char* name;
   char* value=0;
-  nxweb_http_header* header=obstack_alloc(ob, sizeof(nxweb_http_header));
-  req->headers=header;
+  // last header must be nulled
+  nxweb_http_header* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
   while ((name=strtok_r(0, "\r\n", &pl))) {
     if (*name>0 && *name<=' ') {
       // starts with whitespace => header continuation
@@ -263,23 +247,20 @@ int _nxweb_parse_http_request(nxweb_request* req, char* end_of_headers, int byte
     else if (!strcasecmp(name, "Transfer-Encoding")) transfer_encoding=value;
     else if (!strcasecmp(name, "Connection")) keep_alive=!strcasecmp(value, "keep-alive");
     else {
-      // fill header and alloc next
+      header=nxb_alloc_obj(nxb, sizeof(nxweb_http_header));
       header->name=name;
       header->value=value;
-      header=obstack_alloc(ob, sizeof(nxweb_http_header));
     }
   }
-  // last header must be nulled
-  header->name=0;
-  header->value=0;
+  req->headers=header;
 
   req->content_type=content_type;
   req->content_length=content_length;
   req->cookie=cookie;
   req->transfer_encoding=transfer_encoding;
-  req->conn->keep_alive=keep_alive;
+  req->keep_alive=keep_alive;
   req->request_body=body;
-  req->content_received=bytes_received-(body-head);
+  req->content_received=bytes_received-(body-headers);
   req->host=host;
   req->method=method;
   req->uri=uri;
@@ -291,6 +272,7 @@ int _nxweb_parse_http_request(nxweb_request* req, char* end_of_headers, int byte
   if (req->chunked_request) req->content_length=-1;
   req->expect_100_continue=req->content_length && expect && !strcasecmp(expect, "100-continue");
   req->head_method=!strcasecmp(req->method, "HEAD");
+  if (req->head_method) req->method="GET";
 
   return 0;
 }
@@ -349,6 +331,7 @@ int _nxweb_verify_chunked(const char* buf, int buf_len) {
 }
 
 int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo) {
+/*
   if (fpath==0) { // cancel sendfile
     if (req->sendfile_fd) close(req->sendfile_fd);
     req->sendfile_fd=0;
@@ -376,7 +359,7 @@ int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo) {
   req->sendfile_length=finfo->st_size;
   req->sendfile_last_modified=finfo->st_mtime;
   req->response_content_type=nxweb_get_mime_type_by_ext(fpath)->mime;
-
+*/
   return 0;
 }
 
@@ -394,26 +377,9 @@ void nxweb_set_response_charset(nxweb_request *req, const char* charset) {
 }
 
 void nxweb_add_response_header(nxweb_request *req, const char* name, const char* value) {
-  if (req->rstate!=NXWEB_RS_ADDING_RESPONSE_HEADERS) {
-    _nxweb_finalize_response_writing_state(req);
-    if (req->response_headers || req->out_headers) return; // illegal state; already have headers
-    req->rstate=NXWEB_RS_ADDING_RESPONSE_HEADERS;
-  }
-
-  obstack* ob=&req->conn->data;
-  nxweb_http_header* header=obstack_alloc(ob, sizeof(nxweb_http_header));
-  if (!req->response_headers) req->response_headers=header;
-  header->name=name;
-  header->value=value;
-}
-
-static void adding_response_headers_complete(nxweb_request *req) {
-  assert(req->rstate==NXWEB_RS_ADDING_RESPONSE_HEADERS);
-  obstack* ob=&req->conn->data;
-  nxweb_http_header* header=obstack_alloc(ob, sizeof(nxweb_http_header));
-  header->name=0;
-  header->value=0;
-  req->rstate=NXWEB_RS_INITIAL;
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+  if (!req->response_headers) req->response_headers=nxb_calloc_obj(nxb, NXWEB_MAX_RESPONSE_HEADERS*sizeof(nxweb_http_header));
+  nx_simple_map_add(req->response_headers, name, value, NXWEB_MAX_RESPONSE_HEADERS);
 }
 
 void _nxweb_write_response_headers_raw(nxweb_request *req, const char* fmt, ...) {
@@ -422,66 +388,39 @@ void _nxweb_write_response_headers_raw(nxweb_request *req, const char* fmt, ...)
     if (req->out_headers) return; // illegal state; already have headers
     req->rstate=NXWEB_RS_WRITING_RESPONSE_HEADERS;
   }
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   va_list ap;
   va_start(ap, fmt);
-  obstack_vprintf(&req->conn->data, fmt, ap);
+  nxb_printf_va(nxb, fmt, ap);
   va_end(ap);
 }
 
 static void writing_response_headers_complete(nxweb_request *req) {
   assert(req->rstate==NXWEB_RS_WRITING_RESPONSE_HEADERS);
-  obstack* ob=&req->conn->data;
-  obstack_1grow(ob, 0); // null-terminate
-  req->out_headers=obstack_finish(ob);
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+  nxb_append_char(nxb, '\0');
+  req->out_headers=nxb_finish_obj(nxb);
   req->rstate=NXWEB_RS_INITIAL;
 }
 
-static void writing_response_body_chunk_begin(nxweb_request *req, nx_chunk* prev_chunk, int size_hint) {
-  assert(req->rstate==NXWEB_RS_WRITING_RESPONSE_BODY);
-  obstack* ob=&req->conn->data;
-  obstack_chunk_size(ob)=OUTPUT_CHUNK_SIZE; // change chunk size for this obstack
-  nx_chunk chunk;
-  chunk.next=0;
-  chunk.prev=prev_chunk;
-  chunk.size=0;
-  if (size_hint) {
-    obstack_make_room(ob, size_hint);
-  }
-  obstack_grow(ob, &chunk, offsetof(nx_chunk, data));
-}
-
-static int writing_response_body_begin(nxweb_request *req, int size_hint) {
+static int writing_response_body_begin(nxweb_request *req) {
   if (req->rstate==NXWEB_RS_WRITING_RESPONSE_BODY) return 0; // already started = OK
-  if (req->out_body_chunk) return -1; // already have body
+  if (req->out_body) return -1; // already have body
   req->rstate=NXWEB_RS_WRITING_RESPONSE_BODY;
-  writing_response_body_chunk_begin(req, 0, size_hint);
   return 0;
-}
-
-static nx_chunk* writing_response_body_chunk_complete(nxweb_request *req) {
-  assert(req->rstate==NXWEB_RS_WRITING_RESPONSE_BODY);
-  obstack* ob=&req->conn->data;
-  int size=obstack_object_size(ob);
-  nx_chunk* chunk=(nx_chunk*)obstack_finish(ob);
-  chunk->size=size-offsetof(nx_chunk, data);
-  if (chunk->prev) {
-    chunk->prev->next=chunk;
-  }
-  if (!req->out_body_chunk) req->out_body_chunk=chunk;
-  return chunk;
 }
 
 static void writing_response_body_complete(nxweb_request *req) {
   assert(req->rstate==NXWEB_RS_WRITING_RESPONSE_BODY);
-  writing_response_body_chunk_complete(req);
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+  //nxb_append_char(nxb, '\0');
+  req->out_body=nxb_get_unfinished(nxb, &req->out_body_length);
+  nxb_finish_obj(nxb);
   req->rstate=NXWEB_RS_INITIAL;
 }
 
 void _nxweb_finalize_response_writing_state(nxweb_request *req) {
   switch (req->rstate) {
-    case NXWEB_RS_ADDING_RESPONSE_HEADERS:
-      adding_response_headers_complete(req);
-      break;
     case NXWEB_RS_WRITING_RESPONSE_HEADERS:
       writing_response_headers_complete(req);
       break;
@@ -508,7 +447,7 @@ void _nxweb_prepare_response_headers(nxweb_request *req) {
            req->http11, req->response_code? req->response_code : 200,
            req->response_status? req->response_status : "OK",
            date_buf,
-           req->conn->keep_alive?"keep-alive":"close");
+           req->keep_alive?"keep-alive":"close");
   if (req->response_headers) {
     // write added headers
     int i;
@@ -527,58 +466,44 @@ void _nxweb_prepare_response_headers(nxweb_request *req) {
              "Content-Type: %s\r\n",
              mtype? mtype->mime : req->response_content_type);
   }
-  if (req->sendfile_last_modified) {
-    gmtime_r(&req->sendfile_last_modified, &tm);
+  if (req->response_last_modified) {
+    gmtime_r(&req->response_last_modified, &tm);
     strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
     _nxweb_write_response_headers_raw(req, "Last-Modified: %s\r\n", date_buf);
   }
   _nxweb_write_response_headers_raw(req,
            "Content-Length: %u\r\n\r\n",
-           (unsigned)(nx_chunks_length(req->out_body_chunk)+req->sendfile_length));
+           (unsigned)req->out_body_length);
   writing_response_headers_complete(req);
 }
 
 void nxweb_response_make_room(nxweb_request *req, int size) {
   if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) {
     _nxweb_finalize_response_writing_state(req);
-    if (writing_response_body_begin(req, size)) return; // illegal state
+    if (writing_response_body_begin(req)) return; // illegal state
   }
-  else {
-    int room=obstack_room(&req->conn->data);
-    // start new chunk
-    if (room<size) writing_response_body_chunk_begin(req, writing_response_body_chunk_complete(req), size);
-  }
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+  nxb_make_room(nxb, size);
 }
 
 void nxweb_response_append(nxweb_request *req, const char* text) {
-  obstack* ob=&req->conn->data;
-  int text_len=strlen(text);
   if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) {
     _nxweb_finalize_response_writing_state(req);
-    if (writing_response_body_begin(req, text_len)) return; // illegal state
+    if (writing_response_body_begin(req)) return; // illegal state
   }
-  else {
-    int room=obstack_room(ob);
-    // start new chunk
-    if (room<text_len) writing_response_body_chunk_begin(req, writing_response_body_chunk_complete(req), text_len);
-  }
-  obstack_grow(ob, text, text_len);
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+  nxb_append(nxb, text, strlen(text));
 }
 
 void nxweb_response_printf(nxweb_request *req, const char* fmt, ...) {
-  obstack* ob=&req->conn->data;
   if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) {
     _nxweb_finalize_response_writing_state(req);
-    if (writing_response_body_begin(req, OUTPUT_CHUNK_MIN_ROOM)) return; // illegal state
+    if (writing_response_body_begin(req)) return; // illegal state
   }
-  else {
-    int room=obstack_room(ob);
-    // start new chunk
-    if (room<OUTPUT_CHUNK_MIN_ROOM) writing_response_body_chunk_begin(req, writing_response_body_chunk_complete(req), OUTPUT_CHUNK_MIN_ROOM);
-  }
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   va_list ap;
   va_start(ap, fmt);
-  obstack_vprintf(ob, fmt, ap);
+  nxb_printf_va(nxb, fmt, ap);
   va_end(ap);
 }
 
@@ -596,7 +521,7 @@ void nxweb_send_redirect(nxweb_request *req, int code, const char* location) {
              "Content-Length: 0\r\n"
              "Location: %s\r\n\r\n",
              req->http11, code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
-             req->conn->keep_alive?"keep-alive":"close",
+             req->keep_alive?"keep-alive":"close",
              location);
   }
   else { // uri without host
@@ -606,7 +531,7 @@ void nxweb_send_redirect(nxweb_request *req, int code, const char* location) {
              "Content-Length: 0\r\n"
              "Location: http://%s%s\r\n\r\n",
              req->http11, code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
-             req->conn->keep_alive?"keep-alive":"close",
+             req->keep_alive?"keep-alive":"close",
              req->host, location);
   }
   writing_response_headers_complete(req);

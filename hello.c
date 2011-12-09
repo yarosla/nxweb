@@ -25,6 +25,7 @@
  */
 
 #include <stdio.h>
+#include <stddef.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -72,13 +73,13 @@ static nxweb_result hello(nxweb_uri_handler_phase phase, nxweb_request *req) {
            "content_length=%d<br/>\n"
            "transfer_encoding=%H<br/>\n"
            "request_body=%H</p>\n",
-           req->conn->remote_addr,
+           NXWEB_REQUEST_CONNECTION(req)->remote_addr,
            req->method,
            req->uri,
            req->path_info,
            req->http_version,
            req->http11,
-           req->conn->keep_alive,
+           req->keep_alive,
            req->host,
            req->cookie,
            req->user_agent,
@@ -116,16 +117,21 @@ static nxweb_result benchmark(nxweb_uri_handler_phase phase, nxweb_request *req)
   return NXWEB_OK;
 }
 
+static nxweb_result benchmark_empty(nxweb_uri_handler_phase phase, nxweb_request *req) {
+  return NXWEB_OK;
+}
+
 static nxweb_result nxweb_on_server_startup() {
   // Whatever initialization code
   return NXWEB_OK;
 }
 
 static const nxweb_uri_handler hello_module_uri_handlers[] = {
-  {"/hello", hello, NXWEB_INWORKER|NXWEB_HANDLE_ANY|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES},
+  {"/hello", hello, NXWEB_INPROCESS|NXWEB_HANDLE_ANY|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES},
   {"/shutdown", shutdown_server, NXWEB_INPROCESS|NXWEB_HANDLE_GET}, // server shutdown via http get; not good for real world
   {"/benchmark-inprocess", benchmark, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
   {"/benchmark-inworker", benchmark, NXWEB_INWORKER|NXWEB_HANDLE_GET},
+  {"/benchmark-empty", benchmark_empty, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
   {0, 0, 0}
 };
 

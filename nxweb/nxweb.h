@@ -27,42 +27,39 @@
 #ifndef NXWEB_H_INCLUDED
 #define NXWEB_H_INCLUDED
 
-#include <obstack.h>
-#include <ev.h>
+#include <stddef.h>
+#include <sys/stat.h>
 
 #include "revision.h"
 #include "config.h"
-
-typedef struct obstack obstack;
+#include "nx_event.h"
+#include "nx_buffer.h"
+#include "misc.h"
 
 typedef struct nx_simple_map_entry {
   const char* name;
   const char* value;
 } nx_simple_map_entry, nxweb_http_header, nxweb_http_parameter, nxweb_http_cookie;
 
-typedef struct nx_chunk {
-  struct nx_chunk* next;
-  struct nx_chunk* prev;
-  int size;
-  char data[];
-} nx_chunk;
+enum {
+  NXE_CLASS_LISTEN=0,
+  NXE_CLASS_SOCKET
+};
 
 enum nxweb_conn_state {
-  NXWEB_CS_INITIAL=0,
-  NXWEB_CS_CLOSING,
-  NXWEB_CS_TIMEOUT,
-  NXWEB_CS_ERROR,
   NXWEB_CS_WAITING_FOR_REQUEST,
   NXWEB_CS_RECEIVING_HEADERS,
   NXWEB_CS_RECEIVING_BODY,
   NXWEB_CS_HANDLING,
   NXWEB_CS_SENDING_HEADERS,
-  NXWEB_CS_SENDING_BODY
+  NXWEB_CS_SENDING_BODY,
+  NXWEB_CS_CLOSING,
+  NXWEB_CS_TIMEOUT,
+  NXWEB_CS_ERROR
 };
 
 enum nxweb_response_state {
   NXWEB_RS_INITIAL=0,
-  NXWEB_RS_ADDING_RESPONSE_HEADERS,
   NXWEB_RS_WRITING_RESPONSE_HEADERS,
   NXWEB_RS_WRITING_RESPONSE_BODY
 };
@@ -90,32 +87,9 @@ enum nxweb_uri_handler_flags {
   _NXWEB_HANDLE_MASK=0x70
 };
 
-typedef struct nxweb_connection {
-  int fd;
-  char remote_addr[16]; // 255.255.255.255
-  struct ev_loop* loop;
-
-  struct nxweb_request* request;
-  struct nxweb_net_thread* tdata;
-
-  ev_timer watch_read_request_time;
-  ev_timer watch_write_response_time;
-  ev_timer watch_keep_alive_time;
-  ev_io watch_socket_read;
-  ev_io watch_socket_write;
-  ev_async watch_async_data_ready;
-
-  struct obstack data; // conn data obstack; can be used by handlers unless request is (adding_response_headers || writing_response_headers || writing_response_body)
-  struct obstack user_data; // user data obstack; can be used by handlers; user must init it before use; we call free if it has been initialized
-
-  int request_count; // number of requests served by this connection
-  unsigned keep_alive:1;
-  unsigned sending_100_continue:1;
-  enum nxweb_conn_state cstate;
-} nxweb_connection;
-
 typedef struct nxweb_request {
-  nxweb_connection* conn;
+  //struct nxweb_connection* conn;
+  nxe_event* worker_notify;
 
   // Parsed HTTP request info:
   char* request_body;
@@ -135,23 +109,22 @@ typedef struct nxweb_request {
   nxweb_http_parameter* parameters;
   nxweb_http_cookie* cookies;
 
+  char* out_headers;
+  char* out_body;
+  int out_body_length;
+
   // Building response:
-  int response_code;
   const char* response_status;
   const char* response_content_type;
   const char* response_content_charset;
   nxweb_http_header* response_headers;
+  time_t response_last_modified;
 
-  char* in_headers;
-  char* out_headers;
-  nx_chunk* out_body_chunk;
+  int response_code;
 
-  nx_chunk* write_chunk;
-  int write_pos; // whithin out_headers or write_chunk (determined by headers_sent flag)
   int sendfile_fd;
   off_t sendfile_offset;
-  size_t sendfile_length;
-  time_t sendfile_last_modified;
+  size_t sendfile_end;
 
   enum nxweb_response_state rstate;
 
@@ -164,7 +137,31 @@ typedef struct nxweb_request {
   unsigned head_method:1;
   unsigned expect_100_continue:1;
   unsigned chunked_request:1;
+  unsigned keep_alive:1;
+  unsigned sending_100_continue:1;
 } nxweb_request;
+
+typedef struct nxweb_connection {
+
+  char remote_addr[16]; // 255.255.255.255
+
+  nxe_timer timer_keep_alive;
+  nxe_timer timer_read;
+  nxe_timer timer_write;
+
+  int request_count; // number of requests served by this connection
+  enum nxweb_conn_state cstate;
+
+  struct nxweb_net_thread* tdata;
+
+  nxweb_request req;
+
+  nxb_buffer iobuf;
+  char buf[5120];
+} nxweb_connection;
+
+#define NXWEB_REQUEST_CONNECTION(r) ((nxweb_connection*)((char*)(r)-offsetof(nxweb_connection, req)))
+#define NXWEB_CONNECTION_EVENT(c) ((nxe_event*)((char*)(c)-sizeof(nxe_event)))
 
 typedef struct nxweb_uri_handler {
   const char* uri_prefix;

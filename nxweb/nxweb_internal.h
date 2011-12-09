@@ -27,8 +27,8 @@
 #ifndef NXWEB_INTERNAL_H_INCLUDED
 #define NXWEB_INTERNAL_H_INCLUDED
 
+#include "config.h"
 #include "nxweb.h"
-#include "misc.h"
 #include "nx_queue.h"
 
 typedef struct nxweb_job {
@@ -43,8 +43,8 @@ typedef struct nxweb_job_queue {
 typedef struct nxweb_net_thread {
   pthread_t thread_id;
   struct ev_loop* loop;
-  ev_async watch_shutdown;
-  ev_io watch_accept;
+  //ev_async watch_shutdown;
+  //ev_io watch_accept;
   nxweb_job_queue job_queue;
   pthread_mutex_t job_queue_mux;
   pthread_cond_t job_queue_cond;
@@ -75,7 +75,7 @@ static inline int nxweb_job_queue_is_full(nxweb_job_queue* jq) {
 // Internal use
 void _nxweb_main();
 char* _nxweb_find_end_of_http_headers(char* buf, int len);
-int _nxweb_parse_http_request(nxweb_request* req, char* end_of_headers, int bytes_received);
+int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_headers, int bytes_received);
 void _nxweb_write_response_headers_raw(nxweb_request* req, const char* fmt, ...) __attribute__((format (printf, 2, 3)));
 void _nxweb_prepare_response_headers(nxweb_request* req);
 void _nxweb_finalize_response_writing_state(nxweb_request *req);
