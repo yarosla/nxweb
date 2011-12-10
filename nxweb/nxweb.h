@@ -41,11 +41,6 @@ typedef struct nx_simple_map_entry {
   const char* value;
 } nx_simple_map_entry, nxweb_http_header, nxweb_http_parameter, nxweb_http_cookie;
 
-enum {
-  NXE_CLASS_LISTEN=0,
-  NXE_CLASS_SOCKET
-};
-
 enum nxweb_conn_state {
   NXWEB_CS_WAITING_FOR_REQUEST,
   NXWEB_CS_RECEIVING_HEADERS,
@@ -88,8 +83,6 @@ enum nxweb_uri_handler_flags {
 };
 
 typedef struct nxweb_request {
-  //struct nxweb_connection* conn;
-  nxe_event* worker_notify;
 
   // Parsed HTTP request info:
   char* request_body;
@@ -103,6 +96,7 @@ typedef struct nxweb_request {
   int content_length; // -1 = unspecified: chunked or until close
   int content_received;
   char* transfer_encoding;
+  char* range;
   const char* path_info; // points right after uri_handler's prefix
 
   nxweb_http_header* headers;
@@ -124,7 +118,6 @@ typedef struct nxweb_request {
 
   int sendfile_fd;
   off_t sendfile_offset;
-  size_t sendfile_end;
 
   enum nxweb_response_state rstate;
 
@@ -135,6 +128,8 @@ typedef struct nxweb_request {
   // booleans
   unsigned http11:1;
   unsigned head_method:1;
+  unsigned get_method:1;
+  unsigned post_method:1;
   unsigned expect_100_continue:1;
   unsigned chunked_request:1;
   unsigned keep_alive:1;
@@ -152,7 +147,7 @@ typedef struct nxweb_connection {
   int request_count; // number of requests served by this connection
   enum nxweb_conn_state cstate;
 
-  struct nxweb_net_thread* tdata;
+  nxe_event_async worker_evt;
 
   nxweb_request req;
 
@@ -191,7 +186,7 @@ const char* nxweb_get_request_cookie(nxweb_request *req, const char* name);
 
 void nxweb_send_http_error(nxweb_request *req, int code, const char* message);
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location);
-int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo);
+int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo, off_t offset, size_t end_offset, const char* charset);
 void nxweb_set_response_status(nxweb_request *req, int code, const char* message);
 void nxweb_set_response_content_type(nxweb_request *req, const char* content_type);
 void nxweb_set_response_charset(nxweb_request *req, const char* charset);

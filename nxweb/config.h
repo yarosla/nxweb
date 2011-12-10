@@ -2,9 +2,17 @@
 #define CONFIG_H_INCLUDED
 
 #define NXWEB_LISTEN_PORT 8777
+
+#ifdef NX_DEBUG
+#define N_NET_THREADS 1
+// N_WORKER_THREADS - number of worker threads per each network thread
+#define N_WORKER_THREADS 1
+#else
 #define N_NET_THREADS 4
 // N_WORKER_THREADS - number of worker threads per each network thread
 #define N_WORKER_THREADS 4
+#endif
+
 #define NXWEB_KEEP_ALIVE_TIMEOUT 30000000
 #define NXWEB_WRITE_TIMEOUT 10000000
 #define NXWEB_WRITE_BODY_TIMEOUT 10000000

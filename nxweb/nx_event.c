@@ -56,6 +56,43 @@ static void nxe_loop_gc(nxe_loop* loop) {
   nxp_gc(&loop->event_pool);
 }
 
+static int nxe_async_open_fd() {
+  int fd=eventfd(0, EFD_NONBLOCK);
+  if (fd==-1) {
+    nxweb_log_error("eventfd() returned error %d", errno);
+    return -1;
+  }
+//  if (_nxweb_set_non_block(fd)<0) {
+//    nxweb_log_error("can't set eventfd() nonblocking %d", errno);
+//    return -1;
+//  }
+  return fd;
+}
+
+void nxe_async_init(nxe_event_async* aevt) {
+  nxe_init_event(&aevt->evt);
+  aevt->evt.fd=nxe_async_open_fd();
+  aevt->evt.read_ptr=(char*)&aevt->buf;
+  aevt->evt.read_size=sizeof(eventfd_t);
+  aevt->evt.read_status=NXE_CAN_AND_WANT;
+}
+
+void nxe_async_finalize(nxe_event_async* aevt) {
+  if (aevt->evt.fd) close(aevt->evt.fd);
+  aevt->evt.fd=0;
+}
+
+void nxe_async_rearm(nxe_event_async* aevt) {
+  aevt->evt.read_ptr=(char*)&aevt->buf;
+  aevt->evt.read_size=sizeof(eventfd_t);
+}
+
+void nxe_async_send(nxe_event_async* aevt) {
+//  uint64_t incr=1;
+//  write(event_fd, &incr, sizeof(incr));
+  eventfd_write(aevt->evt.fd, 1);
+}
+
 // NOTE: setting the same timer twice leads to unpredictable results; make sure to unset first
 void nxe_set_timer(nxe_loop* loop, nxe_timer* timer, nxe_time_t usec_interval) {
   //////////////
@@ -130,7 +167,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
         }
       }
       else if (nxe_event_classes[evt->event_class].on_read) {
-        if (evt->event_class) nxweb_log_error("read_ptr=0; invoking on_read to do read");
+        //if (evt->event_class) nxweb_log_error("read_ptr=0; invoking on_read to do read");
         nxe_event_classes[evt->event_class].on_read(loop, evt, NXE_EVENT_DATA(evt), NXE_READ);
         return 1;
       }
@@ -145,8 +182,34 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
   if (evt->write_status==NXE_CAN_AND_WANT) {
     _nxweb_batch_write_begin(evt->fd);
     do {
-      if (evt->write_ptr) {
-        int bytes_written=write(evt->fd, evt->write_ptr, evt->write_size);
+      if (evt->send_fd) {
+        size_t bytes_written=sendfile(evt->fd, evt->send_fd, &evt->send_offset, evt->write_size);
+        if (bytes_written<=0) {
+          _nxweb_batch_write_end(evt->fd);
+          if (errno==EAGAIN) {
+            evt->write_status&=~NXE_CAN;
+            return 1;
+          }
+          else {
+            nxweb_log_error("sendfile() error %d", errno);
+            evt->write_status&=~NXE_CAN;
+            nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_ERROR);
+            return 1;
+          }
+        }
+        else {
+          evt->write_size-=bytes_written;
+          int write_full=!evt->write_size;
+          if (!write_full) evt->write_status&=~NXE_CAN;
+          if (nxe_event_classes[evt->event_class].on_write)
+            nxe_event_classes[evt->event_class].on_write(loop, evt, NXE_EVENT_DATA(evt), write_full? NXE_WRITE_FULL : NXE_WRITE);
+          // callback might have changed read_size
+          if (!evt->write_size) evt->write_status&=~NXE_WANT;
+          continue;
+        }
+      }
+      else if (evt->write_ptr) {
+        size_t bytes_written=write(evt->fd, evt->write_ptr, evt->write_size);
         if (bytes_written==0) {
           _nxweb_batch_write_end(evt->fd);
           nxweb_log_error("write() returned 0, error %d", errno);
@@ -163,6 +226,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           else {
             _nxweb_batch_write_end(evt->fd);
             nxweb_log_error("write() error %d", errno);
+            evt->write_status&=~NXE_CAN;
             nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_ERROR);
             return 1;
           }
@@ -282,7 +346,12 @@ void nxe_stop(nxe_loop* loop, nxe_event* evt) {
   evt->active=0;
 }
 
-static nxe_event* nxe_add_event(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt) {
+void nxe_init_event(nxe_event* evt) {
+  memset(evt, 0, sizeof(nxe_event));
+}
+
+// NOTE: make sure evt structure is properly initialized (status bits, read/write ptrs, etc.)
+void nxe_add_event(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt) {
   if (loop->current) {
     evt->next=loop->current->next;
     loop->current->next=evt;
@@ -295,23 +364,21 @@ static nxe_event* nxe_add_event(nxe_loop* loop, nxe_event_class_t evt_class, nxe
     evt->prev=evt;
   }
   evt->event_class=evt_class;
-  return evt;
+  if (nxe_event_classes[evt_class].on_new)
+    nxe_event_classes[evt_class].on_new(loop, evt, NXE_EVENT_DATA(evt), 0);
 }
 
 nxe_event* nxe_new_event_fd(nxe_loop* loop, nxe_event_class_t evt_class, int fd) {
-  nxe_event *evt=nxe_add_event(loop, evt_class, (nxe_event*)nxp_get(&loop->event_pool));
+  nxe_event *evt=(nxe_event*)nxp_get(&loop->event_pool);
   evt->fd=fd;
-  if (nxe_event_classes[evt_class].on_new)
-    nxe_event_classes[evt_class].on_new(loop, evt, NXE_EVENT_DATA(evt), 0);
+  nxe_add_event(loop, evt_class, evt);
   return evt;
 }
 
 // NOTE: make sure evt structure is properly initialized (status bits, read/write ptrs, etc.)
 void nxe_add_event_fd(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt, int fd) {
-  nxe_add_event(loop, evt_class, evt);
   evt->fd=fd;
-  if (nxe_event_classes[evt_class].on_new)
-    nxe_event_classes[evt_class].on_new(loop, evt, NXE_EVENT_DATA(evt), 0);
+  nxe_add_event(loop, evt_class, evt);
 }
 
 void nxe_delete_event(nxe_loop* loop, nxe_event* evt) {
@@ -328,6 +395,11 @@ void nxe_remove_event(nxe_loop* loop, nxe_event* evt) {
   if (evt==loop->started_from) loop->started_from=loop->started_from==evt->next? 0 : evt->next;
   evt->next=
   evt->prev=0;
+
+  if (evt->send_fd) {
+    close(evt->send_fd);
+    evt->send_fd=0;
+  }
 
   if (nxe_event_classes[evt->event_class].on_delete)
     nxe_event_classes[evt->event_class].on_delete(loop, evt, NXE_EVENT_DATA(evt), 0);

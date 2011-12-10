@@ -39,12 +39,14 @@ static void nxp_init_chunk(nxp_pool* pool) {
   prev=pool->free_last;
   int object_size=pool->object_size;
   for (i=chunk->nitems, obj=chunk->pool; i>0; i--, obj=(nxp_object*)((char*)obj+object_size)) {
+    obj->in_use=0;
     obj->chunk_id=chunk_id;
     obj->prev=prev;
     if (prev) prev->next=obj;
     prev=obj;
   }
   pool->free_last=prev;
+  prev->next=0;
   if (!pool->free_first) pool->free_first=chunk->pool;
 }
 
@@ -92,7 +94,8 @@ nxp_object* nxp_get(nxp_pool* pool) {
     obj->next->prev=0;
   }
   else {
-    pool->free_first=pool->free_last=0;
+    pool->free_first=
+    pool->free_last=0;
   }
 
   nxp_chunk_id_t chunk_id=obj->chunk_id; // preserve chunk_id
@@ -111,9 +114,12 @@ void nxp_recycle(nxp_pool* pool, nxp_object* obj) {
       pool->free_last->next=obj;
       obj->prev=pool->free_last;
       pool->free_last=obj;
+      obj->next=0;
     }
     else {
       pool->free_first=pool->free_last=obj;
+      obj->next=0;
+      obj->prev=0;
     }
   }
   else {
@@ -122,9 +128,12 @@ void nxp_recycle(nxp_pool* pool, nxp_object* obj) {
       pool->free_first->prev=obj;
       obj->next=pool->free_first;
       pool->free_first=obj;
+      obj->prev=0;
     }
     else {
       pool->free_first=pool->free_last=obj;
+      obj->next=0;
+      obj->prev=0;
     }
   }
 }

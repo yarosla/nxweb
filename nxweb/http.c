@@ -178,7 +178,9 @@ char* _nxweb_find_end_of_http_headers(char* buf, int len) {
   return 0;
 }
 
-// Modifies conn->in_buffer content
+#define SPACE 32U
+
+// Modifies headers content
 int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_headers, int bytes_received) {
   nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   char* body=end_of_headers;
@@ -186,42 +188,55 @@ int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_he
   if (!body) return -1; // no body
   while (*body=='\r' || *body=='\n') *body++='\0';
 
-  char* pl;
-  char* first_line=strtok_r(headers, "\r\n", &pl);
+  req->content_length=0;
 
-  char* pc;
-  char* method=strtok_r(first_line, " \t", &pc);
-  char* uri=strtok_r(0, " \t", &pc);
-  char* http_version=strtok_r(0, " \t", &pc);
+  // first line
+  char* pl=strchr(headers, '\n');
+  if (pl) *pl++='\0';
+  else pl=body;
+  req->method=headers;
+  char* p=headers;
+  while ((unsigned char)*p>SPACE) p++;
+  *p++='\0';
+  while ((unsigned char)*p<=SPACE && p<pl) p++;
+  if (p>=pl) return -1;
+  req->uri=p;
+  while ((unsigned char)*p>SPACE) p++;
+  *p++='\0';
+  while ((unsigned char)*p<=SPACE && p<pl) p++;
+  if (p>=pl) return -1;
+  req->http_version=p;
+  while ((unsigned char)*p>SPACE) p++;
+  *p++='\0';
 
-  int http11=strcasecmp(http_version, "HTTP/1.0")==0? 0 : 1;
+  req->keep_alive=
+  req->http11=strcasecmp(req->http_version, "HTTP/1.0")==0? 0 : 1;
 
-  char* host=0;
-  // Check for HTTP/1.1 absolute URL
-  if (strncasecmp(uri, "http://", 7)==0) {
-    host=uri;
-    uri=strchr(uri+7, '/');
+  if (strncmp(req->uri, "http://", 7)==0) {
+    char* host=req->uri;
+    char* uri=strchr(req->uri+7, '/');
     if (!uri) return -1;
     int host_len=(uri-host)-7;
     memmove(host, host+7, host_len);
     host[host_len]='\0';
+    req->host=host;
+    req->uri=uri;
   }
 
-  if (*uri!='/') return -1;
+  if (*req->uri!='/') return -1;
 
   // Read headers
-  char* cookie=0;
-  char* user_agent=0;
-  char* content_type=0;
-  char* expect=0;
-  size_t content_length=0;
-  char* transfer_encoding=0;
-  int keep_alive=http11;
   char* name;
   char* value=0;
+  char* expect=0;
   // last header must be nulled
   nxweb_http_header* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
-  while ((name=strtok_r(0, "\r\n", &pl))) {
+  while (pl<body) {
+    name=pl;
+    pl=strchr(pl, '\n');
+    if (pl) *pl++='\0';
+    else pl=body;
+
     if (*name>0 && *name<=' ') {
       // starts with whitespace => header continuation
       if (value) {
@@ -236,16 +251,16 @@ int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_he
     //value+=strspn(value, " \t");
     value=nxweb_trunc_space(value);
 
-    if (!strcasecmp(name, "Host")) host=value;
-    else if (!strcasecmp(name, "Range")) return -2; // not implemented
+    if (!strcasecmp(name, "Host")) req->host=value;
+    else if (!strcasecmp(name, "Range")) req->range=value; // not implemented
     else if (!strcasecmp(name, "Trailer")) return -2; // not implemented
     else if (!strcasecmp(name, "Expect")) expect=value;
-    else if (!strcasecmp(name, "Cookie")) cookie=value;
-    else if (!strcasecmp(name, "User-Agent")) user_agent=value;
-    else if (!strcasecmp(name, "Content-Type")) content_type=value;
-    else if (!strcasecmp(name, "Content-Length")) content_length=atoi(value);
-    else if (!strcasecmp(name, "Transfer-Encoding")) transfer_encoding=value;
-    else if (!strcasecmp(name, "Connection")) keep_alive=!strcasecmp(value, "keep-alive");
+    else if (!strcasecmp(name, "Cookie")) req->cookie=value;
+    else if (!strcasecmp(name, "User-Agent")) req->user_agent=value;
+    else if (!strcasecmp(name, "Content-Type")) req->content_type=value;
+    else if (!strcasecmp(name, "Content-Length")) req->content_length=atoi(value);
+    else if (!strcasecmp(name, "Transfer-Encoding")) req->transfer_encoding=value;
+    else if (!strcasecmp(name, "Connection")) req->keep_alive=!strcasecmp(value, "keep-alive");
     else {
       header=nxb_alloc_obj(nxb, sizeof(nxweb_http_header));
       header->name=name;
@@ -254,25 +269,16 @@ int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_he
   }
   req->headers=header;
 
-  req->content_type=content_type;
-  req->content_length=content_length;
-  req->cookie=cookie;
-  req->transfer_encoding=transfer_encoding;
-  req->keep_alive=keep_alive;
   req->request_body=body;
   req->content_received=bytes_received-(body-headers);
-  req->host=host;
-  req->method=method;
-  req->uri=uri;
-  req->http_version=http_version;
-  req->http11=http11;
-  req->user_agent=user_agent;
   req->path_info=0;
-  req->chunked_request=transfer_encoding && !strcasecmp(transfer_encoding, "chunked");
+  req->chunked_request=req->transfer_encoding && !strcasecmp(req->transfer_encoding, "chunked");
   if (req->chunked_request) req->content_length=-1;
   req->expect_100_continue=req->content_length && expect && !strcasecmp(expect, "100-continue");
   req->head_method=!strcasecmp(req->method, "HEAD");
   if (req->head_method) req->method="GET";
+  req->get_method=req->head_method || !strcasecmp(req->method, "GET");
+  req->post_method=!req->head_method && !strcasecmp(req->method, "POST");
 
   return 0;
 }
@@ -330,13 +336,13 @@ int _nxweb_verify_chunked(const char* buf, int buf_len) {
   return -1;
 }
 
-int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo) {
-/*
+int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo, off_t offset, size_t size, const char* charset) {
   if (fpath==0) { // cancel sendfile
     if (req->sendfile_fd) close(req->sendfile_fd);
     req->sendfile_fd=0;
-    req->sendfile_length=0;
+    req->sendfile_offset=0;
     req->response_content_type=0;
+    req->out_body_length=0;
     return 0;
   }
 
@@ -356,10 +362,12 @@ int nxweb_send_file(nxweb_request *req, const char* fpath, struct stat* finfo) {
   int fd=open(fpath, O_RDONLY|O_NONBLOCK);
   if (fd==-1) return -1;
   req->sendfile_fd=fd;
-  req->sendfile_length=finfo->st_size;
-  req->sendfile_last_modified=finfo->st_mtime;
-  req->response_content_type=nxweb_get_mime_type_by_ext(fpath)->mime;
-*/
+  req->sendfile_offset=offset;
+  req->out_body_length=size? size : finfo->st_size-offset;
+  req->response_last_modified=finfo->st_mtime;
+  const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(fpath);
+  req->response_content_type=mtype->mime;
+  if (mtype->charset_required) req->response_content_charset=charset;
   return 0;
 }
 
@@ -382,124 +390,35 @@ void nxweb_add_response_header(nxweb_request *req, const char* name, const char*
   nx_simple_map_add(req->response_headers, name, value, NXWEB_MAX_RESPONSE_HEADERS);
 }
 
-void _nxweb_write_response_headers_raw(nxweb_request *req, const char* fmt, ...) {
-  if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_HEADERS) {
-    _nxweb_finalize_response_writing_state(req);
-    if (req->out_headers) return; // illegal state; already have headers
-    req->rstate=NXWEB_RS_WRITING_RESPONSE_HEADERS;
-  }
-  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
-  va_list ap;
-  va_start(ap, fmt);
-  nxb_printf_va(nxb, fmt, ap);
-  va_end(ap);
-}
-
-static void writing_response_headers_complete(nxweb_request *req) {
-  assert(req->rstate==NXWEB_RS_WRITING_RESPONSE_HEADERS);
-  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
-  nxb_append_char(nxb, '\0');
-  req->out_headers=nxb_finish_obj(nxb);
-  req->rstate=NXWEB_RS_INITIAL;
-}
-
-static int writing_response_body_begin(nxweb_request *req) {
+static inline int writing_response_body_begin(nxweb_request *req) {
   if (req->rstate==NXWEB_RS_WRITING_RESPONSE_BODY) return 0; // already started = OK
   if (req->out_body) return -1; // already have body
   req->rstate=NXWEB_RS_WRITING_RESPONSE_BODY;
   return 0;
 }
 
-static void writing_response_body_complete(nxweb_request *req) {
-  assert(req->rstate==NXWEB_RS_WRITING_RESPONSE_BODY);
+static inline void writing_response_body_complete(nxweb_request *req) {
+  if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) return;
   nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
-  //nxb_append_char(nxb, '\0');
   req->out_body=nxb_get_unfinished(nxb, &req->out_body_length);
-  nxb_finish_obj(nxb);
+  nxb_finish_stream(nxb);
   req->rstate=NXWEB_RS_INITIAL;
 }
 
-void _nxweb_finalize_response_writing_state(nxweb_request *req) {
-  switch (req->rstate) {
-    case NXWEB_RS_WRITING_RESPONSE_HEADERS:
-      writing_response_headers_complete(req);
-      break;
-    case NXWEB_RS_WRITING_RESPONSE_BODY:
-      writing_response_body_complete(req);
-      break;
-    default:
-      break;
-  }
-}
-
-void _nxweb_prepare_response_headers(nxweb_request *req) {
-  char date_buf[64];
-  time_t t;
-  struct tm tm;
-  time(&t);
-  gmtime_r(&t, &tm);
-  strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
-
-  _nxweb_write_response_headers_raw(req, "HTTP/1.%d %d %s\r\n"
-           "Server: nxweb/" REVISION "\r\n"
-           "Date: %s\r\n"
-           "Connection: %s\r\n",
-           req->http11, req->response_code? req->response_code : 200,
-           req->response_status? req->response_status : "OK",
-           date_buf,
-           req->keep_alive?"keep-alive":"close");
-  if (req->response_headers) {
-    // write added headers
-    int i;
-    for (i=0; req->response_headers[i].name; i++) {
-      _nxweb_write_response_headers_raw(req, "%s: %s\r\n", req->response_headers[i].name, req->response_headers[i].value);
-    }
-  }
-  const nxweb_mime_type* mtype=nxweb_get_mime_type(req->response_content_type);
-  if (req->response_content_charset && mtype && mtype->charset_required) {
-    _nxweb_write_response_headers_raw(req,
-             "Content-Type: %s; charset=%s\r\n",
-             mtype->mime, req->response_content_charset);
-  }
-  else {
-    _nxweb_write_response_headers_raw(req,
-             "Content-Type: %s\r\n",
-             mtype? mtype->mime : req->response_content_type);
-  }
-  if (req->response_last_modified) {
-    gmtime_r(&req->response_last_modified, &tm);
-    strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
-    _nxweb_write_response_headers_raw(req, "Last-Modified: %s\r\n", date_buf);
-  }
-  _nxweb_write_response_headers_raw(req,
-           "Content-Length: %u\r\n\r\n",
-           (unsigned)req->out_body_length);
-  writing_response_headers_complete(req);
-}
-
 void nxweb_response_make_room(nxweb_request *req, int size) {
-  if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) {
-    _nxweb_finalize_response_writing_state(req);
-    if (writing_response_body_begin(req)) return; // illegal state
-  }
+  if (writing_response_body_begin(req)) return; // illegal state
   nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   nxb_make_room(nxb, size);
 }
 
 void nxweb_response_append(nxweb_request *req, const char* text) {
-  if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) {
-    _nxweb_finalize_response_writing_state(req);
-    if (writing_response_body_begin(req)) return; // illegal state
-  }
+  if (writing_response_body_begin(req)) return; // illegal state
   nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   nxb_append(nxb, text, strlen(text));
 }
 
 void nxweb_response_printf(nxweb_request *req, const char* fmt, ...) {
-  if (req->rstate!=NXWEB_RS_WRITING_RESPONSE_BODY) {
-    _nxweb_finalize_response_writing_state(req);
-    if (writing_response_body_begin(req)) return; // illegal state
-  }
+  if (writing_response_body_begin(req)) return; // illegal state
   nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
   va_list ap;
   va_start(ap, fmt);
@@ -507,34 +426,144 @@ void nxweb_response_printf(nxweb_request *req, const char* fmt, ...) {
   va_end(ap);
 }
 
-void nxweb_send_http_error(nxweb_request *req, int code, const char* message) {
-  const char* response_body="<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\" version=\"-//W3C//DTD XHTML 1.1//EN\" xml:lang=\"en\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><title>%s</title></head><body><p>%s</p></body></html>";
-  nxweb_response_printf(req, response_body, message, message);
-  nxweb_set_response_status(req, code, message);
+void _nxweb_finalize_response(nxweb_request *req) {
+  writing_response_body_complete(req);
+}
+
+static char* uint_to_decimal_string(unsigned n, char* buf, int buf_size) {
+  char* p=buf+buf_size;
+  *--p='\0';
+  if (!n) {
+    *--p='0';
+    return p;
+  }
+  while (n) {
+    *--p=n%10+'0';
+    n=n/10;
+  }
+  return p;
+}
+
+void _nxweb_prepare_response_headers(nxweb_request *req) {
+  char date_buf[64], buf[32];
+  time_t t;
+  struct tm tm;
+  time(&t);
+  gmtime_r(&t, &tm);
+  strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
+
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+
+  writing_response_body_complete(req);
+
+  nxb_make_room(nxb, 200);
+  nxb_append_fast(nxb, "HTTP/1.", 7);
+  nxb_append_char_fast(nxb, req->http11? '1':'0');
+  nxb_append_char_fast(nxb, ' ');
+  nxb_append_str_fast(nxb, uint_to_decimal_string(req->response_code? req->response_code : 200, buf, sizeof(buf)));
+  nxb_append_char_fast(nxb, ' ');
+  nxb_append_str(nxb, req->response_status? req->response_status : "OK");
+  nxb_make_room(nxb, 200);
+  nxb_append_str_fast(nxb, "\r\n"
+                      "Server: nxweb/" REVISION "\r\n"
+                      "Date: ");
+  nxb_append_str_fast(nxb, date_buf);
+  nxb_append_str_fast(nxb, "\r\n"
+                      "Connection: ");
+  nxb_append_str_fast(nxb, req->keep_alive?"keep-alive":"close");
+  nxb_append_str_fast(nxb, "\r\n");
+
+  if (req->response_headers) {
+    // write added headers
+    int i;
+    for (i=0; req->response_headers[i].name; i++) {
+      nxb_append_str(nxb, req->response_headers[i].name);
+      nxb_append_char(nxb, ':');
+      nxb_append_char(nxb, ' ');
+      nxb_append_str(nxb, req->response_headers[i].value);
+      nxb_append_str(nxb, "\r\n");
+    }
+  }
+  nxb_append_str(nxb, "Content-Type: ");
+  nxb_append_str(nxb, req->response_content_type? req->response_content_type : "text/html");
+  if (req->response_content_charset) {
+    nxb_append_str(nxb, "; charset=");
+    nxb_append_str(nxb, req->response_content_charset);
+  }
+  nxb_append_str(nxb, "\r\n");
+  if (req->response_last_modified) {
+    gmtime_r(&req->response_last_modified, &tm);
+    strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
+    nxb_append_str(nxb, "Last-Modified: ");
+    nxb_append_str(nxb, date_buf);
+    nxb_append_str(nxb, "\r\n");
+  }
+  nxb_make_room(nxb, 32);
+  nxb_append_str_fast(nxb, "Content-Length: ");
+  nxb_append_str_fast(nxb, uint_to_decimal_string(req->out_body_length, buf, sizeof(buf)));
+  nxb_append_fast(nxb, "\r\n\r\n", 5);
+
+  req->out_headers=nxb_finish_stream(nxb);
 }
 
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location) {
+  char date_buf[64], buf[32];
+  time_t t;
+  struct tm tm;
+  time(&t);
+  gmtime_r(&t, &tm);
+  strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
+
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+
+  writing_response_body_complete(req);
+
+  nxb_make_room(nxb, 250);
+  nxb_append_fast(nxb, "HTTP/1.", 7);
+  nxb_append_char_fast(nxb, req->http11? '1':'0');
+  nxb_append_char_fast(nxb, ' ');
+  nxb_append_str_fast(nxb, uint_to_decimal_string(code, buf, sizeof(buf)));
+  nxb_append_char_fast(nxb, ' ');
+  nxb_append_str(nxb, code==302? "Found":(code==301? "Moved Permanently":"Redirect"));
+  nxb_append_str_fast(nxb, "\r\n"
+                      "Server: nxweb/" REVISION "\r\n"
+                      "Date: ");
+  nxb_append_str_fast(nxb, date_buf);
+  nxb_append_str_fast(nxb, "\r\n"
+                      "Connection: ");
+  nxb_append_str_fast(nxb, req->keep_alive?"keep-alive":"close");
+  nxb_append_str_fast(nxb, "\r\nContent-Length: 0\r\nLocation: ");
   if (!strncmp(location, "http", 4)) { // absolute uri
-    _nxweb_write_response_headers_raw(req,
-             "HTTP/1.%d %d %s\r\n"
-             "Connection: %s\r\n"
-             "Content-Length: 0\r\n"
-             "Location: %s\r\n\r\n",
-             req->http11, code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
-             req->keep_alive?"keep-alive":"close",
-             location);
+    nxb_append_str(nxb, location);
   }
-  else { // uri without host
-    _nxweb_write_response_headers_raw(req,
-             "HTTP/1.%d %d %s\r\n"
-             "Connection: %s\r\n"
-             "Content-Length: 0\r\n"
-             "Location: http://%s%s\r\n\r\n",
-             req->http11, code, code==302? "Found":(code==301? "Moved Permanently":"Redirect"),
-             req->keep_alive?"keep-alive":"close",
-             req->host, location);
+  else {
+    nxb_append_str(nxb, "http://");
+    nxb_append_str(nxb, req->host);
+    nxb_append_str(nxb, location);
   }
-  writing_response_headers_complete(req);
+  nxb_append_str(nxb, "\r\n\r\n");
+
+  req->out_headers=nxb_finish_stream(nxb);
+}
+
+void nxweb_send_http_error(nxweb_request *req, int code, const char* message) {
+  static const char* response_body1="<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"
+    "<html xmlns=\"http://www.w3.org/1999/xhtml\">"
+    "<head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/>"
+    "<title>";
+  static const char* response_body2="</title>"
+    "</head>\n"
+    "<body><p>";
+  static const char* response_body3="</p></body>\n"
+    "</html>";
+  if (writing_response_body_begin(req)) return; // illegal state
+  nxb_buffer* nxb=&NXWEB_REQUEST_CONNECTION(req)->iobuf;
+  nxb_append_str(nxb, response_body1);
+  nxb_append_str(nxb, message);
+  nxb_append_str(nxb, response_body2);
+  nxb_append_str(nxb, message);
+  nxb_append_str(nxb, response_body3);
+  nxweb_set_response_status(req, code, message);
 }
 
 //int nxweb_response_append_escape_html(nxweb_request *req, const char* text) {

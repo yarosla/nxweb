@@ -102,9 +102,7 @@ static nxweb_result send_file(nxweb_uri_handler_phase phase, nxweb_request *req)
     return NXWEB_OK;
   }
 
-  nxweb_set_response_charset(req, "utf-8"); // set default charset for text files
-
-  int result=nxweb_send_file(req, fpath, &finfo);
+  int result=nxweb_send_file(req, fpath, &finfo, 0, 0, "utf-8");
   if (result!=0) { // should not happen
     nxweb_log_error("[%s] stat() was OK, but open() failed", fpath);
     nxweb_send_http_error(req, 500, "Internal Server Error");

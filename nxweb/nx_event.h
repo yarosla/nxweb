@@ -31,6 +31,7 @@
 
 #include <stdio.h>
 #include <time.h>
+#include <sys/eventfd.h>
 
 #include "nx_pool.h"
 
@@ -89,10 +90,9 @@ typedef struct nxe_event {
   int fd;
 
   int read_size;
-  int write_size;
+  size_t write_size;
   int send_fd;
   off_t send_offset;
-  size_t send_end;
   char* read_ptr;
   const char* write_ptr;
 
@@ -102,6 +102,11 @@ typedef struct nxe_event {
 } nxe_event;
 
 #define NXE_EVENT_DATA(evt) ((void*)((evt)+1))
+
+typedef struct nxe_event_async {
+  nxe_event evt;
+  eventfd_t buf;
+} nxe_event_async;
 
 typedef void (*nxe_timer_callback)(struct nxe_loop* loop, void* timer_data);
 
@@ -127,6 +132,8 @@ typedef struct nxe_loop {
   int num_epoll_events;
   struct epoll_event *epoll_events;
 
+  void* user_data;
+
   nxp_pool event_pool;
   nxp_chunk event_pool_initial_chunk;
   // chunk data to follow here!!!
@@ -144,12 +151,20 @@ void nxe_stop(nxe_loop* loop, nxe_event* evt);
 nxe_event* nxe_new_event_fd(nxe_loop* loop, nxe_event_class_t evt_class, int fd);
 void nxe_delete_event(nxe_loop* loop, nxe_event* evt);
 
+void nxe_init_event(nxe_event* evt);
+
 // NOTE: make sure evt structure is properly initialized (status bits, read/write ptrs, etc.)
+void nxe_add_event(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt);
 void nxe_add_event_fd(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt, int fd);
 void nxe_remove_event(nxe_loop* loop, nxe_event* evt);
 
 void nxe_set_timer(nxe_loop* loop, nxe_timer* timer, nxe_time_t usec_interval);
 void nxe_unset_timer(nxe_loop* loop, nxe_timer* timer);
+
+void nxe_async_init(nxe_event_async* aevt);
+void nxe_async_finalize(nxe_event_async* aevt);
+void nxe_async_send(nxe_event_async* aevt);
+void nxe_async_rearm(nxe_event_async* aevt);
 
 static inline nxe_time_t nxe_get_time_usec() {
   struct timespec ts;

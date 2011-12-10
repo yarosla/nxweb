@@ -65,14 +65,14 @@ static inline void* nxb_copy_obj(nxb_buffer* nxb, const void* src, int size) {
   return obj;
 }
 
-static inline void* nxb_finish_obj(nxb_buffer* nxb) {
-  void* obj=nxb->base;
+static inline char* nxb_finish_stream(nxb_buffer* nxb) {
+  char* obj=nxb->base;
   nxb->base=nxb->ptr;
   nxb->chunk->dirty=1;
   return obj;
 }
 
-static inline void nxb_unfinish_obj(nxb_buffer* nxb) {
+static inline void nxb_unfinish_stream(nxb_buffer* nxb) {
   nxb->ptr=nxb->base;
 }
 
@@ -108,6 +108,19 @@ static inline void nxb_append(nxb_buffer* nxb, const void* ptr, int size) {
   }
   memcpy(nxb->ptr, ptr, size);
   nxb->ptr+=size;
+}
+
+static inline void nxb_append_fast(nxb_buffer* nxb, const void* ptr, int size) {
+  memcpy(nxb->ptr, ptr, size);
+  nxb->ptr+=size;
+}
+
+static inline void nxb_append_str(nxb_buffer* nxb, const char* str) {
+  nxb_append(nxb, str, strlen(str));
+}
+
+static inline void nxb_append_str_fast(nxb_buffer* nxb, const char* str) {
+  nxb_append_fast(nxb, str, strlen(str));
 }
 
 static inline void nxb_blank(nxb_buffer* nxb, int size) {

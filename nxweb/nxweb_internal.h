@@ -31,6 +31,13 @@
 #include "nxweb.h"
 #include "nx_queue.h"
 
+enum {
+  NXE_CLASS_LISTEN=0,
+  NXE_CLASS_SOCKET,
+  NXE_CLASS_WORKER_JOB_DONE,
+  NXE_CLASS_NET_THREAD_SHUTDOWN
+};
+
 typedef struct nxweb_job {
   nxweb_connection* conn;
 } nxweb_job;
@@ -42,9 +49,9 @@ typedef struct nxweb_job_queue {
 
 typedef struct nxweb_net_thread {
   pthread_t thread_id;
-  struct ev_loop* loop;
-  //ev_async watch_shutdown;
-  //ev_io watch_accept;
+  nxe_loop* loop;
+  nxe_event listen_evt;
+  nxe_event_async shutdown_evt;
   nxweb_job_queue job_queue;
   pthread_mutex_t job_queue_mux;
   pthread_cond_t job_queue_cond;
@@ -78,7 +85,7 @@ char* _nxweb_find_end_of_http_headers(char* buf, int len);
 int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_headers, int bytes_received);
 void _nxweb_write_response_headers_raw(nxweb_request* req, const char* fmt, ...) __attribute__((format (printf, 2, 3)));
 void _nxweb_prepare_response_headers(nxweb_request* req);
-void _nxweb_finalize_response_writing_state(nxweb_request *req);
+void _nxweb_finalize_response(nxweb_request *req);
 void _nxweb_register_printf_extensions();
 void _nxweb_decode_chunked_request(nxweb_request* req);
 int _nxweb_decode_chunked(char* buf, int buf_len);
