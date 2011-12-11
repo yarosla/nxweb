@@ -36,6 +36,7 @@
 #include "nx_pool.h"
 
 #define NXE_EVENT_POOL_INITIAL_SIZE 16
+#define NXE_NUMBER_OF_TIMER_QUEUES 4
 
 enum nxe_status {
   NXE_CAN=1,
@@ -88,6 +89,7 @@ typedef struct nxe_event {
   nxe_bits_t hup_status:2;
 
   int fd;
+  int last_errno;
 
   int read_size;
   size_t write_size;
@@ -115,14 +117,21 @@ typedef struct nxe_timer {
   nxe_timer_callback callback;
   void* data;
   struct nxe_timer* next;
+  struct nxe_timer* prev;
 } nxe_timer;
+
+typedef struct nxe_timer_queue {
+  long timeout;
+  nxe_timer* timer_first;
+  nxe_timer* timer_last;
+} nxe_timer_queue;
+
 
 typedef struct nxe_loop {
   nxe_event* current;
   nxe_event* started_from;
 
   nxe_time_t current_time;
-  nxe_timer* timer_first;
 
   nxe_bits_t broken:1;
 
@@ -133,6 +142,8 @@ typedef struct nxe_loop {
   struct epoll_event *epoll_events;
 
   void* user_data;
+
+  nxe_timer_queue timers[NXE_NUMBER_OF_TIMER_QUEUES];
 
   nxp_pool event_pool;
   nxp_chunk event_pool_initial_chunk;
@@ -158,8 +169,9 @@ void nxe_add_event(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt);
 void nxe_add_event_fd(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt, int fd);
 void nxe_remove_event(nxe_loop* loop, nxe_event* evt);
 
-void nxe_set_timer(nxe_loop* loop, nxe_timer* timer, nxe_time_t usec_interval);
-void nxe_unset_timer(nxe_loop* loop, nxe_timer* timer);
+void nxe_set_timer_queue_timeout(nxe_loop* loop, int queue_idx, nxe_time_t usec_interval);
+void nxe_set_timer(nxe_loop* loop, int queue_idx, nxe_timer* timer);
+void nxe_unset_timer(nxe_loop* loop, int queue_idx, nxe_timer* timer);
 
 void nxe_async_init(nxe_event_async* aevt);
 void nxe_async_finalize(nxe_event_async* aevt);

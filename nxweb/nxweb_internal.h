@@ -38,6 +38,12 @@ enum {
   NXE_CLASS_NET_THREAD_SHUTDOWN
 };
 
+enum nxweb_timers {
+  NXE_TIMER_KEEP_ALIVE,
+  NXE_TIMER_READ,
+  NXE_TIMER_WRITE
+};
+
 typedef struct nxweb_job {
   nxweb_connection* conn;
 } nxweb_job;

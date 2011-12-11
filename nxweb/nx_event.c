@@ -93,43 +93,65 @@ void nxe_async_send(nxe_event_async* aevt) {
   eventfd_write(aevt->evt.fd, 1);
 }
 
+void nxe_set_timer_queue_timeout(nxe_loop* loop, int queue_idx, nxe_time_t usec_interval) {
+  assert(queue_idx>=0 && queue_idx<NXE_NUMBER_OF_TIMER_QUEUES);
+  loop->timers[queue_idx].timeout=usec_interval;
+}
+
 // NOTE: setting the same timer twice leads to unpredictable results; make sure to unset first
-void nxe_set_timer(nxe_loop* loop, nxe_timer* timer, nxe_time_t usec_interval) {
-  //////////////
-  return;
-  //////////////
-  timer->abs_time=loop->current_time+usec_interval;
-  nxe_timer* t=loop->timer_first;
-  while (t && t->next) {
-    if (t->next->abs_time > timer->abs_time) break;
-    t=t->next;
-  }
-  if (!t || t->abs_time > timer->abs_time) {
-    loop->timer_first=timer;
-    timer->next=t;
-  }
-  else {
-    timer->next=t->next;
-    t->next=timer;
+void nxe_set_timer(nxe_loop* loop, int queue_idx, nxe_timer* timer) {
+  assert(queue_idx>=0 && queue_idx<NXE_NUMBER_OF_TIMER_QUEUES);
+  assert(timer->abs_time==0 && timer->next==0 && timer->prev==0);
+  nxe_timer_queue* tq=&loop->timers[queue_idx];
+  timer->abs_time=loop->current_time+tq->timeout;
+  timer->next=0;
+  timer->prev=tq->timer_last;
+  if (tq->timer_last) tq->timer_last->next=timer;
+  else tq->timer_first=timer;
+  tq->timer_last=timer;
+}
+
+void nxe_unset_timer(nxe_loop* loop, int queue_idx, nxe_timer* timer) {
+  if (!timer->abs_time) return;
+  assert(queue_idx>=0 && queue_idx<NXE_NUMBER_OF_TIMER_QUEUES);
+  nxe_timer_queue* tq=&loop->timers[queue_idx];
+  if (timer->prev) timer->prev->next=timer->next;
+  else tq->timer_first=timer->next;
+  if (timer->next) timer->next->prev=timer->prev;
+  else tq->timer_last=timer->prev;
+  timer->next=0;
+  timer->prev=0;
+  timer->abs_time=0;
+}
+
+static void nxe_process_timers(nxe_loop* loop) {
+  nxe_timer* t;
+  int i;
+  nxe_timer_queue* tq;
+  for (i=NXE_NUMBER_OF_TIMER_QUEUES, tq=loop->timers; i--; tq++) {
+    while (tq->timer_first && tq->timer_first->abs_time-500000 <= loop->current_time) { // 0.5 sec precision
+      t=tq->timer_first;
+      tq->timer_first=t->next;
+      if (tq->timer_first) tq->timer_first->prev=0;
+      else tq->timer_last=0;
+      t->next=0;
+      t->prev=0;
+      t->abs_time=0;
+      t->callback(loop, t->data);
+      loop->num_epoll_events++;
+    }
   }
 }
 
-void nxe_unset_timer(nxe_loop* loop, nxe_timer* timer) {
-  //////////////
-  return;
-  //////////////
-  nxe_timer* t=loop->timer_first;
-  if (t==timer) {
-    loop->timer_first=timer->next;
-    return;
+static nxe_timer_queue* nxe_closest_tq(nxe_loop* loop) {
+  int i;
+  nxe_timer_queue* tq;
+  nxe_timer_queue* closest_tq=0;
+  for (i=NXE_NUMBER_OF_TIMER_QUEUES, tq=loop->timers; i--; tq++) {
+    if (tq->timer_first && (!closest_tq || tq->timer_first->abs_time < closest_tq->timer_first->abs_time))
+      closest_tq=tq;
   }
-  while (t && t->next) {
-    if (t->next==timer) {
-      t->next=timer->next;
-      return;
-    }
-    t=t->next;
-  }
+  return closest_tq;
 }
 
 static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
@@ -139,6 +161,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
         int bytes_read=read(evt->fd, evt->read_ptr, evt->read_size);
         if (bytes_read==0) {
           evt->read_status=0; //&=~NXE_WANT;
+          evt->last_errno=errno;
           nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_CLOSE);
           return 1;
         }
@@ -150,6 +173,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           else {
             nxweb_log_error("read() error %d", errno);
             evt->read_status&=~NXE_CAN;
+            evt->last_errno=errno;
             nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_ERROR);
             return 1;
           }
@@ -193,6 +217,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           else {
             nxweb_log_error("sendfile() error %d", errno);
             evt->write_status&=~NXE_CAN;
+            evt->last_errno=errno;
             nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_ERROR);
             return 1;
           }
@@ -214,6 +239,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           _nxweb_batch_write_end(evt->fd);
           nxweb_log_error("write() returned 0, error %d", errno);
           evt->write_status&=~NXE_CAN;
+          evt->last_errno=errno;
           nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_WRITTEN_NONE);
           return 1;
         }
@@ -227,6 +253,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
             _nxweb_batch_write_end(evt->fd);
             nxweb_log_error("write() error %d", errno);
             evt->write_status&=~NXE_CAN;
+            evt->last_errno=errno;
             nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_ERROR);
             return 1;
           }
@@ -257,6 +284,27 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
     return 1;
   }
 
+  if (evt->err_status & NXE_CAN) {
+    evt->err_status&=~NXE_CAN;
+    evt->last_errno=errno;
+    nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_ERROR);
+    return 1;
+  }
+
+  if (evt->hup_status & NXE_CAN) {
+    evt->hup_status&=~NXE_CAN;
+    evt->last_errno=errno;
+    nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_HUP);
+    return 1;
+  }
+
+  if (evt->rdhup_status & NXE_CAN) {
+    evt->rdhup_status&=~NXE_CAN;
+    evt->last_errno=errno;
+    nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_RDHUP);
+    return 1;
+  }
+
   return 0;
 }
 
@@ -270,16 +318,6 @@ static void nxe_process_loop(nxe_loop* loop) {
   loop->current=loop->current->prev; // shift current, so next run we start from different one
 }
 
-static void nxe_process_timers(nxe_loop* loop) {
-  nxe_timer* t;
-  while (loop->timer_first && loop->timer_first->abs_time-500000 <= loop->current_time) { // 0.5 sec precision
-    t=loop->timer_first;
-    loop->timer_first=t->next;
-    t->callback(loop, t->data);
-    loop->num_epoll_events++;
-  }
-}
-
 void nxe_break(nxe_loop* loop) {
   loop->broken=1;
 }
@@ -288,6 +326,7 @@ void nxe_run(nxe_loop* loop) {
   int i;
   nxe_event* evt;
   int time_to_wait;
+  nxe_timer_queue* closest_tq=0;
 
   loop->current_time=nxe_get_time_usec();
   loop->num_epoll_events=1; // initiate process_loop() from the start
@@ -300,10 +339,11 @@ void nxe_run(nxe_loop* loop) {
     else {
       nxe_loop_gc(loop);
     }
-    if (!loop->current && !loop->timer_first) break;
+    closest_tq=nxe_closest_tq(loop);
+    if (!loop->current && !closest_tq) break;
 
     // now do epoll_wait
-    time_to_wait=loop->timer_first? (int)((loop->timer_first->abs_time - loop->current_time)/1000) : 1000;
+    time_to_wait=closest_tq? (int)((closest_tq->timer_first->abs_time - loop->current_time)/1000) : 1000;
     if (time_to_wait>1000) time_to_wait=1000; // for gc
     loop->num_epoll_events=epoll_wait(loop->epoll_fd, loop->epoll_events, loop->max_epoll_events, time_to_wait);
     loop->current_time=nxe_get_time_usec();
