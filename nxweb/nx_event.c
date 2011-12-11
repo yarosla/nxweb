@@ -52,7 +52,53 @@
 #include "nx_event.h"
 #include "misc.h"
 
-static void nxe_loop_gc(nxe_loop* loop) {
+#define IS_IN_LOOP(loop, evt) ((evt)->prev || (loop)->train_first==(evt))
+
+static inline void nxe_link(nxe_loop* loop, nxe_event* evt) {
+  // link to end
+  evt->next=0;
+  evt->prev=loop->train_last;
+  if (loop->train_last) loop->train_last->next=evt;
+  else loop->train_first=evt;
+  loop->train_last=evt;
+
+  if (!loop->current) loop->current=evt;
+}
+
+static inline void nxe_unlink(nxe_loop* loop, nxe_event* evt) {
+  // unlink
+  if (evt->prev) evt->prev->next=evt->next;
+  else loop->train_first=evt->next;
+  if (evt->next) evt->next->prev=evt->prev;
+  else loop->train_last=evt->prev;
+
+  /// To fully unlink also do the following:
+  // if (loop->current==evt) loop->current=evt->next;
+  // evt->next=0;
+  // evt->prev=0;
+}
+
+void nxe_relink(nxe_loop* loop, nxe_event* evt) {
+  evt->last_activity=loop->current_time;
+  evt->logged_stale=0;
+  if (loop->current && (evt==loop->current || evt==loop->train_last)) return; // no need to relink
+  assert(IS_IN_LOOP(loop, evt));
+
+  nxe_unlink(loop, evt);
+  nxe_link(loop, evt);
+}
+
+static inline void nxe_loop_gc(nxe_loop* loop) {
+  nxe_event* evt=loop->train_first;
+  while (evt) {
+    if (loop->current_time - evt->last_activity < NXE_STALE_EVENT_TIMEOUT) break;
+    nxe_mark_stale_up(loop, evt, NXE_CAN);
+    if (!evt->logged_stale && nxe_event_classes[evt->event_class].log_stale) {
+      nxweb_log_error("stale event found: class=%d", evt->event_class);
+      evt->logged_stale=1;
+    }
+    evt=evt->next;
+  }
   nxp_gc(&loop->event_pool);
 }
 
@@ -74,7 +120,7 @@ void nxe_async_init(nxe_event_async* aevt) {
   aevt->evt.fd=nxe_async_open_fd();
   aevt->evt.read_ptr=(char*)&aevt->buf;
   aevt->evt.read_size=sizeof(eventfd_t);
-  aevt->evt.read_status=NXE_CAN_AND_WANT;
+  aevt->evt.read_status=NXE_WANT;
 }
 
 void nxe_async_finalize(nxe_event_async* aevt) {
@@ -138,7 +184,6 @@ static void nxe_process_timers(nxe_loop* loop) {
       t->prev=0;
       t->abs_time=0;
       t->callback(loop, t->data);
-      loop->num_epoll_events++;
     }
   }
 }
@@ -160,7 +205,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
       if (evt->read_ptr) {
         int bytes_read=read(evt->fd, evt->read_ptr, evt->read_size);
         if (bytes_read==0) {
-          evt->read_status=0; //&=~NXE_WANT;
+          evt->read_status&=~NXE_CAN;
           evt->last_errno=errno;
           nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_CLOSE);
           return 1;
@@ -186,7 +231,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           if (nxe_event_classes[evt->event_class].on_read)
             nxe_event_classes[evt->event_class].on_read(loop, evt, NXE_EVENT_DATA(evt), read_full? NXE_READ_FULL : NXE_READ);
           // callback might have changed read_size
-          if (!evt->read_size) evt->read_status&=~NXE_WANT;
+          //if (!evt->read_size) evt->read_status&=~NXE_WANT; // callback must do this
           continue;
         }
       }
@@ -229,7 +274,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           if (nxe_event_classes[evt->event_class].on_write)
             nxe_event_classes[evt->event_class].on_write(loop, evt, NXE_EVENT_DATA(evt), write_full? NXE_WRITE_FULL : NXE_WRITE);
           // callback might have changed read_size
-          if (!evt->write_size) evt->write_status&=~NXE_WANT;
+          //if (!evt->write_size) evt->write_status&=~NXE_WANT; // must be done by callback
           continue;
         }
       }
@@ -266,7 +311,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           if (nxe_event_classes[evt->event_class].on_write)
             nxe_event_classes[evt->event_class].on_write(loop, evt, NXE_EVENT_DATA(evt), write_full? NXE_WRITE_FULL : NXE_WRITE);
           // callback might have changed read_size
-          if (!evt->write_size) evt->write_status&=~NXE_WANT;
+          //if (!evt->write_size) evt->write_status&=~NXE_WANT; // must be done by callback
           continue;
         }
       }
@@ -305,17 +350,22 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
     return 1;
   }
 
+  if (evt->stale_status==NXE_CAN_AND_WANT) {
+    evt->stale_status&=~NXE_CAN;
+    evt->last_errno=0;
+    nxe_event_classes[evt->event_class].on_error(loop, evt, NXE_EVENT_DATA(evt), NXE_STALE);
+    return 1;
+  }
+
   return 0;
 }
 
 static void nxe_process_loop(nxe_loop* loop) {
-  loop->started_from=loop->current;
-  do {
+  while (loop->current) {
     while (loop->current && loop->current->active && nxe_process_event(loop, loop->current)) ;
     if (!loop->current) return;
     loop->current=loop->current->next;
-  } while (loop->current && loop->current!=loop->started_from);
-  loop->current=loop->current->prev; // shift current, so next run we start from different one
+  }
 }
 
 void nxe_break(nxe_loop* loop) {
@@ -329,22 +379,25 @@ void nxe_run(nxe_loop* loop) {
   nxe_timer_queue* closest_tq=0;
 
   loop->current_time=nxe_get_time_usec();
-  loop->num_epoll_events=1; // initiate process_loop() from the start
 
   while (!loop->broken) {
     nxe_process_timers(loop);
-    if (loop->num_epoll_events) {
+    if (loop->current) {
       nxe_process_loop(loop);
     }
     else {
       nxe_loop_gc(loop);
+      if (loop->current) {
+        nxe_process_loop(loop);
+      }
     }
     closest_tq=nxe_closest_tq(loop);
-    if (!loop->current && !closest_tq) break;
+    if (!loop->train_first && !closest_tq) break;
 
     // now do epoll_wait
     time_to_wait=closest_tq? (int)((closest_tq->timer_first->abs_time - loop->current_time)/1000) : 1000;
     if (time_to_wait>1000) time_to_wait=1000; // for gc
+    if (time_to_wait<0) time_to_wait=0;
     loop->num_epoll_events=epoll_wait(loop->epoll_fd, loop->epoll_events, loop->max_epoll_events, time_to_wait);
     loop->current_time=nxe_get_time_usec();
     if (loop->num_epoll_events<0) {
@@ -357,16 +410,17 @@ void nxe_run(nxe_loop* loop) {
     struct epoll_event* ev;
     for (i=loop->num_epoll_events, ev=loop->epoll_events; i>0; i--, ev++) {
       evt=ev->data.ptr;
-      if (ev->events&EPOLLIN) evt->read_status|=NXE_CAN;
-      if (ev->events&EPOLLOUT) evt->write_status|=NXE_CAN;
-      if (ev->events&EPOLLRDHUP) evt->rdhup_status|=NXE_CAN;
-      if (ev->events&EPOLLHUP) evt->hup_status|=NXE_CAN;
-      if (ev->events&EPOLLERR) evt->err_status|=NXE_CAN;
+      if (ev->events&EPOLLIN) nxe_mark_read_up(loop, evt, NXE_CAN);
+      if (ev->events&EPOLLOUT) nxe_mark_write_up(loop, evt, NXE_CAN);
+      if (ev->events&EPOLLRDHUP) { evt->rdhup_status|=NXE_CAN; nxe_relink(loop, evt); }
+      if (ev->events&EPOLLHUP) { evt->hup_status|=NXE_CAN; nxe_relink(loop, evt); }
+      if (ev->events&EPOLLERR) { evt->err_status|=NXE_CAN; nxe_relink(loop, evt); }
     }
   }
 }
 
 void nxe_start(nxe_loop* loop, nxe_event* evt) {
+  assert(!evt->active);
   // add event to epoll
   struct epoll_event ev={EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLHUP|EPOLLET, {.ptr=evt}};
   if (epoll_ctl(loop->epoll_fd, EPOLL_CTL_ADD, evt->fd, &ev)==-1) {
@@ -377,6 +431,7 @@ void nxe_start(nxe_loop* loop, nxe_event* evt) {
 }
 
 void nxe_stop(nxe_loop* loop, nxe_event* evt) {
+  assert(evt->active);
   // remove event from epoll
   struct epoll_event ev={0};
   if (epoll_ctl(loop->epoll_fd, EPOLL_CTL_DEL, evt->fd, &ev)==-1) {
@@ -392,18 +447,9 @@ void nxe_init_event(nxe_event* evt) {
 
 // NOTE: make sure evt structure is properly initialized (status bits, read/write ptrs, etc.)
 void nxe_add_event(nxe_loop* loop, nxe_event_class_t evt_class, nxe_event* evt) {
-  if (loop->current) {
-    evt->next=loop->current->next;
-    loop->current->next=evt;
-    evt->prev=loop->current;
-    evt->next->prev=evt;
-  }
-  else {
-    loop->current=evt;
-    evt->next=evt;
-    evt->prev=evt;
-  }
+  nxe_link(loop, evt);
   evt->event_class=evt_class;
+  evt->last_activity=loop->current_time;
   if (nxe_event_classes[evt_class].on_new)
     nxe_event_classes[evt_class].on_new(loop, evt, NXE_EVENT_DATA(evt), 0);
 }
@@ -427,13 +473,12 @@ void nxe_delete_event(nxe_loop* loop, nxe_event* evt) {
 }
 
 void nxe_remove_event(nxe_loop* loop, nxe_event* evt) {
-  if (!evt->next) return; // not in loop
+  if (!IS_IN_LOOP(loop, evt)) return; // not in loop
   if (evt->active) nxe_stop(loop, evt);
-  evt->next->prev=evt->prev;
-  evt->prev->next=evt->next;
-  if (evt==loop->current) loop->current=loop->current==evt->next? 0 : evt->next;
-  if (evt==loop->started_from) loop->started_from=loop->started_from==evt->next? 0 : evt->next;
-  evt->next=
+  // unlink
+  nxe_unlink(loop, evt);
+  if (loop->current==evt) loop->current=evt->next;
+  evt->next=0;
   evt->prev=0;
 
   if (evt->send_fd) {
@@ -458,6 +503,8 @@ nxe_loop* nxe_create(int event_data_size, int max_epoll_events) {
   nxp_init(&loop->event_pool, event_object_size, &loop->event_pool_initial_chunk, sizeof(nxp_chunk)+chunk_allocated_size);
   loop->epoll_events=(struct epoll_event*)((char*)(loop+1)+chunk_allocated_size);
   loop->max_epoll_events=max_epoll_events;
+
+  loop->current_time=nxe_get_time_usec();
 
   loop->epoll_fd=epoll_create(1); // size ignored
 

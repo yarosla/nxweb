@@ -37,6 +37,7 @@
 
 #define NXE_EVENT_POOL_INITIAL_SIZE 16
 #define NXE_NUMBER_OF_TIMER_QUEUES 4
+#define NXE_STALE_EVENT_TIMEOUT 30000000
 
 enum nxe_status {
   NXE_CAN=1,
@@ -53,7 +54,8 @@ enum nxe_event_code {
   NXE_ERROR=0x200,
   NXE_RDHUP=0x400,
   NXE_HUP=0x800,
-  NXE_WRITTEN_NONE=0x1000
+  NXE_WRITTEN_NONE=0x1000,
+  NXE_STALE=0x2000
 };
 
 struct nxe_loop;
@@ -64,7 +66,7 @@ typedef void (*nxe_handler)(struct nxe_loop* loop, struct nxe_event* evt, void* 
 typedef unsigned short nxe_bits_t;
 typedef unsigned short nxe_event_class_t;
 typedef unsigned short nxe_event_chunk_id_t;
-typedef unsigned long nxe_time_t;
+typedef uint64_t nxe_time_t;
 
 typedef struct nxe_event_class {
   nxe_handler on_new;
@@ -72,6 +74,8 @@ typedef struct nxe_event_class {
   nxe_handler on_read;
   nxe_handler on_write;
   nxe_handler on_error;
+
+  nxe_bits_t log_stale:1;
 } nxe_event_class;
 
 extern nxe_event_class nxe_event_classes[];
@@ -80,23 +84,28 @@ typedef struct nxe_event {
   nxp_object super; // nxe_event extends nxp_object
 
   nxe_event_class_t event_class:4;
-  nxe_bits_t active:1;
-  nxe_bits_t write_started:1;
   nxe_bits_t read_status:2;
   nxe_bits_t write_status:2;
-  nxe_bits_t rdhup_status:2;
-  nxe_bits_t err_status:2;
-  nxe_bits_t hup_status:2;
+  nxe_bits_t stale_status:2;
+  nxe_bits_t rdhup_status:1; // do not track WANT
+  nxe_bits_t err_status:1; // do not track WANT
+  nxe_bits_t hup_status:1; // do not track WANT
+
+  nxe_bits_t active:1;
+  nxe_bits_t write_started:1;
+  nxe_bits_t logged_stale:1;
 
   int fd;
   int last_errno;
 
   int read_size;
-  size_t write_size;
   int send_fd;
+  size_t write_size;
   off_t send_offset;
   char* read_ptr;
   const char* write_ptr;
+
+  nxe_time_t last_activity;
 
   struct nxe_event* next;
   struct nxe_event* prev;
@@ -113,7 +122,7 @@ typedef struct nxe_event_async {
 typedef void (*nxe_timer_callback)(struct nxe_loop* loop, void* timer_data);
 
 typedef struct nxe_timer {
-  long abs_time;
+  nxe_time_t abs_time;
   nxe_timer_callback callback;
   void* data;
   struct nxe_timer* next;
@@ -121,7 +130,7 @@ typedef struct nxe_timer {
 } nxe_timer;
 
 typedef struct nxe_timer_queue {
-  long timeout;
+  nxe_time_t timeout;
   nxe_timer* timer_first;
   nxe_timer* timer_last;
 } nxe_timer_queue;
@@ -129,7 +138,8 @@ typedef struct nxe_timer_queue {
 
 typedef struct nxe_loop {
   nxe_event* current;
-  nxe_event* started_from;
+  nxe_event* train_first;
+  nxe_event* train_last;
 
   nxe_time_t current_time;
 
@@ -182,6 +192,28 @@ static inline nxe_time_t nxe_get_time_usec() {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
   return (nxe_time_t)ts.tv_sec*1000000+ts.tv_nsec/1000;
+}
+
+void nxe_relink(nxe_loop* loop, nxe_event* evt);
+
+static inline void nxe_mark_read_up(nxe_loop* loop, nxe_event* evt, nxe_bits_t read_bits) {
+  if ((evt->read_status|=read_bits)==NXE_CAN_AND_WANT) nxe_relink(loop, evt);
+}
+
+static inline void nxe_mark_write_up(nxe_loop* loop, nxe_event* evt, nxe_bits_t write_bits) {
+  if ((evt->write_status|=write_bits)==NXE_CAN_AND_WANT) nxe_relink(loop, evt);
+}
+
+static inline void nxe_mark_stale_up(nxe_loop* loop, nxe_event* evt, nxe_bits_t stale_bits) {
+  if ((evt->stale_status|=stale_bits)==NXE_CAN_AND_WANT) nxe_relink(loop, evt);
+}
+
+static inline void nxe_mark_read_down(nxe_loop* loop, nxe_event* evt, nxe_bits_t read_bits) {
+  evt->read_status&=~read_bits;
+}
+
+static inline void nxe_mark_write_down(nxe_loop* loop, nxe_event* evt, nxe_bits_t write_bits) {
+  evt->write_status&=~write_bits;
 }
 
 #endif // NX_EVENT_H_INCLUDED

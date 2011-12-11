@@ -88,6 +88,10 @@ static void on_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
     nxweb_log_error("on_error [RDHUP]");
     _nxweb_close_bad_socket(evt->fd);
   }
+  else if (events & NXE_STALE) {
+    nxweb_log_error("on_error [STALE]");
+    _nxweb_close_bad_socket(evt->fd);
+  }
   else {
     //nxweb_log_error("on_error %d", events);
     _nxweb_close_bad_socket(evt->fd);
@@ -97,7 +101,7 @@ static void on_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
 
 static void stop_receiving_request(nxe_loop* loop, nxe_event* evt, nxweb_connection* conn) {
   nxe_unset_timer(loop, NXE_TIMER_READ, &conn->timer_read);
-  evt->read_status&=~NXE_WANT;
+  nxe_mark_read_down(loop, evt, NXE_WANT);
   if (!conn->req.content_length || conn->req.content_received < conn->req.content_length) conn->req.request_body=0;
 }
 
@@ -114,7 +118,7 @@ static void start_sending_response(nxe_loop* loop, nxe_event* evt, nxweb_connect
   conn->cstate=NXWEB_CS_SENDING_HEADERS;
   if (!req->sending_100_continue) {
     // if we are in process of sending 100-continue these have already been activated
-    evt->write_status=NXE_CAN_AND_WANT;
+    nxe_mark_write_up(loop, evt, NXE_WANT);
     evt->write_ptr=req->out_headers;
     evt->write_size=strlen(req->out_headers);
   }
@@ -189,6 +193,7 @@ static void dispatch_request(nxe_loop *loop, nxweb_connection *conn) {
       if (!conn->worker_evt.evt.active) {
         nxe_async_init(&conn->worker_evt);
         nxe_add_event(loop, NXE_CLASS_WORKER_JOB_DONE, (nxe_event*)&conn->worker_evt);
+        nxe_mark_stale_up(loop, (nxe_event*)&conn->worker_evt, NXE_WANT);
         nxe_start(loop, (nxe_event*)&conn->worker_evt);
       }
       // hand over to worker thread
@@ -334,7 +339,7 @@ static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) 
       if (req->expect_100_continue && !req->content_received) {
         // send 100-continue
         req->sending_100_continue=1;
-        evt->write_status=NXE_CAN_AND_WANT;
+        nxe_mark_write_up(loop, evt, NXE_WANT);
         evt->write_ptr=response_100_continue;
         evt->write_size=strlen(response_100_continue);
         // do not stop reading
@@ -401,7 +406,7 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
         nxe_set_timer(loop, NXE_TIMER_WRITE, &conn->timer_write);
       }
       else {
-        evt->write_status&=~NXE_WANT;
+        nxe_mark_write_down(loop, evt, NXE_WANT);
       }
       return;
     }
@@ -424,7 +429,7 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
       }
     }
     // rearm connection for new request
-    evt->write_status&=~NXE_WANT;
+    nxe_mark_write_down(loop, evt, NXE_WANT);
     if (req->sendfile_fd) {
       close(req->sendfile_fd);
       req->sendfile_fd=0;
@@ -435,7 +440,7 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
     conn->cstate=NXWEB_CS_WAITING_FOR_REQUEST;
     evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
     evt->read_size--; // for null-terminator
-    evt->read_status=NXE_CAN_AND_WANT;
+    nxe_mark_read_up(loop, evt, NXE_WANT);
     nxe_set_timer(loop, NXE_TIMER_KEEP_ALIVE, &conn->timer_keep_alive);
 
     //nxweb_log_error("rearm conn %p", conn);
@@ -469,7 +474,7 @@ static void on_new_connection(nxe_loop* loop, nxe_event* evt, void* evt_data, in
   nxb_init(&conn->iobuf, sizeof(conn->iobuf)+sizeof(conn->buf));
 
   evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
-  evt->read_status=NXE_CAN_AND_WANT;
+  nxe_mark_read_up(loop, evt, NXE_CAN_AND_WANT);
 }
 
 static void on_delete_connection(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
@@ -508,13 +513,14 @@ static void on_accept(nxe_loop* loop, nxe_event* evt, void* evt_data, int events
       continue;
     }
     nxe_event* cevt=nxe_new_event_fd(loop, NXE_CLASS_SOCKET, client_fd);
+    nxe_mark_stale_up(loop, cevt, NXE_WANT);
     nxweb_connection* conn=NXE_EVENT_DATA(cevt);
     inet_ntop(AF_INET, &client_addr.sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
     nxe_start(loop, cevt);
   }
   { // log error
     if (errno==EAGAIN) {
-      evt->read_status&=~NXE_CAN;
+      nxe_mark_read_down(loop, evt, NXE_CAN);
     }
     else {
       char buf[1024];
@@ -539,7 +545,13 @@ static void on_accept_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int 
 }
 
 static void on_job_done_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
+  //nxweb_connection *conn=(nxweb_connection*)(((char*)evt)-offsetof(nxweb_connection, worker_evt));
+
   nxweb_log_error("on_job_done_error");
+  if (events & NXE_STALE) {
+    nxe_remove_event(loop, evt);
+    nxe_async_finalize((nxe_event_async*)evt);
+  }
 }
 
 static void on_shutdown_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
@@ -591,7 +603,7 @@ static void* net_thread_main(void* pdata) {
 
   nxe_init_event(&tdata->listen_evt);
   nxe_add_event_fd(tdata->loop, NXE_CLASS_LISTEN, &tdata->listen_evt, listen_fd);
-  tdata->listen_evt.read_status=NXE_CAN_AND_WANT;
+  nxe_mark_read_up(tdata->loop, &tdata->listen_evt, NXE_CAN_AND_WANT);
   nxe_start(tdata->loop, &tdata->listen_evt);
 
   nxe_async_init(&tdata->shutdown_evt);
@@ -608,7 +620,7 @@ nxe_event_class nxe_event_classes[]={
   {.on_read=on_accept, .on_error=on_accept_error},
   // NXE_CLASS_SOCKET:
   {.on_read=on_read, .on_write=on_write, .on_error=on_error,
-   .on_new=on_new_connection, .on_delete=on_delete_connection},
+   .on_new=on_new_connection, .on_delete=on_delete_connection, .log_stale=1},
   // NXE_CLASS_WORKER_JOB_DONE:
   {.on_read=on_worker_job_done, .on_error=on_job_done_error},
   // NXE_CLASS_NET_THREAD_SHUTDOWN:
