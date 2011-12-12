@@ -231,7 +231,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           if (nxe_event_classes[evt->event_class].on_read)
             nxe_event_classes[evt->event_class].on_read(loop, evt, NXE_EVENT_DATA(evt), read_full? NXE_READ_FULL : NXE_READ);
           // callback might have changed read_size
-          //if (!evt->read_size) evt->read_status&=~NXE_WANT; // callback must do this
+          if (!evt->read_size) evt->read_status&=~NXE_WANT; // callback must do this?
           continue;
         }
       }
@@ -244,7 +244,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
         evt->read_status&=~NXE_WANT;
         nxweb_log_error("no action specified for read");
       }
-    } while (evt->read_status==NXE_CAN_AND_WANT);
+    } while (evt->active && evt->read_status==NXE_CAN_AND_WANT);
     return 1;
   }
 
@@ -311,7 +311,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
           if (nxe_event_classes[evt->event_class].on_write)
             nxe_event_classes[evt->event_class].on_write(loop, evt, NXE_EVENT_DATA(evt), write_full? NXE_WRITE_FULL : NXE_WRITE);
           // callback might have changed read_size
-          //if (!evt->write_size) evt->write_status&=~NXE_WANT; // must be done by callback
+          if (!evt->write_size) evt->write_status&=~NXE_WANT; // must be done by callback?
           continue;
         }
       }
@@ -324,7 +324,7 @@ static int nxe_process_event(nxe_loop* loop, nxe_event* evt) {
         evt->write_status&=~NXE_WANT;
         nxweb_log_error("no action specified for write");
       }
-    } while (evt->write_status==NXE_CAN_AND_WANT);
+    } while (evt->active && evt->write_status==NXE_CAN_AND_WANT);
     _nxweb_batch_write_end(evt->fd);
     return 1;
   }
@@ -401,8 +401,8 @@ void nxe_run(nxe_loop* loop) {
     loop->num_epoll_events=epoll_wait(loop->epoll_fd, loop->epoll_events, loop->max_epoll_events, time_to_wait);
     loop->current_time=nxe_get_time_usec();
     if (loop->num_epoll_events<0) {
-      nxweb_log_error("epoll_wait error: %d", errno);
-      return;
+      if (errno!=EINTR) nxweb_log_error("epoll_wait error: %d", errno);
+      continue;
     }
 
     //nxweb_log_error("epoll_wait: %d events", loop->num_epoll_events);

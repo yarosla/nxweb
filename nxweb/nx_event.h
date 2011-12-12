@@ -143,7 +143,7 @@ typedef struct nxe_loop {
 
   nxe_time_t current_time;
 
-  nxe_bits_t broken:1;
+  volatile nxe_bits_t broken:1;
 
   int epoll_fd;
 

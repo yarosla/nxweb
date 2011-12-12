@@ -49,7 +49,9 @@ static volatile int shutdown_in_progress=0;
 static volatile int num_connections=0;
 
 static int listen_fd;
-
+static int next_net_thread_idx=0;
+static nxe_event listen_evt;
+static nxe_loop* main_loop;
 static nxweb_net_thread net_threads[N_NET_THREADS];
 
 
@@ -457,7 +459,7 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
 static void on_new_connection(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
   nxweb_connection* conn=evt_data;
 
-  __sync_add_and_fetch(&num_connections, 1);
+//  __sync_add_and_fetch(&num_connections, 1);
 
   //nxweb_log_error("new conn %p", conn);
 
@@ -495,28 +497,34 @@ static void on_delete_connection(nxe_loop* loop, nxe_event* evt, void* evt_data,
   }
   nxb_empty(&conn->iobuf);
 
-  int connections_left=__sync_sub_and_fetch(&num_connections, 1);
-  assert(connections_left>=0);
-  if (connections_left==0) { // for debug only
-    nxweb_log_error("all connections closed");
-  }
+//  int connections_left=__sync_sub_and_fetch(&num_connections, 1);
+//  assert(connections_left>=0);
+//  if (connections_left==0) { // for debug only
+//    nxweb_log_error("all connections closed");
+//  }
 }
 
 static void on_accept(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
+  nxweb_accept accept_msg;
   int client_fd;
   struct sockaddr_in client_addr;
   socklen_t client_len=sizeof(client_addr);
-  while ((client_fd=accept(evt->fd, (struct sockaddr *)&client_addr, &client_len))!=-1) {
+  while (!shutdown_in_progress && (client_fd=accept(evt->fd, (struct sockaddr *)&client_addr, &client_len))!=-1) {
     if (_nxweb_set_non_block(client_fd) || _nxweb_setup_client_socket(client_fd)) {
       _nxweb_close_bad_socket(client_fd);
       nxweb_log_error("failed to setup client socket");
       continue;
     }
-    nxe_event* cevt=nxe_new_event_fd(loop, NXE_CLASS_SOCKET, client_fd);
-    nxe_mark_stale_up(loop, cevt, NXE_WANT);
-    nxweb_connection* conn=NXE_EVENT_DATA(cevt);
-    inet_ntop(AF_INET, &client_addr.sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
-    nxe_start(loop, cevt);
+    accept_msg.client_fd=client_fd;
+    memcpy(&accept_msg.sin_addr, &client_addr.sin_addr, sizeof(accept_msg.sin_addr));
+    nxweb_net_thread* tdata=&net_threads[next_net_thread_idx];
+    if (nxweb_accept_queue_push(tdata->accept_queue, &accept_msg)) {
+      _nxweb_close_bad_socket(client_fd);
+      nxweb_log_error("accept queue full; dropping connection");
+      continue;
+    }
+    nxe_async_send(&tdata->accept_evt);
+    next_net_thread_idx=(next_net_thread_idx+1)%N_NET_THREADS; // round-robin
   }
   { // log error
     if (errno==EAGAIN) {
@@ -530,14 +538,36 @@ static void on_accept(nxe_loop* loop, nxe_event* evt, void* evt_data, int events
   }
 }
 
+static void on_net_thread_accept(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
+  nxweb_net_thread* tdata=((nxweb_net_thread*)(((char*)evt)-offsetof(nxweb_net_thread, accept_evt)));
+
+  nxweb_accept a;
+
+  while (!nxweb_accept_queue_pop(tdata->accept_queue, &a)) {
+    nxe_event* cevt=nxe_new_event_fd(loop, NXE_CLASS_SOCKET, a.client_fd);
+    nxe_mark_stale_up(loop, cevt, NXE_WANT);
+    nxweb_connection* conn=NXE_EVENT_DATA(cevt);
+    inet_ntop(AF_INET, &a.sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
+    nxe_start(loop, cevt);
+  }
+
+  if (shutdown_in_progress) {
+    // remove accept_evt
+    nxe_remove_event(loop, evt);
+    nxe_async_finalize((nxe_event_async*)evt);
+  }
+  else {
+    nxe_async_rearm((nxe_event_async*)evt);
+  }
+}
+
 static void on_net_thread_shutdown(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
-  //nxweb_log_error("on_net_thread_shutdown");
   nxweb_net_thread* tdata=((nxweb_net_thread*)(((char*)evt)-offsetof(nxweb_net_thread, shutdown_evt)));
 
   nxe_remove_event(loop, evt);
   nxe_async_finalize((nxe_event_async*)evt);
 
-  nxe_remove_event(loop, &tdata->listen_evt);
+  nxe_async_send(&tdata->accept_evt); // wake it up so it clears itself
 }
 
 static void on_accept_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
@@ -556,6 +586,10 @@ static void on_job_done_error(nxe_loop* loop, nxe_event* evt, void* evt_data, in
 
 static void on_shutdown_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
   nxweb_log_error("on_shutdown_error");
+}
+
+static void on_net_thread_accept_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
+  nxweb_log_error("on_net_thread_accept_error");
 }
 
 static void* worker_thread_main(void* pdata) {
@@ -577,7 +611,7 @@ static void* worker_thread_main(void* pdata) {
     }
   }
 
-  nxweb_log_error("worker thread exited");
+  nxweb_log_error("worker thread clean exit");
   return 0;
 }
 
@@ -593,25 +627,28 @@ static void* net_thread_main(void* pdata) {
     pthread_create(&tdata->worker_threads[i], 0, worker_thread_main, tdata);
   }
 
-  tdata->loop=nxe_create(sizeof(nxweb_connection), 128);
+  tdata->loop=nxe_create(sizeof(nxweb_connection), 256);
   tdata->loop->user_data=tdata;
+
+  tdata->accept_queue=nxweb_accept_queue_new(NXWEB_ACCEPT_QUEUE_SIZE);
 
   // setup timeouts
   nxe_set_timer_queue_timeout(tdata->loop, NXE_TIMER_KEEP_ALIVE, NXWEB_KEEP_ALIVE_TIMEOUT);
   nxe_set_timer_queue_timeout(tdata->loop, NXE_TIMER_READ, NXWEB_READ_TIMEOUT);
   nxe_set_timer_queue_timeout(tdata->loop, NXE_TIMER_WRITE, NXWEB_WRITE_TIMEOUT);
 
-  nxe_init_event(&tdata->listen_evt);
-  nxe_add_event_fd(tdata->loop, NXE_CLASS_LISTEN, &tdata->listen_evt, listen_fd);
-  nxe_mark_read_up(tdata->loop, &tdata->listen_evt, NXE_CAN_AND_WANT);
-  nxe_start(tdata->loop, &tdata->listen_evt);
-
   nxe_async_init(&tdata->shutdown_evt);
   nxe_add_event(tdata->loop, NXE_CLASS_NET_THREAD_SHUTDOWN, (nxe_event*)&tdata->shutdown_evt);
   nxe_start(tdata->loop, (nxe_event*)&tdata->shutdown_evt);
 
+  nxe_async_init(&tdata->accept_evt);
+  nxe_add_event(tdata->loop, NXE_CLASS_NET_THREAD_ACCEPT, (nxe_event*)&tdata->accept_evt);
+  nxe_start(tdata->loop, (nxe_event*)&tdata->accept_evt);
+
   nxe_run(tdata->loop);
   nxe_destroy(tdata->loop);
+  free(tdata->accept_queue);
+  nxweb_log_error("network thread clean exit");
   return 0;
 }
 
@@ -623,6 +660,8 @@ nxe_event_class nxe_event_classes[]={
    .on_new=on_new_connection, .on_delete=on_delete_connection, .log_stale=1},
   // NXE_CLASS_WORKER_JOB_DONE:
   {.on_read=on_worker_job_done, .on_error=on_job_done_error},
+  // NXE_CLASS_NET_THREAD_ACCEPT:
+  {.on_read=on_net_thread_accept, .on_error=on_net_thread_accept_error},
   // NXE_CLASS_NET_THREAD_SHUTDOWN:
   {.on_read=on_net_thread_shutdown, .on_error=on_shutdown_error}
 };
@@ -636,6 +675,8 @@ static void on_sigterm(int sig) {
   nxweb_log_error("SIGTERM/SIGINT(%d) received", sig);
   if (shutdown_in_progress) return;
   shutdown_in_progress=1; // tells net_threads to finish their work
+
+  nxe_break(main_loop); // this is a little bit dirty; should modify main loop from callback
 
   int i;
   nxweb_net_thread* tdata;
@@ -747,14 +788,24 @@ void _nxweb_main() {
     module++;
   }
 
+  nxe_loop* loop=nxe_create(sizeof(nxe_event), 4);
+  main_loop=loop;
+
+  nxe_init_event(&listen_evt);
+  nxe_add_event_fd(loop, NXE_CLASS_LISTEN, &listen_evt, listen_fd);
+  nxe_mark_read_up(loop, &listen_evt, NXE_CAN_AND_WANT);
+  nxe_start(loop, &listen_evt);
+
+  nxe_run(loop);
+  nxe_destroy(loop);
+  close(listen_fd);
+
   for (i=0; i<N_NET_THREADS; i++) {
     pthread_join(net_threads[i].thread_id, NULL);
     for (j=0; j<N_WORKER_THREADS; j++) {
       pthread_join(net_threads[i].worker_threads[j], NULL);
     }
   }
-
-  close(listen_fd);
 
   nxweb_log_error("end of _nxweb_main()");
 }

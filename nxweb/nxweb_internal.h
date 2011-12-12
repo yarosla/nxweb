@@ -27,6 +27,8 @@
 #ifndef NXWEB_INTERNAL_H_INCLUDED
 #define NXWEB_INTERNAL_H_INCLUDED
 
+#include <netinet/in.h>
+
 #include "config.h"
 #include "nxweb.h"
 #include "nx_queue.h"
@@ -35,6 +37,7 @@ enum {
   NXE_CLASS_LISTEN=0,
   NXE_CLASS_SOCKET,
   NXE_CLASS_WORKER_JOB_DONE,
+  NXE_CLASS_NET_THREAD_ACCEPT,
   NXE_CLASS_NET_THREAD_SHUTDOWN
 };
 
@@ -53,16 +56,25 @@ typedef struct nxweb_job_queue {
   nxweb_job jobs[NXWEB_JOBS_QUEUE_SIZE];
 } nxweb_job_queue;
 
+typedef struct nxweb_accept {
+  int client_fd;
+  struct in_addr sin_addr;
+} nxweb_accept;
+
+typedef struct nx_queue nxweb_accept_queue;
+
 typedef struct nxweb_net_thread {
   pthread_t thread_id;
   nxe_loop* loop;
-  nxe_event listen_evt;
   nxe_event_async shutdown_evt;
+  nxe_event_async accept_evt;
+  nxweb_accept_queue* accept_queue;
   nxweb_job_queue job_queue;
   pthread_mutex_t job_queue_mux;
   pthread_cond_t job_queue_cond;
   pthread_t worker_threads[N_WORKER_THREADS];
 } nxweb_net_thread;
+
 
 static inline void nxweb_job_queue_init(nxweb_job_queue* jq) {
   nx_queue_init(&jq->q, sizeof(nxweb_job), NXWEB_JOBS_QUEUE_SIZE);
@@ -84,6 +96,26 @@ static inline int nxweb_job_queue_is_full(nxweb_job_queue* jq) {
   return nx_queue_is_full(&jq->q);
 }
 
+
+static inline nxweb_accept_queue* nxweb_accept_queue_new(int size) {
+  return (nxweb_accept_queue*)nx_queue_new(sizeof(nxweb_accept), size);
+}
+
+static inline int nxweb_accept_queue_push(nxweb_accept_queue* jq, const nxweb_accept* accpt) {
+  return nx_queue_push(jq, accpt);
+}
+
+static inline int nxweb_accept_queue_pop(nxweb_accept_queue* jq, nxweb_accept* accpt) {
+  return nx_queue_pop(jq, accpt);
+}
+
+static inline int nxweb_accept_queue_is_empty(nxweb_accept_queue* jq) {
+  return nx_queue_is_empty(jq);
+}
+
+static inline int nxweb_accept_queue_is_full(nxweb_accept_queue* jq) {
+  return nx_queue_is_full(jq);
+}
 
 // Internal use
 void _nxweb_main();
