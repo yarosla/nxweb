@@ -1,6 +1,7 @@
 # depslib dependency file v1.0
-1322692728 source:/home/ys/dev/cb/nxweb/hello.c
+1323553583 source:/home/ys/dev/cb/nxweb/hello.c
 	<stdio.h>
+	<stddef.h>
 	<unistd.h>
 	<fcntl.h>
 	<stdlib.h>
@@ -13,15 +14,18 @@
 	<sys/stat.h>
 	"nxweb/nxweb.h"
 
-1323289637 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
-	<obstack.h>
-	<ev.h>
+1323550280 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+	<stddef.h>
+	<sys/stat.h>
 	"revision.h"
 	"config.h"
+	"nx_event.h"
+	"nx_buffer.h"
+	"misc.h"
 
-1323192171 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1323675114 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
-1322927216 source:/home/ys/dev/cb/nxweb/nxweb/http.c
+1323553413 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
 	<stdlib.h>
 	<stdio.h>
@@ -34,7 +38,9 @@
 	<unistd.h>
 	"nxweb_internal.h"
 
-1323290045 /home/ys/dev/cb/nxweb/nxweb/nxweb_internal.h
+1323670524 /home/ys/dev/cb/nxweb/nxweb/nxweb_internal.h
+	<netinet/in.h>
+	"config.h"
 	"nxweb.h"
 	"nx_queue.h"
 
@@ -98,7 +104,7 @@
 1322675016 source:/home/ys/dev/cb/nxweb/nxweb/mime.c
 	"nxweb.h"
 
-1322947601 source:/home/ys/dev/cb/nxweb/sendfile.c
+1323532136 source:/home/ys/dev/cb/nxweb/sendfile.c
 	<stdio.h>
 	<unistd.h>
 	<fcntl.h>
@@ -111,6 +117,77 @@
 	<pthread.h>
 	<sys/stat.h>
 	"nxweb/nxweb.h"
+	"nxweb/misc.h"
 
-1323290171 /home/ys/dev/cb/nxweb/nxweb/config.h
+1323672411 /home/ys/dev/cb/nxweb/nxweb/config.h
+
+1323372161 /home/ys/dev/cb/nxweb/nxweb/misc.h
+
+1323359923 source:/home/ys/dev/cb/nxweb/nxweb/nx_buffer.c
+	<stddef.h>
+	<string.h>
+	<stdint.h>
+	<stdarg.h>
+	<stdlib.h>
+	<stdio.h>
+	"nx_buffer.h"
+
+1323527734 /home/ys/dev/cb/nxweb/nxweb/nx_buffer.h
+	<string.h>
+
+1323674769 source:/home/ys/dev/cb/nxweb/nxweb/nx_event.c
+	<stddef.h>
+	<stdio.h>
+	<unistd.h>
+	<fcntl.h>
+	<stdlib.h>
+	<assert.h>
+	<string.h>
+	<time.h>
+	<stdarg.h>
+	<signal.h>
+	<pthread.h>
+	<sys/stat.h>
+	<errno.h>
+	<sys/socket.h>
+	<sys/types.h>
+	<netinet/in.h>
+	<netinet/tcp.h>
+	<arpa/inet.h>
+	<sys/sendfile.h>
+	<netdb.h>
+	<sys/epoll.h>
+	"nx_event.h"
+	"misc.h"
+
+1323669740 /home/ys/dev/cb/nxweb/nxweb/nx_event.h
+	<stdio.h>
+	<time.h>
+	<sys/eventfd.h>
+	"nx_pool.h"
+
+1323673538 source:/home/ys/dev/cb/nxweb/nxweb/nxweb2.c
+	<assert.h>
+	<stdlib.h>
+	<stdio.h>
+	<string.h>
+	<pthread.h>
+	<unistd.h>
+	<errno.h>
+	<signal.h>
+	<sys/socket.h>
+	<sys/stat.h>
+	<netinet/in.h>
+	<netinet/tcp.h>
+	<arpa/inet.h>
+	"nxweb_internal.h"
+
+1323427209 /home/ys/dev/cb/nxweb/nxweb/nx_pool.h
+
+1323540626 source:/home/ys/dev/cb/nxweb/nxweb/nx_pool.c
+	<stddef.h>
+	<stdlib.h>
+	<string.h>
+	"nx_pool.h"
+	"misc.h"
 

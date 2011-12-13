@@ -13,6 +13,7 @@
 				<Option compiler="gcc" />
 				<Compiler>
 					<Add option="-g" />
+					<Add option="-DNX_DEBUG" />
 				</Compiler>
 			</Target>
 			<Target title="Release">
@@ -35,7 +36,7 @@
 		</Compiler>
 		<Linker>
 			<Add library="pthread" />
-			<Add library="ev" />
+			<Add library="rt" />
 		</Linker>
 		<Unit filename="hello.c">
 			<Option compilerVar="CC" />
@@ -56,14 +57,27 @@
 		<Unit filename="nxweb/misc.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="nxweb/misc.h" />
+		<Unit filename="nxweb/nx_buffer.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="nxweb/nx_buffer.h" />
+		<Unit filename="nxweb/nx_event.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="nxweb/nx_event.h" />
+		<Unit filename="nxweb/nx_pool.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="nxweb/nx_pool.h" />
 		<Unit filename="nxweb/nx_queue.c">
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="nxweb/nx_queue.h" />
-		<Unit filename="nxweb/nxweb.c">
+		<Unit filename="nxweb/nxweb.h" />
+		<Unit filename="nxweb/nxweb2.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="nxweb/nxweb.h" />
 		<Unit filename="nxweb/nxweb_internal.h" />
 		<Unit filename="nxweb/revision.h" />
 		<Unit filename="sendfile.c">
