@@ -28,6 +28,7 @@
 #define NX_BUFFER_H_INCLUDED
 
 #include <string.h>
+#include <stdarg.h>
 
 typedef struct nxb_chunk {
   char* end;

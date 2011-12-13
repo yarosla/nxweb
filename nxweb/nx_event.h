@@ -190,7 +190,11 @@ void nxe_async_rearm(nxe_event_async* aevt);
 
 static inline nxe_time_t nxe_get_time_usec() {
   struct timespec ts;
+#ifdef CLOCK_MONOTONIC_RAW
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+#else
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
   return (nxe_time_t)ts.tv_sec*1000000+ts.tv_nsec/1000;
 }
 
