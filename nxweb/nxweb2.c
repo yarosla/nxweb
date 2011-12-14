@@ -683,6 +683,7 @@ static void on_sigterm(int sig) {
   nxweb_log_error("SIGTERM/SIGINT(%d) received", sig);
   if (shutdown_in_progress) return;
   shutdown_in_progress=1; // tells net_threads to finish their work
+  unlink(NXWEB_PID_FILE);
 
   nxe_break(main_loop); // this is a little bit dirty; should modify main loop from callback
 

@@ -204,6 +204,7 @@ int main(int argc, char* argv[]) {
     }
     open_log_file(args.log_file);
     _nxweb_main();
+    unlink(NXWEB_PID_FILE);
   }
 
   return EXIT_SUCCESS;
