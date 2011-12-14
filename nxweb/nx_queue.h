@@ -43,14 +43,17 @@ nx_queue* nx_queue_new(int item_size, int size);
 void nx_queue_init(nx_queue* q, int item_size, int size);
 
 static inline int nx_queue_is_empty(const nx_queue* q) {
+  __sync_synchronize(); // full memory barrier
   return (q->head==q->tail);
 }
 
 static inline int nx_queue_is_full(const nx_queue* q) {
+  __sync_synchronize(); // full memory barrier
   return (q->head==(q->tail+1)%q->size);
 }
 
 static inline int nx_queue_length(const nx_queue* q) {
+  __sync_synchronize(); // full memory barrier
   int nitems=q->tail-q->head;
   return nitems>=0? nitems : nitems+q->size;
 }

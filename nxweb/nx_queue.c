@@ -57,6 +57,7 @@ void nx_queue_init(nx_queue* q, int item_size, int queue_max_size) {
 int nx_queue_pop(nx_queue* q, void* item) {
   if (nx_queue_is_empty(q)) return -1; // empty
   memcpy(item, q->items+q->head*q->item_size, q->item_size);
+  __sync_synchronize(); // full memory barrier
   q->head=(q->head+1)%q->size;
   return 0;
 }
@@ -66,6 +67,7 @@ int nx_queue_push(nx_queue* q, const void* item) {
   void* pitem=q->items+q->tail*q->item_size;
   if (!pitem) return -1; // full
   memcpy(pitem, item, q->item_size);
+  __sync_synchronize(); // full memory barrier
   q->tail=(q->tail+1)%q->size;
   return 0;
 }

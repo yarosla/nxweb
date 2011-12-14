@@ -90,14 +90,16 @@ void nxe_relink(nxe_loop* loop, nxe_event* evt) {
 
 static inline void nxe_loop_gc(nxe_loop* loop) {
   nxe_event* evt=loop->train_first;
-  while (evt) {
-    if (loop->current_time - evt->last_activity < NXE_STALE_EVENT_TIMEOUT) break;
-    nxe_mark_stale_up(loop, evt, NXE_CAN);
-    if (!evt->logged_stale && nxe_event_classes[evt->event_class].log_stale) {
-      nxweb_log_error("stale event found: class=%d", evt->event_class);
-      evt->logged_stale=1;
+  if (loop->stale_event_timeout) {
+    while (evt) {
+      if (loop->current_time - evt->last_activity < loop->stale_event_timeout) break;
+      nxe_mark_stale_up(loop, evt, NXE_CAN);
+      if (!evt->logged_stale && nxe_event_classes[evt->event_class].log_stale) {
+        nxweb_log_error("stale event found: class=%d", evt->event_class);
+        evt->logged_stale=1;
+      }
+      evt=evt->next;
     }
-    evt=evt->next;
   }
   nxp_gc(&loop->event_pool);
 }
@@ -490,7 +492,7 @@ void nxe_remove_event(nxe_loop* loop, nxe_event* evt) {
     nxe_event_classes[evt->event_class].on_delete(loop, evt, NXE_EVENT_DATA(evt), 0);
 }
 
-nxe_loop* nxe_create(int event_data_size, int max_epoll_events) {
+nxe_loop* nxe_create(int event_data_size, int max_epoll_events, nxe_time_t stale_event_timeout) {
   int s=4;
   while (s<max_epoll_events) s<<=1; // align to power of 2
   max_epoll_events=s;
@@ -505,6 +507,7 @@ nxe_loop* nxe_create(int event_data_size, int max_epoll_events) {
   loop->max_epoll_events=max_epoll_events;
 
   loop->current_time=nxe_get_time_usec();
+  loop->stale_event_timeout=stale_event_timeout;
 
   loop->epoll_fd=epoll_create(1); // size ignored
 

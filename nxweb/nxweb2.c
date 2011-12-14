@@ -627,7 +627,7 @@ static void* net_thread_main(void* pdata) {
     pthread_create(&tdata->worker_threads[i], 0, worker_thread_main, tdata);
   }
 
-  tdata->loop=nxe_create(sizeof(nxweb_connection), 256);
+  tdata->loop=nxe_create(sizeof(nxweb_connection), 256, NXWEB_STALE_EVENT_TIMEOUT);
   tdata->loop->user_data=tdata;
 
   tdata->accept_queue=nxweb_accept_queue_new(NXWEB_ACCEPT_QUEUE_SIZE);
@@ -788,7 +788,7 @@ void _nxweb_main() {
     module++;
   }
 
-  nxe_loop* loop=nxe_create(sizeof(nxe_event), 4);
+  nxe_loop* loop=nxe_create(sizeof(nxe_event), 4, 0);
   main_loop=loop;
 
   nxe_init_event(&listen_evt);

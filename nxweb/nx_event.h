@@ -37,7 +37,6 @@
 
 #define NXE_EVENT_POOL_INITIAL_SIZE 16
 #define NXE_NUMBER_OF_TIMER_QUEUES 4
-#define NXE_STALE_EVENT_TIMEOUT 30000000
 
 enum nxe_status {
   NXE_CAN=1,
@@ -142,8 +141,9 @@ typedef struct nxe_loop {
   nxe_event* train_last;
 
   nxe_time_t current_time;
+  nxe_time_t stale_event_timeout;
 
-  volatile nxe_bits_t broken:1;
+  volatile nxe_bits_t broken;
 
   int epoll_fd;
 
@@ -160,7 +160,7 @@ typedef struct nxe_loop {
   // chunk data to follow here!!!
 } nxe_loop;
 
-nxe_loop* nxe_create(int event_data_size, int max_epoll_events);
+nxe_loop* nxe_create(int event_data_size, int max_epoll_events, nxe_time_t stale_event_timeout);
 void nxe_destroy(nxe_loop* loop);
 
 void nxe_run(nxe_loop* loop);
