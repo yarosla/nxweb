@@ -78,8 +78,16 @@ static void on_write_timeout(nxe_loop* loop, void* _evt) {
 static void on_error(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
 //  nxweb_log_error("on_error");
   nxe_stop(loop, evt);
-  if (events & NXE_ERROR) {
+  if (events & NXE_CLOSE) {
+    //nxweb_log_error("on_error [CLOSE]");
+    _nxweb_close_good_socket(evt->fd);
+  }
+  else if (events & NXE_ERROR) {
     nxweb_log_error("on_error %d, %d", events, evt->last_errno);
+    _nxweb_close_bad_socket(evt->fd);
+  }
+  else if (events & NXE_WRITTEN_NONE) {
+    nxweb_log_error("on_error [WRITTEN_NONE] %d", evt->last_errno);
     _nxweb_close_bad_socket(evt->fd);
   }
   else if (events & NXE_HUP) {
