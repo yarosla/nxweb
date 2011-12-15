@@ -24,28 +24,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stddef.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <assert.h>
-#include <string.h>
-#include <time.h>
-#include <stdarg.h>
-#include <signal.h>
-#include <pthread.h>
-#include <sys/stat.h>
-
 #include "nxweb/nxweb.h"
-
-static nxweb_result shutdown_server(nxweb_uri_handler_phase phase, nxweb_request *req) {
-  if (phase!=NXWEB_PH_CONTENT) return NXWEB_OK;
-  nxweb_set_response_content_type(req, "text/plain");
-  nxweb_response_append(req, "bye");
-  nxweb_shutdown();
-  return NXWEB_OK;
-}
 
 static nxweb_result hello(nxweb_uri_handler_phase phase, nxweb_request *req) {
   if (phase!=NXWEB_PH_CONTENT) return 0;
@@ -112,12 +91,11 @@ static nxweb_result hello(nxweb_uri_handler_phase phase, nxweb_request *req) {
   return NXWEB_OK;
 }
 
-static nxweb_result benchmark(nxweb_uri_handler_phase phase, nxweb_request *req) {
-  nxweb_response_append(req, "<p>Hello, world!</p>");
-  return NXWEB_OK;
-}
-
-static nxweb_result benchmark_empty(nxweb_uri_handler_phase phase, nxweb_request *req) {
+static nxweb_result shutdown_server(nxweb_uri_handler_phase phase, nxweb_request *req) {
+  if (phase!=NXWEB_PH_CONTENT) return NXWEB_OK;
+  nxweb_set_response_content_type(req, "text/plain");
+  nxweb_response_append(req, "bye");
+  nxweb_shutdown();
   return NXWEB_OK;
 }
 
@@ -129,9 +107,6 @@ static nxweb_result nxweb_on_server_startup() {
 static const nxweb_uri_handler hello_module_uri_handlers[] = {
   {"/hello", hello, NXWEB_INPROCESS|NXWEB_HANDLE_ANY|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES},
   {"/shutdown", shutdown_server, NXWEB_INPROCESS|NXWEB_HANDLE_GET}, // server shutdown via http get; not good for real world
-  {"/benchmark-inprocess", benchmark, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
-  {"/benchmark-inworker", benchmark, NXWEB_INWORKER|NXWEB_HANDLE_GET},
-  {"/benchmark-empty", benchmark_empty, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
   {0, 0, 0}
 };
 

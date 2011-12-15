@@ -38,6 +38,9 @@
 			<Add library="pthread" />
 			<Add library="rt" />
 		</Linker>
+		<Unit filename="benchmark.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Unit filename="hello.c">
 			<Option compilerVar="CC" />
 		</Unit>

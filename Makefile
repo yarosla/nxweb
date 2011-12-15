@@ -31,7 +31,7 @@ SRC_MAIN=nxweb/main.c nxweb/nxweb2.c nxweb/http.c nxweb/mime.c nxweb/misc.c nxwe
 # List active modules here; also include them in modules.c file
 
 INC_MODULES=
-SRC_MODULES=hello.c sendfile.c
+SRC_MODULES=hello.c sendfile.c benchmark.c
 
 OBJ_DEBUG_DIR=obj/Debug
 BIN_DEBUG_DIR=bin/Debug

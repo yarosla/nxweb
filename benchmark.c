@@ -26,24 +26,25 @@
 
 #include "nxweb/nxweb.h"
 
+static nxweb_result benchmark(nxweb_uri_handler_phase phase, nxweb_request *req) {
+  nxweb_response_append(req, "<p>Hello, world!</p>");
+  return NXWEB_OK;
+}
 
-extern const nxweb_module hello_module, sendfile_module, benchmark_module;
+static nxweb_result benchmark_empty(nxweb_uri_handler_phase phase, nxweb_request *req) {
+  return NXWEB_OK;
+}
 
-/// NXWEB LOG FILE PATH
+static const nxweb_uri_handler uri_handlers[] = {
+  {"/benchmark-inprocess", benchmark, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
+  {"/benchmark-inworker", benchmark, NXWEB_INWORKER|NXWEB_HANDLE_GET},
+  {"/benchmark-empty", benchmark_empty, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
+  {0, 0, 0}
+};
 
-const char* ERROR_LOG_FILE="error.log";
+/// Module definition
+// List of active modules is maintained in modules.c file.
 
-/// LIST OF ACTIVE MODULES
-// In order of loading and uri searching.
-
-// Do not forget to include modules in Makefile
-
-const nxweb_module* const nxweb_modules[] = {
-  &benchmark_module,
-  &hello_module,
-  &sendfile_module, // this module involves filesystem calls
-                    // which might slow down request processing
-                    // for further modules in the chain,
-                    // so preferably put it last
-  0
+const nxweb_module benchmark_module = {
+  .uri_handlers=uri_handlers
 };

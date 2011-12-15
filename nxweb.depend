@@ -1,17 +1,5 @@
 # depslib dependency file v1.0
-1323778346 source:/home/ys/dev/cb/nxweb/hello.c
-	<stdio.h>
-	<stddef.h>
-	<unistd.h>
-	<fcntl.h>
-	<stdlib.h>
-	<assert.h>
-	<string.h>
-	<time.h>
-	<stdarg.h>
-	<signal.h>
-	<pthread.h>
-	<sys/stat.h>
+1323965543 source:/home/ys/dev/cb/nxweb/hello.c
 	"nxweb/nxweb.h"
 
 1323778346 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
@@ -23,7 +11,7 @@
 	"nx_buffer.h"
 	"misc.h"
 
-1323857647 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1323873891 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
 1323778346 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
@@ -46,7 +34,7 @@
 
 1323807721 /home/ys/dev/cb/nxweb/nxweb/nx_queue.h
 
-1322613371 source:/home/ys/dev/cb/nxweb/nxweb/main.c
+1323873595 source:/home/ys/dev/cb/nxweb/nxweb/main.c
 	<stdlib.h>
 	<stdio.h>
 	<argp.h>
@@ -98,7 +86,7 @@
 	<sys/sendfile.h>
 	"nxweb_internal.h"
 
-1322683355 source:/home/ys/dev/cb/nxweb/modules.c
+1323965460 source:/home/ys/dev/cb/nxweb/modules.c
 	"nxweb/nxweb.h"
 
 1322675016 source:/home/ys/dev/cb/nxweb/nxweb/mime.c
@@ -167,7 +155,7 @@
 	<sys/eventfd.h>
 	"nx_pool.h"
 
-1323851200 source:/home/ys/dev/cb/nxweb/nxweb/nxweb2.c
+1323888637 source:/home/ys/dev/cb/nxweb/nxweb/nxweb2.c
 	<assert.h>
 	<stdlib.h>
 	<stdio.h>
@@ -191,4 +179,7 @@
 	<string.h>
 	"nx_pool.h"
 	"misc.h"
+
+1323965405 source:/home/ys/dev/cb/nxweb/benchmark.c
+	"nxweb/nxweb.h"
 

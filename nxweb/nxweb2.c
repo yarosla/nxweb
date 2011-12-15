@@ -615,6 +615,7 @@ static void* worker_thread_main(void* pdata) {
     if (!result) {
       conn=job.conn;
       conn->req.handler_result=conn->req.handler->callback(NXWEB_PH_CONTENT, &conn->req);
+      __sync_synchronize(); // full memory barrier
       nxe_async_send(&conn->worker_evt);
     }
   }
