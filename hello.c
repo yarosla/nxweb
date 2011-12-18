@@ -27,7 +27,7 @@
 #include "nxweb/nxweb.h"
 
 static nxweb_result hello(nxweb_uri_handler_phase phase, nxweb_request *req) {
-  if (phase!=NXWEB_PH_CONTENT) return 0;
+  if (phase!=NXWEB_PH_CONTENT) return NXWEB_OK;
 
   nxweb_set_response_content_type(req, "text/html");
   nxweb_response_make_room(req, req->content_length+2000); // optimize buffer allocation

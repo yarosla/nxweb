@@ -27,7 +27,7 @@
 #include "nxweb/nxweb.h"
 
 
-extern const nxweb_module hello_module, sendfile_module, benchmark_module;
+extern const nxweb_module hello_module, sendfile_module, benchmark_module, upload_module;
 
 /// NXWEB LOG FILE PATH
 
@@ -41,6 +41,7 @@ const char* ERROR_LOG_FILE="error.log";
 const nxweb_module* const nxweb_modules[] = {
   &benchmark_module,
   &hello_module,
+  &upload_module,
   &sendfile_module, // this module involves filesystem calls
                     // which might slow down request processing
                     // for further modules in the chain,

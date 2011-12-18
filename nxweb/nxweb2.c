@@ -190,7 +190,7 @@ static int prepare_request_for_handler(nxe_loop *loop, nxweb_request* req) {
 static void dispatch_request(nxe_loop *loop, nxweb_connection *conn) {
   nxweb_request* req=&conn->req;
   while (1) {
-    const nxweb_uri_handler* handler=find_handler(req);
+    const nxweb_uri_handler* handler=(req->handler && req->receive_in_chunks)? req->handler : find_handler(req);
     assert(handler!=0); // default handler never returns NXWEB_NEXT
     if (prepare_request_for_handler(loop, req)) return;
     if (handler->flags&NXWEB_INPROCESS) {
@@ -222,6 +222,27 @@ static void dispatch_request(nxe_loop *loop, nxweb_connection *conn) {
     }
     break;
   }
+}
+
+static int pre_dispatch_request(nxe_loop *loop, nxweb_connection *conn) {
+  nxweb_request* req=&conn->req;
+  const nxweb_uri_handler* handler;
+  int result;
+  while ((handler=find_handler(req))) {
+    if (handler->on_recv_body_chunk) { // handler->flags&NXWEB_ACCEPT_CHUNKS
+      result=handler->callback(NXWEB_PH_HEADERS, req);
+      if (result==NXWEB_OK) {
+        req->receive_in_chunks=1;
+        return 0;
+      }
+      else if (result!=NXWEB_NEXT) {
+        return -1;
+      }
+    }
+  }
+  req->handler=0;
+  req->handler_module=0;
+  return 0;
 }
 
 static void on_worker_job_done(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
@@ -314,37 +335,67 @@ static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) 
 
       // so not all content received with headers
 
-      if (req->content_length > REQUEST_CONTENT_SIZE_LIMIT) {
+      if (pre_dispatch_request(loop, conn)) {
         nxb_unfinish_stream(&conn->iobuf);
         stop_receiving_request(loop, evt, conn);
         conn->cstate=NXWEB_CS_ERROR;
         conn->req.keep_alive=0;
-        nxweb_send_http_error(&conn->req, 413, "Request Entity Too Large");
+        nxweb_send_http_error(&conn->req, req->response_code? req->response_code:400, req->response_status? req->response_status:"Bad Request");
         start_sending_response(loop, evt, conn);
         return;
       }
 
-      if (req->content_length>0) {
-        // body size specified; pre-allocate buffer for the content
-        nxb_make_room(&conn->iobuf, req->content_length+1); // plus null-terminator char
+      if (req->receive_in_chunks) {
+        req->chunk_buffer=nxb_alloc_obj(&conn->iobuf, NXWEB_CHUNK_BUFFER_SIZE);
+        req->chunk_buffer_end=req->chunk_buffer+NXWEB_CHUNK_BUFFER_SIZE;
+        req->chunk_read_ptr=
+        req->chunk_write_ptr=req->chunk_buffer;
+
+        if (req->content_received>0) {
+          // copy what we have already received with headers
+          memcpy(req->chunk_write_ptr, req->request_body, req->content_received);
+          req->chunk_write_ptr+=req->content_received;
+          req->chunk_buffer_last_write=1;
+          if (req->chunk_write_ptr==req->chunk_buffer_end) req->chunk_write_ptr=req->chunk_buffer;
+          nxweb_handler_ready_to_recieve(req);
+        }
+        evt->read_ptr=req->chunk_write_ptr;
+        evt->read_size=(req->chunk_read_ptr == req->chunk_write_ptr && req->chunk_buffer_last_write)?
+          0 : (req->chunk_read_ptr > req->chunk_write_ptr)? req->chunk_read_ptr - req->chunk_write_ptr : req->chunk_buffer_end - req->chunk_write_ptr;
       }
       else {
-        nxb_make_room(&conn->iobuf, req->content_received+128); // have at least 128 bytes room for the start
-      }
+        if (req->content_length > REQUEST_CONTENT_SIZE_LIMIT) {
+          nxb_unfinish_stream(&conn->iobuf);
+          stop_receiving_request(loop, evt, conn);
+          conn->cstate=NXWEB_CS_ERROR;
+          conn->req.keep_alive=0;
+          nxweb_send_http_error(&conn->req, 413, "Request Entity Too Large");
+          start_sending_response(loop, evt, conn);
+          return;
+        }
 
-      if (req->content_received>0) {
-        // copy what we have already received with headers
-        nxb_append(&conn->iobuf, req->request_body, req->content_received);
-        req->request_body=nxb_get_unfinished(&conn->iobuf, 0);
+        if (req->content_length>0) {
+          // body size specified; pre-allocate buffer for the content
+          nxb_make_room(&conn->iobuf, req->content_length+1); // plus null-terminator char
+        }
+        else {
+          nxb_make_room(&conn->iobuf, req->content_received+128); // have at least 128 bytes room for the start
+        }
+
+        if (req->content_received>0) {
+          // copy what we have already received with headers
+          nxb_append(&conn->iobuf, req->request_body, req->content_received);
+          req->request_body=nxb_get_unfinished(&conn->iobuf, 0);
+        }
+
+        evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
+        evt->read_size--; // for null-term
       }
 
       // continue receiving request body
       conn->cstate=NXWEB_CS_RECEIVING_BODY;
       nxe_unset_timer(loop, NXE_TIMER_READ, &conn->timer_read);
       nxe_set_timer(loop, NXE_TIMER_READ, &conn->timer_read);
-
-      evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
-      evt->read_size--; // for null-term
 
       if (req->expect_100_continue && !req->content_received) {
         // send 100-continue
@@ -368,37 +419,84 @@ static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) 
     }
   }
   else if (conn->cstate==NXWEB_CS_RECEIVING_BODY) {
-    char* read_buf=nxb_get_unfinished(&conn->iobuf, 0);
-    req->content_received=evt->read_ptr - read_buf;
-    nxb_resize_fast(&conn->iobuf, req->content_received);
-    *evt->read_ptr='\0';
-    if (is_request_body_complete(req, read_buf)) {
-      // receiving request complete
-      // append null-terminator and close input buffer
-      nxb_append_char(&conn->iobuf, '\0');
-      req->request_body=nxb_finish_stream(&conn->iobuf);
-      if (req->chunked_request) _nxweb_decode_chunked_request(req);
-      stop_receiving_request(loop, evt, conn);
-      conn->cstate=NXWEB_CS_HANDLING;
-      dispatch_request(loop, conn);
-      return;
+    if (req->receive_in_chunks) {
+      int bytes_received=evt->read_ptr - req->chunk_write_ptr;
+      int was_empty=(req->chunk_read_ptr == req->chunk_write_ptr && !req->chunk_buffer_last_write);
+      req->chunk_write_ptr+=bytes_received;
+      req->content_received+=bytes_received;
+      if (req->chunk_write_ptr==req->chunk_buffer_end) req->chunk_write_ptr=req->chunk_buffer;
+      req->chunk_buffer_last_write=1;
+      if (was_empty) nxweb_handler_ready_to_recieve(req);
+      if (is_request_body_complete(req, 0)) {
+        stop_receiving_request(loop, evt, conn);
+      }
+      else {
+        evt->read_ptr=req->chunk_write_ptr;
+        evt->read_size=(req->chunk_read_ptr == req->chunk_write_ptr && req->chunk_buffer_last_write)?
+          0 : (req->chunk_read_ptr > req->chunk_write_ptr)? req->chunk_read_ptr - req->chunk_write_ptr : req->chunk_buffer_end - req->chunk_write_ptr;
+      }
+      nxweb_log_error("partial receive request body (all ok)"); // for debug only
     }
-    if (req->content_received > REQUEST_CONTENT_SIZE_LIMIT) {
-      nxb_unfinish_stream(&conn->iobuf);
-      stop_receiving_request(loop, evt, conn);
-      conn->cstate=NXWEB_CS_ERROR;
-      req->keep_alive=0;
-      nxweb_send_http_error(req, 413, "Request Entity Too Large");
-      start_sending_response(loop, evt, conn);
-      return;
+    else {
+      char* read_buf=nxb_get_unfinished(&conn->iobuf, 0);
+      req->content_received=evt->read_ptr - read_buf;
+      nxb_resize_fast(&conn->iobuf, req->content_received);
+      *evt->read_ptr='\0';
+      if (is_request_body_complete(req, read_buf)) {
+        // receiving request complete
+        // append null-terminator and close input buffer
+        nxb_append_char(&conn->iobuf, '\0');
+        req->request_body=nxb_finish_stream(&conn->iobuf);
+        if (req->chunked_request) _nxweb_decode_chunked_request(req);
+        stop_receiving_request(loop, evt, conn);
+        conn->cstate=NXWEB_CS_HANDLING;
+        dispatch_request(loop, conn);
+        return;
+      }
+      if (req->content_received > REQUEST_CONTENT_SIZE_LIMIT) {
+        nxb_unfinish_stream(&conn->iobuf);
+        stop_receiving_request(loop, evt, conn);
+        conn->cstate=NXWEB_CS_ERROR;
+        req->keep_alive=0;
+        nxweb_send_http_error(req, 413, "Request Entity Too Large");
+        start_sending_response(loop, evt, conn);
+        return;
+      }
+      if (req->content_length<0) { // chunked encoding
+        nxb_make_room(&conn->iobuf, 128); // add at least 128 bytes room to continue
+        evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
+        evt->read_size--; // for null-term
+      }
+      nxweb_log_error("partial receive request body (all ok)"); // for debug only
     }
-    if (req->content_length<0) { // chunked encoding
-      nxb_make_room(&conn->iobuf, 128); // add at least 128 bytes room to continue
-      evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
-      evt->read_size--; // for null-term
-    }
-    nxweb_log_error("partial receive request body (all ok)"); // for debug only
   }
+}
+
+void nxweb_handler_ready_to_recieve(nxweb_request* req) {
+  nxweb_connection* conn=NXWEB_REQUEST_CONNECTION(req);
+  void* p;
+  int size, total=0;
+  int was_full=(req->chunk_read_ptr == req->chunk_write_ptr && req->chunk_buffer_last_write);
+  while (req->chunk_read_ptr != req->chunk_write_ptr || req->chunk_buffer_last_write) { // chunk_buffer not empty
+    p=req->chunk_read_ptr;
+    size=(req->chunk_write_ptr > req->chunk_read_ptr)? req->chunk_write_ptr - req->chunk_read_ptr : req->chunk_buffer_end - req->chunk_read_ptr;
+    int n=req->handler->on_recv_body_chunk(req, p, size);
+    total+=n;
+    req->chunk_read_ptr+=n;
+    if (req->chunk_read_ptr==req->chunk_buffer_end) req->chunk_read_ptr=req->chunk_buffer;
+    req->chunk_buffer_last_write&=!n;
+    if (n<size) {
+      if (was_full && total) nxe_mark_read_up(conn->loop, NXWEB_CONNECTION_EVENT(conn), NXE_WANT);
+      return;
+    }
+  }
+  if (is_request_body_complete(req, 0)) {
+    req->request_body=0;
+    conn->cstate=NXWEB_CS_HANDLING;
+    dispatch_request(conn->loop, conn);
+    return;
+  }
+  if (was_full && total) nxe_mark_read_up(NXWEB_REQUEST_CONNECTION(req)->loop, NXWEB_CONNECTION_EVENT(NXWEB_REQUEST_CONNECTION(req)), NXE_WANT);
 }
 
 static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
@@ -471,6 +569,8 @@ static void on_new_connection(nxe_loop* loop, nxe_event* evt, void* evt_data, in
 
   //nxweb_log_error("new conn %p", conn);
 
+  conn->loop=loop;
+
   conn->timer_read.callback=on_read_timeout;
   conn->timer_read.data=evt;
 
@@ -491,6 +591,8 @@ static void on_delete_connection(nxe_loop* loop, nxe_event* evt, void* evt_data,
   nxweb_connection* conn=evt_data;
 
   //nxweb_log_error("del conn %p", conn);
+
+  if (conn->req.handler && conn->req.handler->on_cancel_request) conn->req.handler->on_cancel_request(&conn->req);
 
   nxe_unset_timer(loop, NXE_TIMER_KEEP_ALIVE, &conn->timer_keep_alive);
   nxe_unset_timer(loop, NXE_TIMER_READ, &conn->timer_read);

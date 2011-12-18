@@ -60,6 +60,7 @@ enum nxweb_response_state {
 };
 
 typedef enum nxweb_uri_handler_phase {
+  NXWEB_PH_HEADERS=10,
   NXWEB_PH_CONTENT=100
 } nxweb_uri_handler_phase;
 
@@ -103,6 +104,13 @@ typedef struct nxweb_request {
   nxweb_http_parameter* parameters;
   nxweb_http_cookie* cookies;
 
+  void* user_data;
+
+  char* chunk_buffer;
+  char* chunk_buffer_end;
+  char* chunk_read_ptr;
+  char* chunk_write_ptr;
+
   char* out_headers;
   char* out_body;
   int out_body_length;
@@ -132,6 +140,8 @@ typedef struct nxweb_request {
   unsigned post_method:1;
   unsigned expect_100_continue:1;
   unsigned chunked_request:1;
+  unsigned receive_in_chunks:1;
+  unsigned chunk_buffer_last_write:1;
   unsigned keep_alive:1;
   unsigned sending_100_continue:1;
 } nxweb_request;
@@ -139,6 +149,8 @@ typedef struct nxweb_request {
 typedef struct nxweb_connection {
 
   char remote_addr[16]; // 255.255.255.255
+
+  nxe_loop* loop;
 
   nxe_timer timer_keep_alive;
   nxe_timer timer_read;
@@ -162,6 +174,8 @@ typedef struct nxweb_uri_handler {
   const char* uri_prefix;
   nxweb_result (*callback)(nxweb_uri_handler_phase phase, nxweb_request* req);
   enum nxweb_uri_handler_flags flags;
+  int (*on_recv_body_chunk)(nxweb_request* req, void* ptr, int size);
+  void (*on_cancel_request)(nxweb_request* req);
 } nxweb_uri_handler;
 
 typedef struct nxweb_module {
@@ -179,6 +193,8 @@ extern const nxweb_module* const nxweb_modules[];
 
 // Public API
 void nxweb_shutdown();
+
+void nxweb_handler_ready_to_recieve(nxweb_request* req); // used by handlers accepting request body in parts
 
 const char* nxweb_get_request_header(nxweb_request *req, const char* name);
 const char* nxweb_get_request_parameter(nxweb_request *req, const char* name);

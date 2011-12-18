@@ -4,3 +4,5 @@ error.log
 nxweb.pid
 nxweb.layout
 html/benchmark
+experimental
+upload.tmp
