@@ -261,18 +261,8 @@ static void on_worker_job_done(nxe_loop* loop, nxe_event* evt, void* evt_data, i
   start_sending_response(loop, NXWEB_CONNECTION_EVENT(conn), conn);
 }
 
-static int is_request_body_complete(nxweb_request* req, const char* body) {
-  if (req->content_length==0) {
-    return 1; // no body needed
-  }
-  else if (req->content_length>0) {
-    return req->content_received >= req->content_length;
-  }
-  else if (req->chunked_request) { // req->content_length<0
-    // verify chunked
-    return _nxweb_verify_chunked(body, req->content_received)>=0;
-  }
-  return 1;
+static inline int is_request_body_complete(nxweb_request* req) {
+  return req->content_length==0 || (req->content_length>0 && req->content_received >= req->content_length);
 }
 
 static void on_read_timeout(nxe_loop* loop, void* _evt) {
@@ -289,6 +279,29 @@ static void on_read_timeout(nxe_loop* loop, void* _evt) {
 }
 
 static const char* response_100_continue = "HTTP/1.1 100 Continue\r\n\r\n";
+
+static int process_chunked_encoding(nxe_loop* loop, nxe_event* evt, nxweb_connection* conn, nxweb_request* req, void* buf, long* size) {
+  if (req->chunked_request) {
+    int result=_nxweb_decode_chunked_stream(&req->cdstate, buf, size);
+    if (result<0) {
+      // bad request
+      stop_receiving_request(loop, evt, conn);
+      conn->cstate=NXWEB_CS_ERROR;
+      req->keep_alive=0;
+      nxweb_send_http_error(req, 400, "Bad Request");
+      start_sending_response(loop, evt, conn);
+      return -1;
+    }
+    req->content_received+=*size;
+    if (result>0) { // full body received
+      req->content_length=req->content_received;
+    }
+  }
+  else {
+    req->content_received+=*size;
+  }
+  return 0;
+}
 
 static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
   nxweb_connection* conn=evt_data;
@@ -324,9 +337,14 @@ static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) 
         return;
       }
 
-      if (is_request_body_complete(req, req->request_body)) {
+      {
+        long size=req->content_received;
+        req->content_received=0;
+        if (process_chunked_encoding(loop, evt, conn, req, req->request_body, &size)) return;
+      }
+
+      if (is_request_body_complete(req)) {
         // receiving request complete
-        if (req->chunked_request) _nxweb_decode_chunked_request(req);
         stop_receiving_request(loop, evt, conn);
         conn->cstate=NXWEB_CS_HANDLING;
         dispatch_request(loop, conn);
@@ -420,14 +438,14 @@ static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) 
   }
   else if (conn->cstate==NXWEB_CS_RECEIVING_BODY) {
     if (req->receive_in_chunks) {
-      int bytes_received=evt->read_ptr - req->chunk_write_ptr;
+      long bytes_received=evt->read_ptr - req->chunk_write_ptr;
       int was_empty=(req->chunk_read_ptr == req->chunk_write_ptr && !req->chunk_buffer_last_write);
+      if (process_chunked_encoding(loop, evt, conn, req, req->chunk_write_ptr, &bytes_received)) return;
       req->chunk_write_ptr+=bytes_received;
-      req->content_received+=bytes_received;
       if (req->chunk_write_ptr==req->chunk_buffer_end) req->chunk_write_ptr=req->chunk_buffer;
-      req->chunk_buffer_last_write=1;
+      if (bytes_received) req->chunk_buffer_last_write=1;
       if (was_empty) nxweb_handler_ready_to_recieve(req);
-      if (is_request_body_complete(req, 0)) {
+      if (is_request_body_complete(req)) {
         stop_receiving_request(loop, evt, conn);
       }
       else {
@@ -438,16 +456,16 @@ static void on_read(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) 
       nxweb_log_error("partial receive request body (all ok)"); // for debug only
     }
     else {
-      char* read_buf=nxb_get_unfinished(&conn->iobuf, 0);
-      req->content_received=evt->read_ptr - read_buf;
-      nxb_resize_fast(&conn->iobuf, req->content_received);
+      char* read_buf=nxb_get_room(&conn->iobuf, 0);
+      long bytes_received=evt->read_ptr - read_buf;
+      if (process_chunked_encoding(loop, evt, conn, req, read_buf, &bytes_received)) return;
+      nxb_blank_fast(&conn->iobuf, bytes_received);
       *evt->read_ptr='\0';
-      if (is_request_body_complete(req, read_buf)) {
+      if (is_request_body_complete(req)) {
         // receiving request complete
         // append null-terminator and close input buffer
         nxb_append_char(&conn->iobuf, '\0');
         req->request_body=nxb_finish_stream(&conn->iobuf);
-        if (req->chunked_request) _nxweb_decode_chunked_request(req);
         stop_receiving_request(loop, evt, conn);
         conn->cstate=NXWEB_CS_HANDLING;
         dispatch_request(loop, conn);
@@ -490,7 +508,7 @@ void nxweb_handler_ready_to_recieve(nxweb_request* req) {
       return;
     }
   }
-  if (is_request_body_complete(req, 0)) {
+  if (is_request_body_complete(req)) {
     req->request_body=0;
     conn->cstate=NXWEB_CS_HANDLING;
     dispatch_request(conn->loop, conn);

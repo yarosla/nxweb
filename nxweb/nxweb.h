@@ -83,6 +83,11 @@ enum nxweb_uri_handler_flags {
   _NXWEB_HANDLE_MASK=0x70
 };
 
+typedef struct nxweb_chunked_decoder_state {
+  enum {CDS_CR1=-2, CDS_LF1=-1, CDS_SIZE=0, CDS_LF2, CDS_DATA} state;
+  long chunk_bytes_left;
+} nxweb_chunked_decoder_state;
+
 typedef struct nxweb_request {
 
   // Parsed HTTP request info:
@@ -94,8 +99,8 @@ typedef struct nxweb_request {
   char* cookie;
   char* user_agent;
   char* content_type;
-  int content_length; // -1 = unspecified: chunked or until close
-  int content_received;
+  long content_length; // -1 = unspecified: chunked or until close
+  long content_received;
   char* transfer_encoding;
   char* range;
   const char* path_info; // points right after uri_handler's prefix
@@ -128,6 +133,8 @@ typedef struct nxweb_request {
   off_t sendfile_offset;
 
   enum nxweb_response_state rstate;
+
+  nxweb_chunked_decoder_state cdstate;
 
   const struct nxweb_uri_handler* handler;
   const struct nxweb_module* const* handler_module;

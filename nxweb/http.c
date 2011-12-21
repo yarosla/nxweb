@@ -283,6 +283,70 @@ int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_he
   return 0;
 }
 
+int _nxweb_decode_chunked_stream(nxweb_chunked_decoder_state* decoder_state, char* buf, long* buf_len) {
+  char* p=buf;
+  char* d=buf;
+  char* end=buf+*buf_len;
+  char c;
+  while (p<end) {
+    c=*p;
+    switch (decoder_state->state) {
+      case CDS_DATA:
+        if (end-p>=decoder_state->chunk_bytes_left) {
+          p+=decoder_state->chunk_bytes_left;
+          decoder_state->chunk_bytes_left=0;
+          decoder_state->state=CDS_CR1;
+          d=p;
+          break;
+        }
+        else {
+          decoder_state->chunk_bytes_left-=(end-p);
+          *buf_len=(end-buf);
+          return 0;
+        }
+      case CDS_CR1:
+        if (c!='\r') return -1;
+        p++;
+        decoder_state->state=CDS_LF1;
+        break;
+      case CDS_LF1:
+        if (c!='\n') return -1;
+        p++;
+        decoder_state->state=CDS_SIZE;
+        break;
+      case CDS_SIZE: // read digits until CR2
+        if (c=='\r') {
+          if (!decoder_state->chunk_bytes_left) {
+            // terminator found
+            *buf_len=(d-buf);
+            return 1;
+          }
+          p++;
+          decoder_state->state=CDS_LF2;
+        }
+        else {
+          if (c>='0' && c<='9') c-='0';
+          else if (c>='A' && c<='F') c=c-'A'+10;
+          else if (c>='a' && c<='f') c=c-'a'+10;
+          else return -1;
+          decoder_state->chunk_bytes_left=(decoder_state->chunk_bytes_left<<4)+c;
+          p++;
+        }
+        break;
+      case CDS_LF2:
+        if (c!='\n') return -1;
+        p++;
+        memmove(d, p, end-p);
+        end-=(p-d);
+        p=d;
+        decoder_state->state=CDS_DATA;
+        break;
+    }
+  }
+  *buf_len=(d-buf);
+  return 0;
+}
+
 void _nxweb_decode_chunked_request(nxweb_request* req) {
   req->content_length=req->content_received=_nxweb_decode_chunked(req->request_body, req->content_received);
   assert(req->content_length>=0);

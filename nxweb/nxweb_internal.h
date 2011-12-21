@@ -128,6 +128,7 @@ void _nxweb_register_printf_extensions();
 void _nxweb_decode_chunked_request(nxweb_request* req);
 int _nxweb_decode_chunked(char* buf, int buf_len);
 int _nxweb_verify_chunked(const char* buf, int buf_len);
+int _nxweb_decode_chunked_stream(nxweb_chunked_decoder_state* decoder_state, char* buf, long* buf_len);
 void nxweb_parse_request_parameters(nxweb_request *req, int preserve_uri); // Modifies conn->uri and conn->request_body content (does url_decode inplace)
 void nxweb_parse_request_cookies(nxweb_request *req); // Modifies conn->cookie content (does url_decode inplace)
 
