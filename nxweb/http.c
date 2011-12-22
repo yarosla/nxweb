@@ -562,9 +562,14 @@ void _nxweb_prepare_response_headers(nxweb_request *req) {
     nxb_append_str(nxb, date_buf);
     nxb_append_str(nxb, "\r\n");
   }
-  nxb_make_room(nxb, 32);
-  nxb_append_str_fast(nxb, "Content-Length: ");
-  nxb_append_str_fast(nxb, uint_to_decimal_string(req->out_body_length, buf, sizeof(buf)));
+  nxb_make_room(nxb, 48);
+  if (req->out_body_length>=0) {
+    nxb_append_str_fast(nxb, "Content-Length: ");
+    nxb_append_str_fast(nxb, uint_to_decimal_string(req->out_body_length, buf, sizeof(buf)));
+  }
+  else {
+    nxb_append_str_fast(nxb, "Transfer-Encoding: chunked");
+  }
   nxb_append_fast(nxb, "\r\n\r\n", 5);
 
   req->out_headers=nxb_finish_stream(nxb);

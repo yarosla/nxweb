@@ -124,6 +124,8 @@ static void start_sending_response(nxe_loop* loop, nxe_event* evt, nxweb_connect
     _nxweb_prepare_response_headers(&conn->req);
   }
 
+  req->send_in_chunks=req->handler && req->handler->on_send_body_chunk;
+
   nxe_set_timer(loop, NXE_TIMER_WRITE, &conn->timer_write);
   conn->cstate=NXWEB_CS_SENDING_HEADERS;
   if (!req->sending_100_continue) {
@@ -514,7 +516,55 @@ void nxweb_handler_ready_to_recieve(nxweb_request* req) {
     dispatch_request(conn->loop, conn);
     return;
   }
-  if (was_full && total) nxe_mark_read_up(NXWEB_REQUEST_CONNECTION(req)->loop, NXWEB_CONNECTION_EVENT(NXWEB_REQUEST_CONNECTION(req)), NXE_WANT);
+  if (was_full && total) nxe_mark_read_up(conn->loop, NXWEB_CONNECTION_EVENT(conn), NXE_WANT);
+}
+
+static void rearm_connection(nxe_loop* loop, nxe_event* evt, nxweb_connection* conn, nxweb_request* req) {
+  // rearm connection for new request
+  nxe_mark_write_down(loop, evt, NXE_WANT);
+  if (req->sendfile_fd) {
+    close(req->sendfile_fd);
+    req->sendfile_fd=0;
+    evt->send_fd=0;
+  }
+  nxb_empty(&conn->iobuf);
+  conn->request_count++;
+  conn->cstate=NXWEB_CS_WAITING_FOR_REQUEST;
+  evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
+  evt->read_size--; // for null-terminator
+  nxe_mark_read_up(loop, evt, NXE_WANT);
+  nxe_set_timer(loop, NXE_TIMER_KEEP_ALIVE, &conn->timer_keep_alive);
+
+  //nxweb_log_error("rearm conn %p", conn);
+
+  if (!req->keep_alive) {
+    shutdown(evt->fd, SHUT_RDWR);
+  }
+}
+
+void nxweb_handler_ready_to_send(nxweb_request* req) {
+  nxweb_connection* conn=NXWEB_REQUEST_CONNECTION(req);
+  void* p;
+  int size, total=0;
+  int was_empty=(req->chunk_read_ptr == req->chunk_write_ptr && !req->chunk_buffer_last_write);
+  while (req->chunk_read_ptr != req->chunk_write_ptr || !req->chunk_buffer_last_write) { // chunk_buffer not full
+    p=req->chunk_write_ptr;
+    size=(req->chunk_write_ptr < req->chunk_read_ptr)? req->chunk_read_ptr - req->chunk_write_ptr : req->chunk_buffer_end - req->chunk_write_ptr;
+    int n=req->handler->on_send_body_chunk(req, p, size);
+    total+=n;
+    req->chunk_write_ptr+=n;
+    if (req->chunk_write_ptr==req->chunk_buffer_end) req->chunk_write_ptr=req->chunk_buffer;
+    req->chunk_buffer_last_write|=!!n;
+    if (n<size) {
+      if (was_empty && total) nxe_mark_write_up(conn->loop, NXWEB_CONNECTION_EVENT(conn), NXE_WANT);
+      return;
+    }
+  }
+//  if (is_response_body_complete(req)) {
+//    rearm_connection(conn->loop, NXWEB_CONNECTION_EVENT(conn), conn, req);
+//    return;
+//  }
+  if (was_empty && total) nxe_mark_write_up(conn->loop, NXWEB_CONNECTION_EVENT(conn), NXE_WANT);
 }
 
 static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
@@ -523,7 +573,24 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
 
   nxe_unset_timer(loop, NXE_TIMER_WRITE, &conn->timer_write);
 
-  if (events & NXE_WRITE_FULL) {
+  if (req->send_in_chunks && conn->cstate==NXWEB_CS_SENDING_BODY) {
+    long bytes_sent=evt->write_ptr - req->chunk_read_ptr;
+    int was_full=(req->chunk_read_ptr == req->chunk_write_ptr && req->chunk_buffer_last_write);
+    req->chunk_read_ptr+=bytes_sent;
+    if (req->chunk_read_ptr==req->chunk_buffer_end) req->chunk_read_ptr=req->chunk_buffer;
+    if (bytes_sent) req->chunk_buffer_last_write=0;
+    if ((req->chunk_read_ptr == req->chunk_write_ptr && !req->chunk_buffer_last_write) && req->send_in_chunks_complete) {
+      rearm_connection(conn->loop, NXWEB_CONNECTION_EVENT(conn), conn, req);
+    }
+    else {
+      if (was_full) nxweb_handler_ready_to_send(req);
+      evt->write_ptr=req->chunk_read_ptr;
+      evt->write_size=(req->chunk_read_ptr == req->chunk_write_ptr && !req->chunk_buffer_last_write)?
+        0 : (req->chunk_read_ptr < req->chunk_write_ptr)? req->chunk_write_ptr - req->chunk_read_ptr : req->chunk_buffer_end - req->chunk_read_ptr;
+    }
+    nxweb_log_error("partial send response body (all ok)"); // for debug only
+  }
+  else if (events & NXE_WRITE_FULL) {
     if (req->sending_100_continue) {
       req->sending_100_continue=0;
       if (conn->cstate==NXWEB_CS_SENDING_HEADERS) {
@@ -545,6 +612,19 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
           evt->send_offset=req->sendfile_offset;
           evt->write_size=req->out_body_length;
         }
+        else if (req->send_in_chunks) {
+          if (!req->chunk_buffer) {
+            req->chunk_buffer=nxb_alloc_obj(&conn->iobuf, NXWEB_CHUNK_BUFFER_SIZE);
+            req->chunk_buffer_end=req->chunk_buffer+NXWEB_CHUNK_BUFFER_SIZE;
+          }
+          req->chunk_read_ptr=
+          req->chunk_write_ptr=req->chunk_buffer;
+          nxweb_handler_ready_to_send(req);
+          evt->write_ptr=req->chunk_read_ptr;
+          evt->write_size=(req->chunk_read_ptr == req->chunk_write_ptr && !req->chunk_buffer_last_write)?
+            0 : (req->chunk_read_ptr < req->chunk_write_ptr)? req->chunk_write_ptr - req->chunk_read_ptr : req->chunk_buffer_end - req->chunk_read_ptr;
+          evt->send_fd=0;
+        }
         else {
           evt->write_ptr=req->out_body;
           evt->write_size=req->out_body_length;
@@ -554,26 +634,7 @@ static void on_write(nxe_loop* loop, nxe_event* evt, void* evt_data, int events)
         return;
       }
     }
-    // rearm connection for new request
-    nxe_mark_write_down(loop, evt, NXE_WANT);
-    if (req->sendfile_fd) {
-      close(req->sendfile_fd);
-      req->sendfile_fd=0;
-      evt->send_fd=0;
-    }
-    nxb_empty(&conn->iobuf);
-    conn->request_count++;
-    conn->cstate=NXWEB_CS_WAITING_FOR_REQUEST;
-    evt->read_ptr=nxb_get_room(&conn->iobuf, &evt->read_size);
-    evt->read_size--; // for null-terminator
-    nxe_mark_read_up(loop, evt, NXE_WANT);
-    nxe_set_timer(loop, NXE_TIMER_KEEP_ALIVE, &conn->timer_keep_alive);
-
-    //nxweb_log_error("rearm conn %p", conn);
-
-    if (!req->keep_alive) {
-      shutdown(evt->fd, SHUT_RDWR);
-    }
+    rearm_connection(loop, evt, conn, req);
   }
   else { // continue writing
     nxe_set_timer(loop, NXE_TIMER_WRITE, &conn->timer_write);

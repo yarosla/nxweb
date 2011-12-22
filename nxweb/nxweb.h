@@ -148,6 +148,8 @@ typedef struct nxweb_request {
   unsigned expect_100_continue:1;
   unsigned chunked_request:1;
   unsigned receive_in_chunks:1;
+  unsigned send_in_chunks:1;
+  unsigned send_in_chunks_complete:1;
   unsigned chunk_buffer_last_write:1;
   unsigned keep_alive:1;
   unsigned sending_100_continue:1;
@@ -182,6 +184,7 @@ typedef struct nxweb_uri_handler {
   nxweb_result (*callback)(nxweb_uri_handler_phase phase, nxweb_request* req);
   enum nxweb_uri_handler_flags flags;
   int (*on_recv_body_chunk)(nxweb_request* req, void* ptr, int size);
+  int (*on_send_body_chunk)(nxweb_request* req, void* ptr, int size);
   void (*on_cancel_request)(nxweb_request* req);
 } nxweb_uri_handler;
 
@@ -202,10 +205,19 @@ extern const nxweb_module* const nxweb_modules[];
 void nxweb_shutdown();
 
 void nxweb_handler_ready_to_recieve(nxweb_request* req); // used by handlers accepting request body in parts
+void nxweb_handler_ready_to_send(nxweb_request* req); // used by handlers sending response body in parts
 
 const char* nxweb_get_request_header(nxweb_request *req, const char* name);
 const char* nxweb_get_request_parameter(nxweb_request *req, const char* name);
 const char* nxweb_get_request_cookie(nxweb_request *req, const char* name);
+
+static inline void* nxweb_request_user_data_alloc(nxweb_request *req, int size) {
+  return nxb_alloc_obj(&NXWEB_REQUEST_CONNECTION(req)->iobuf, size);
+}
+
+static inline void* nxweb_request_user_data_calloc(nxweb_request *req, int size) {
+  return nxb_calloc_obj(&NXWEB_REQUEST_CONNECTION(req)->iobuf, size);
+}
 
 void nxweb_send_http_error(nxweb_request *req, int code, const char* message);
 void nxweb_send_redirect(nxweb_request *req, int code, const char* location);

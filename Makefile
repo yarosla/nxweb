@@ -18,8 +18,8 @@ BASE_NAME=nxweb
 
 LIBS=-lrt -lpthread
 
-CFLAGS_RELEASE=-pthread -Wno-strict-aliasing -Wno-deprecated-declarations -O2 -s
-CFLAGS_DEBUG=-pthread -Wno-strict-aliasing -Wno-deprecated-declarations -g
+CFLAGS_RELEASE=-pthread -Wno-deprecated-declarations -O2 -s
+CFLAGS_DEBUG=-pthread -Wno-deprecated-declarations -g
 
 LDFLAGS_RELEASE=$(LIBS)
 LDFLAGS_DEBUG=$(LIBS)
@@ -31,7 +31,7 @@ SRC_MAIN=nxweb/main.c nxweb/nxweb2.c nxweb/http.c nxweb/mime.c nxweb/misc.c nxwe
 # List active modules here; also include them in modules.c file
 
 INC_MODULES=
-SRC_MODULES=hello.c sendfile.c benchmark.c
+SRC_MODULES=hello.c sendfile.c benchmark.c modules/upload.c
 
 OBJ_DEBUG_DIR=obj/Debug
 BIN_DEBUG_DIR=bin/Debug
@@ -51,12 +51,14 @@ $(BIN_RELEASE_DIR):
 
 $(OBJ_RELEASE_DIR):
 	mkdir -p $(OBJ_RELEASE_DIR)/nxweb
+	mkdir -p $(OBJ_RELEASE_DIR)/modules
 
 $(BIN_DEBUG_DIR):
 	mkdir -p $(BIN_DEBUG_DIR)
 
 $(OBJ_DEBUG_DIR):
 	mkdir -p $(OBJ_DEBUG_DIR)/nxweb
+	mkdir -p $(OBJ_DEBUG_DIR)/modules
 
 $(BIN_DEBUG_DIR)/$(BASE_NAME): $(OBJS_DEBUG)
 	$(LD) -o $@ $^ $(LDFLAGS_DEBUG)

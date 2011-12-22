@@ -31,7 +31,7 @@
 		</Build>
 		<Compiler>
 			<Add option="-Wall" />
-			<Add option="-pthread -Wno-strict-aliasing" />
+			<Add option="-pthread" />
 			<Add option="-DUSE_REGISTER_PRINTF_SPECIFIER" />
 		</Compiler>
 		<Linker>
