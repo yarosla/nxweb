@@ -311,6 +311,10 @@ int _nxweb_decode_chunked_stream(nxweb_chunked_decoder_state* decoder_state, cha
         break;
       case CDS_LF1:
         if (c!='\n') return -1;
+        if (decoder_state->final_chunk) {
+          *buf_len=(d-buf);
+          return 1;
+        }
         p++;
         decoder_state->state=CDS_SIZE;
         break;
@@ -318,8 +322,7 @@ int _nxweb_decode_chunked_stream(nxweb_chunked_decoder_state* decoder_state, cha
         if (c=='\r') {
           if (!decoder_state->chunk_bytes_left) {
             // terminator found
-            *buf_len=(d-buf);
-            return 1;
+            decoder_state->final_chunk=1;
           }
           p++;
           decoder_state->state=CDS_LF2;

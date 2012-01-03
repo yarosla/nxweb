@@ -49,10 +49,10 @@ static volatile int shutdown_in_progress=0;
 static volatile int num_connections=0;
 
 static int listen_fd;
-static int next_net_thread_idx=0;
-static nxe_event listen_evt;
 static nxe_loop* main_loop;
 static nxweb_net_thread net_threads[N_NET_THREADS];
+
+static __thread nxweb_net_thread* net_thread_data;
 
 
 static void on_keep_alive(nxe_loop* loop, void* _evt) {
@@ -694,6 +694,7 @@ static void on_delete_connection(nxe_loop* loop, nxe_event* evt, void* evt_data,
 }
 
 static void on_accept(nxe_loop* loop, nxe_event* evt, void* evt_data, int events) {
+  static int next_net_thread_idx=0;
   nxweb_accept accept_msg;
   int client_fd;
   struct sockaddr_in client_addr;
@@ -805,8 +806,13 @@ static void* worker_thread_main(void* pdata) {
   return 0;
 }
 
+nxweb_net_thread* _nxweb_get_net_thread_data() {
+  return net_thread_data;
+}
+
 static void* net_thread_main(void* pdata) {
   nxweb_net_thread* tdata=(nxweb_net_thread*)pdata;
+  net_thread_data=tdata;
 
   nxweb_job_queue_init(&tdata->job_queue);
   pthread_mutex_init(&tdata->job_queue_mux, 0);
@@ -853,7 +859,11 @@ nxe_event_class nxe_event_classes[]={
   // NXE_CLASS_NET_THREAD_ACCEPT:
   {.on_read=on_net_thread_accept, .on_error=on_net_thread_accept_error},
   // NXE_CLASS_NET_THREAD_SHUTDOWN:
-  {.on_read=on_net_thread_shutdown, .on_error=on_shutdown_error}
+  {.on_read=on_net_thread_shutdown, .on_error=on_shutdown_error},
+  [NXE_CLASS_USER1]={},
+  [NXE_CLASS_USER2]={},
+  [NXE_CLASS_USER3]={},
+  [NXE_CLASS_USER4]={}
 };
 
 // Signal server to shutdown. Async function. Can be called from worker threads.
@@ -982,6 +992,7 @@ void _nxweb_main() {
   nxe_loop* loop=nxe_create(sizeof(nxe_event), 4, 0);
   main_loop=loop;
 
+  nxe_event listen_evt;
   nxe_init_event(&listen_evt);
   nxe_add_event_fd(loop, NXE_CLASS_LISTEN, &listen_evt, listen_fd);
   nxe_mark_read_up(loop, &listen_evt, NXE_CAN_AND_WANT);

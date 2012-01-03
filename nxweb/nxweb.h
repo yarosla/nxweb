@@ -85,6 +85,7 @@ enum nxweb_uri_handler_flags {
 
 typedef struct nxweb_chunked_decoder_state {
   enum {CDS_CR1=-2, CDS_LF1=-1, CDS_SIZE=0, CDS_LF2, CDS_DATA} state;
+  unsigned short final_chunk:1;
   long chunk_bytes_left;
 } nxweb_chunked_decoder_state;
 

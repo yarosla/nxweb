@@ -2,7 +2,7 @@
 1324235427 source:/home/ys/dev/cb/nxweb/hello.c
 	"nxweb/nxweb.h"
 
-1324549812 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
+1324580344 /home/ys/dev/cb/nxweb/nxweb/nxweb.h
 	<stddef.h>
 	<sys/stat.h>
 	"revision.h"
@@ -11,9 +11,9 @@
 	"nx_buffer.h"
 	"misc.h"
 
-1324501995 /home/ys/dev/cb/nxweb/nxweb/revision.h
+1324552081 /home/ys/dev/cb/nxweb/nxweb/revision.h
 
-1324546764 source:/home/ys/dev/cb/nxweb/nxweb/http.c
+1324580463 source:/home/ys/dev/cb/nxweb/nxweb/http.c
 	<stddef.h>
 	<stdlib.h>
 	<stdio.h>
@@ -26,7 +26,7 @@
 	<unistd.h>
 	"nxweb_internal.h"
 
-1324497525 /home/ys/dev/cb/nxweb/nxweb/nxweb_internal.h
+1324628594 /home/ys/dev/cb/nxweb/nxweb/nxweb_internal.h
 	<netinet/in.h>
 	"config.h"
 	"nxweb.h"
@@ -111,7 +111,7 @@
 
 1323778346 /home/ys/dev/cb/nxweb/nxweb/misc.h
 
-1323778346 source:/home/ys/dev/cb/nxweb/nxweb/nx_buffer.c
+1325261823 source:/home/ys/dev/cb/nxweb/nxweb/nx_buffer.c
 	<stddef.h>
 	<string.h>
 	<stdint.h>
@@ -155,7 +155,7 @@
 	<sys/eventfd.h>
 	"nx_pool.h"
 
-1324548280 source:/home/ys/dev/cb/nxweb/nxweb/nxweb2.c
+1324628612 source:/home/ys/dev/cb/nxweb/nxweb/nxweb2.c
 	<assert.h>
 	<stdlib.h>
 	<stdio.h>
@@ -180,14 +180,30 @@
 	"nx_pool.h"
 	"misc.h"
 
-1323965405 source:/home/ys/dev/cb/nxweb/benchmark.c
+1325623555 source:/home/ys/dev/cb/nxweb/benchmark.c
 	"nxweb/nxweb.h"
 
-1324548751 source:/home/ys/dev/cb/nxweb/modules/upload.c
+1324550948 source:/home/ys/dev/cb/nxweb/modules/upload.c
 	<sys/types.h>
 	<sys/stat.h>
 	<fcntl.h>
 	<errno.h>
 	<unistd.h>
 	"../nxweb/nxweb.h"
+
+1324673365 source:/home/ys/dev/cb/nxweb/modules/proxy_http.c
+	<assert.h>
+	<stdlib.h>
+	<stdio.h>
+	<string.h>
+	<pthread.h>
+	<unistd.h>
+	<errno.h>
+	<signal.h>
+	<sys/socket.h>
+	<sys/stat.h>
+	<netinet/in.h>
+	<netinet/tcp.h>
+	<arpa/inet.h>
+	"../nxweb/nxweb_internal.h"
 

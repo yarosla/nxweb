@@ -153,7 +153,7 @@ int nxb_realloc_chunk(nxb_buffer* nxb, int min_room) {
   }
   nxb_init_chunk(nxc, nxb->chunk, alloc_size, 1);
   if (base_size) {
-    memmove(nxc->buf, nxb->ptr, base_size);
+    memmove(nxc->buf, nxb->base, base_size);
   }
   nxb->base=nxc->buf;
   nxb->ptr=nxb->base+base_size;

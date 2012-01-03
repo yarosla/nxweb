@@ -38,7 +38,11 @@ enum {
   NXE_CLASS_SOCKET,
   NXE_CLASS_WORKER_JOB_DONE,
   NXE_CLASS_NET_THREAD_ACCEPT,
-  NXE_CLASS_NET_THREAD_SHUTDOWN
+  NXE_CLASS_NET_THREAD_SHUTDOWN,
+  NXE_CLASS_USER1,
+  NXE_CLASS_USER2,
+  NXE_CLASS_USER3,
+  NXE_CLASS_USER4
 };
 
 enum nxweb_timers {
@@ -119,6 +123,7 @@ static inline int nxweb_accept_queue_is_full(nxweb_accept_queue* jq) {
 
 // Internal use
 void _nxweb_main();
+nxweb_net_thread* _nxweb_get_net_thread_data();
 char* _nxweb_find_end_of_http_headers(char* buf, int len);
 int _nxweb_parse_http_request(nxweb_request* req, char* headers, char* end_of_headers, int bytes_received);
 void _nxweb_write_response_headers_raw(nxweb_request* req, const char* fmt, ...) __attribute__((format (printf, 2, 3)));
