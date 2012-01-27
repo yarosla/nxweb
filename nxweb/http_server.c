@@ -551,10 +551,10 @@ void nxweb_run() {
   pid_t pid=getpid();
   main_thread_id=pthread_self();
 
-  nxweb_log_error("NXWEB startup: pid=%d N_NET_THREADS=%d N_WORKER_THREADS=%d"
-                  " pg=%d short=%d int=%d long=%d size_t=%d evt=%d conn=%d req=%d td=%d",
-                  (int)pid, N_NET_THREADS, N_WORKER_THREADS,
-                  (int)sysconf(_SC_PAGE_SIZE), (int)sizeof(short), (int)sizeof(int), (int)sizeof(long), (int)sizeof(size_t),
+  nxweb_log_error("NXWEB startup: pid=%d N_NET_THREADS=%d pg=%d"
+                  " short=%d int=%d long=%d size_t=%d evt=%d conn=%d req=%d td=%d",
+                  (int)pid, N_NET_THREADS, (int)sysconf(_SC_PAGE_SIZE),
+                  (int)sizeof(short), (int)sizeof(int), (int)sizeof(long), (int)sizeof(size_t),
                   (int)sizeof(nxe_event), (int)sizeof(nxweb_http_server_connection), (int)sizeof(nxweb_http_request),
                   (int)sizeof(nxweb_net_thread_data));
 

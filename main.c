@@ -54,7 +54,7 @@ NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=
 NXWEB_SET_HANDLER(nxweb_8777, "/8777", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="");
 
 // This serves static files from $(work_dir)/html directory (see modules/sendfile.c):
-NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000, .dir="html", .cache=0);
+NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000, .dir="html", .cache=1);
 
 
 // Server main():

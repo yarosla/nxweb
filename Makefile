@@ -120,7 +120,7 @@ ssl/dh.pem:
 	$(GNUTLS_BIN_DIR)certtool --generate-dh-params --sec-param normal --outfile ssl/dh.pem
 
 clean:
-	rm -rf obj/* bin/* ssl/*.pem
+	rm -rf obj/* bin/*
 
 clean_SSL_KEYS:
 	rm -f ssl/*.pem

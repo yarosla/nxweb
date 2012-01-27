@@ -51,12 +51,8 @@ extern "C" {
 
 #ifdef NX_DEBUG
 #define N_NET_THREADS 1
-// N_WORKER_THREADS - number of worker threads per each network thread
-#define N_WORKER_THREADS 1
 #else
 #define N_NET_THREADS 4
-// N_WORKER_THREADS - number of worker threads per each network thread
-#define N_WORKER_THREADS 4
 #endif
 
 // timeouts are in micro-seconds:
