@@ -27,11 +27,14 @@
 #ifndef NX_QUEUE_H_INCLUDED
 #define NX_QUEUE_H_INCLUDED
 
+#include "nx_alloc.h"
+
 // Can store up to queue_max_size-1 items
 
 // This queue it safe for non-blocking use
 // as long as there is only one producer thread (does push)
-// and only one consumer thread (does pop)
+// or only one consumer thread (does pop).
+// You can avoid mutexes at the end where you have no concurrency.
 
 typedef struct nx_queue {
   int item_size, size;
@@ -39,27 +42,55 @@ typedef struct nx_queue {
   char items[];
 } nx_queue;
 
-nx_queue* nx_queue_new(int item_size, int size);
-void nx_queue_init(nx_queue* q, int item_size, int size);
-
 static inline int nx_queue_is_empty(const nx_queue* q) {
-  __sync_synchronize(); // full memory barrier
   return (q->head==q->tail);
 }
 
 static inline int nx_queue_is_full(const nx_queue* q) {
-  __sync_synchronize(); // full memory barrier
   return (q->head==(q->tail+1)%q->size);
 }
 
 static inline int nx_queue_length(const nx_queue* q) {
-  __sync_synchronize(); // full memory barrier
   int nitems=q->tail-q->head;
   return nitems>=0? nitems : nitems+q->size;
 }
 
-int nx_queue_push(nx_queue* q, const void* item); // returns 0 = success
-int nx_queue_pop(nx_queue* q, void* item); // returns 0 = success
+static inline nx_queue* nx_queue_new(int item_size, int queue_max_size) {
+  assert(item_size>0);
+  assert(queue_max_size>2);
+  nx_queue* q=(nx_queue*)nx_alloc(sizeof(nx_queue)+item_size*queue_max_size);
+  q->item_size=item_size;
+  q->size=queue_max_size;
+  q->head=q->tail=0;
+  return q;
+}
 
+static inline void nx_queue_init(nx_queue* q, int item_size, int queue_max_size) {
+  assert(item_size>0);
+  assert(queue_max_size>2);
+  q->item_size=item_size;
+  q->size=queue_max_size;
+  q->head=q->tail=0;
+}
+
+static inline int nx_queue_pop(nx_queue* q, void* item) { // returns 0 = success
+  if (nx_queue_is_empty(q)) return -1; // empty
+  __sync_synchronize(); // full memory barrier
+  memcpy(item, q->items+q->head*q->item_size, q->item_size);
+  __sync_synchronize(); // full memory barrier
+  q->head=(q->head+1)%q->size;
+  return 0;
+}
+
+static inline int nx_queue_push(nx_queue* q, const void* item) { // returns 0 = success
+  if (nx_queue_is_full(q)) return -1; // full
+  __sync_synchronize(); // full memory barrier
+  void* pitem=q->items+q->tail*q->item_size;
+  if (!pitem) return -1; // full
+  memcpy(pitem, item, q->item_size);
+  __sync_synchronize(); // full memory barrier
+  q->tail=(q->tail+1)%q->size;
+  return 0;
+}
 
 #endif // NX_QUEUE_H_INCLUDED

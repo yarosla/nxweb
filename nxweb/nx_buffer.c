@@ -24,6 +24,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define _FILE_OFFSET_BITS 64
+
+#include "nx_buffer.h"
+
 #include <stddef.h>
 #include <string.h>
 #include <stdint.h>
@@ -31,7 +35,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "nx_buffer.h"
+
 
 /// The following is bases on GNU obstack implementation
 
@@ -108,7 +112,7 @@ void nxb_init(nxb_buffer* nxb, int nxb_allocated_size) {
 nxb_buffer* nxb_create(int initial_chunk_size) {
   initial_chunk_size=(initial_chunk_size + NXB_DEFAULT_ALIGNMENT_MASK) & ~NXB_DEFAULT_ALIGNMENT_MASK;
   int alloc_size=sizeof(nxb_buffer) + sizeof(nxb_chunk) + initial_chunk_size;
-  nxb_buffer* nxb=malloc(alloc_size);
+  nxb_buffer* nxb=nx_alloc(alloc_size);
   if (!nxb) {
     fprintf(stderr, "nxb_create(%d) failed\n", alloc_size);
     return 0;
@@ -121,7 +125,7 @@ void nxb_empty(nxb_buffer* nxb) {
   nxb_chunk* nxc=nxb->chunk;
   nxb_chunk* nxcp=nxc->prev;
   while (nxcp) {
-    if (nxc->should_free) free(nxc);
+    if (nxc->should_free) nx_free(nxc);
     nxc=nxcp;
     nxcp=nxc->prev;
   }
@@ -133,8 +137,8 @@ void nxb_empty(nxb_buffer* nxb) {
 
 void nxb_destroy(nxb_buffer* nxb) {
   nxb_empty(nxb);
-  if (nxb->chunk->should_free) free(nxb->chunk);
-  free(nxb);
+  if (nxb->chunk->should_free) nx_free(nxb->chunk);
+  nx_free(nxb);
 }
 
 int nxb_realloc_chunk(nxb_buffer* nxb, int min_room) {
@@ -146,7 +150,7 @@ int nxb_realloc_chunk(nxb_buffer* nxb, int min_room) {
   //if (new_size<1024) new_size=1024;
   new_size=(new_size + NXB_DEFAULT_ALIGNMENT_MASK) & ~NXB_DEFAULT_ALIGNMENT_MASK;
   int alloc_size=sizeof(nxb_chunk) + new_size;
-  nxb_chunk* nxc=malloc(alloc_size);
+  nxb_chunk* nxc=nx_alloc(alloc_size);
   if (!nxc) {
     fprintf(stderr, "nxb_realloc_chunk(%d) failed\n", alloc_size);
     return -1;
@@ -160,7 +164,7 @@ int nxb_realloc_chunk(nxb_buffer* nxb, int min_room) {
   nxb->end=nxc->end;
   if (!nxb->chunk->dirty && nxb->chunk->should_free) {
     nxc->prev=nxb->chunk->prev;
-    free(nxb->chunk);
+    nx_free(nxb->chunk);
   }
   nxb->chunk=nxc;
   return 0;

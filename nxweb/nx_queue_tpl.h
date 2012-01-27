@@ -24,27 +24,60 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "nxweb/nxweb.h"
+#ifndef NX_QUEUE_TPL_H
+#define	NX_QUEUE_TPL_H
+
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
 
-extern const nxweb_module hello_module, sendfile_module, benchmark_module, upload_module;
+#define NX_QUEUE_DECLARE(name, item_type, max_items) \
+\
+typedef struct nx_queue_##name { \
+  volatile int head, tail; \
+  item_type items[max_items]; \
+} nx_queue_##name; \
+\
+static inline void nx_queue_##name##_init(nx_queue_##name* q) { \
+  q->head=q->tail=0; \
+} \
+\
+static inline int nx_queue_##name##_is_empty(const nx_queue_##name* q) { \
+  return (q->head==q->tail); \
+} \
+\
+static inline int nx_queue_##name##_is_full(const nx_queue_##name* q) { \
+  return (q->head==(q->tail+1)%(max_items)); \
+} \
+\
+static inline int nx_queue_##name##_length(const nx_queue_##name* q) { \
+  int nitems=q->tail - q->head; \
+  return nitems>=0? nitems : nitems+(max_items); \
+} \
+\
+static inline int nx_queue_##name##_pop(nx_queue_##name* q, item_type* item) { \
+  if (nx_queue_##name##_is_empty(q)) return -1; /* empty */ \
+  __sync_synchronize(); /* full memory barrier */ \
+  *item=q->items[q->head]; \
+  __sync_synchronize(); /* full memory barrier */ \
+  q->head=(q->head+1)%(max_items); \
+  return 0; \
+} \
+\
+static inline int nx_queue_##name##_push(nx_queue_##name* q, item_type* item) { \
+  if (nx_queue_##name##_is_full(q)) return -1; /* full */ \
+  __sync_synchronize(); /* full memory barrier */ \
+  q->items[q->tail]=*item; \
+  __sync_synchronize(); \
+  q->tail=(q->tail+1)%(max_items); \
+  return 0; \
+}
 
-/// NXWEB LOG FILE PATH
 
-const char* ERROR_LOG_FILE="error.log";
+#ifdef	__cplusplus
+}
+#endif
 
-/// LIST OF ACTIVE MODULES
-// In order of loading and uri searching.
+#endif	/* NX_QUEUE_TPL_H */
 
-// Do not forget to include modules in Makefile
-
-const nxweb_module* const nxweb_modules[] = {
-  &benchmark_module,
-  &hello_module,
-  &upload_module,
-  &sendfile_module, // this module involves filesystem calls
-                    // which might slow down request processing
-                    // for further modules in the chain,
-                    // so preferably put it last
-  0
-};

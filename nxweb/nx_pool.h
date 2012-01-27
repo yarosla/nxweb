@@ -27,13 +27,17 @@
 #ifndef NX_POOL_H_INCLUDED
 #define NX_POOL_H_INCLUDED
 
-typedef unsigned short nxp_bits_t;
-typedef unsigned short nxp_chunk_id_t;
+#include <stdint.h>
 
-// poolable objects extend nxp_object:
+#include "nx_alloc.h"
+
+typedef int32_t nxp_bool_t;
+typedef uint32_t nxp_chunk_id_t;
+
+// poolable object header
 typedef struct nxp_object {
+  nxp_bool_t in_use;
   nxp_chunk_id_t chunk_id;
-  nxp_bits_t in_use:1;
   struct nxp_object* next;
   struct nxp_object* prev;
 } nxp_object;
@@ -53,10 +57,12 @@ typedef struct nxp_pool {
   int object_size;
 } nxp_pool;
 
+nxp_pool* nxp_create(int object_size, int initial_chunk_size);
+void nxp_destroy(nxp_pool* pool);
 void nxp_init(nxp_pool* pool, int object_size, nxp_chunk* initial_chunk, int chunk_allocated_size);
 void nxp_finalize(nxp_pool* pool);
-nxp_object* nxp_get(nxp_pool* pool);
-void nxp_recycle(nxp_pool* pool, nxp_object* obj);
+void* nxp_alloc(nxp_pool* pool);
+void nxp_free(nxp_pool* pool, void* ptr);
 void nxp_gc(nxp_pool* pool);
 
 #endif // NX_POOL_H_INCLUDED

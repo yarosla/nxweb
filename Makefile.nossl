@@ -9,15 +9,8 @@ SRC_MODULES=modules/benchmark.c modules/hello.c modules/sendfile.c
 # Library dependencies:
 #  - rt
 #  - pthread
-#  - gnutls (GNUTLS v.3.0.12+ is strongly recommended)
 
-LIBS=-lrt -lpthread -lgnutls
-
-###
-# Make sure GNUTLS/bin folder is in PATH or define it here.
-# This is required for SSL key generation only.
-# GNUTLS v.3.0.12+ is strongly recommended.
-GNUTLS_BIN_DIR=
+LIBS=-lrt -lpthread
 
 ###
 # nxweb makes use of eventfd:
@@ -40,8 +33,8 @@ LD=gcc
 INC_DEPS=deps/ulib/alignhash_tpl.h deps/ulib/common.h deps/ulib/hash.h
 SRC_DEPS=deps/ulib/hash.c
 
-CFLAGS_RELEASE=-pthread -Wno-deprecated-declarations -O2 -s -DWITH_SSL
-CFLAGS_DEBUG=-pthread -Wno-deprecated-declarations -g -DNX_DEBUG -DWITH_SSL
+CFLAGS_RELEASE=-pthread -Wno-deprecated-declarations -O2 -s
+CFLAGS_DEBUG=-pthread -Wno-deprecated-declarations -g -DNX_DEBUG
 
 LDFLAGS_RELEASE=$(LIBS)
 LDFLAGS_DEBUG=$(LIBS)
@@ -64,7 +57,7 @@ BIN_RELEASE_DIR=bin/Release
 OBJS_RELEASE=$(patsubst %.c,$(OBJ_RELEASE_DIR)/%.o,$(SRC_MAIN)) $(patsubst %.c,$(OBJ_RELEASE_DIR)/%.o,$(SRC_MODULES)) $(patsubst %.c,$(OBJ_RELEASE_DIR)/%.o,$(SRC_DEPS))
 OBJS_DEBUG=$(patsubst %.c,$(OBJ_DEBUG_DIR)/%.o,$(SRC_MAIN)) $(patsubst %.c,$(OBJ_DEBUG_DIR)/%.o,$(SRC_MODULES)) $(patsubst %.c,$(OBJ_DEBUG_DIR)/%.o,$(SRC_DEPS))
 
-all: Release SSL_KEYS
+all: Release
 
 Release: $(BIN_RELEASE_DIR) $(OBJ_RELEASE_DIR) $(BIN_RELEASE_DIR)/$(BASE_NAME)
 
@@ -100,29 +93,7 @@ $(BIN_RELEASE_DIR)/$(BASE_NAME): $(OBJS_RELEASE)
 $(OBJ_RELEASE_DIR)/%.o: %.c $(INC_MAIN) $(INC_MODULES)
 	$(CC) -c -o $@ $< $(CFLAGS_RELEASE)
 
-SSL_KEYS: ssl/server_cert.pem ssl/server_key.pem ssl/dh.pem
-
-ssl/server_cert.pem: ssl/server_key.pem
-	# Generate self-signed certificate for certificate authority, that shall sign other certificates
-	$(GNUTLS_BIN_DIR)certtool --generate-privkey --outfile ssl/ca_key.pem
-	$(GNUTLS_BIN_DIR)certtool --generate-self-signed --load-privkey ssl/ca_key.pem \
-		--template ssl/ca.cfg --outfile ssl/ca_cert.pem
-	# Generate certificate using private key
-	$(GNUTLS_BIN_DIR)certtool --generate-certificate --load-privkey ssl/server_key.pem \
-		--load-ca-certificate ssl/ca_cert.pem --load-ca-privkey ssl/ca_key.pem \
-		--template ssl/server.cfg --outfile ssl/server_cert.pem
-
-ssl/server_key.pem:
-	# Create private key (RSA by default)
-	$(GNUTLS_BIN_DIR)certtool --generate-privkey --outfile ssl/server_key.pem
-
-ssl/dh.pem:
-	$(GNUTLS_BIN_DIR)certtool --generate-dh-params --sec-param normal --outfile ssl/dh.pem
-
 clean:
-	rm -rf obj/* bin/* ssl/*.pem
+	rm -rf obj/* bin/*
 
-clean_SSL_KEYS:
-	rm -f ssl/*.pem
-
-.PHONY: all clean clean_SSL_KEYS Release Debug SSL_KEYS
+.PHONY: all clean Release Debug

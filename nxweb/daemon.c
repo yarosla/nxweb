@@ -31,10 +31,11 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
-#include "nxweb_internal.h"
+#include "misc.h"
 
-static void open_log_file(const char* log_file) {
+void nxweb_open_log_file(const char* log_file) {
   int fd=open(log_file, O_WRONLY|O_CREAT|O_APPEND, 0664);
   if (fd==-1) {
     nxweb_die("open(log_file) failed");
@@ -48,7 +49,7 @@ static void open_log_file(const char* log_file) {
   close(fd);
 }
 
-static void continue_as_daemon(const char* work_dir, const char* log_file) {
+void nxweb_continue_as_daemon(const char* work_dir, const char* log_file) {
   /* Our process ID and Session ID */
   pid_t pid, sid;
 
@@ -80,10 +81,18 @@ static void continue_as_daemon(const char* work_dir, const char* log_file) {
 //  close(STDIN_FILENO);
 //  close(STDOUT_FILENO);
 //  close(STDERR_FILENO);
-  open_log_file(log_file);
+  if (log_file) nxweb_open_log_file(log_file);
 }
 
-static int launcher(void (*main_func)()) {
+void nxweb_create_pid_file(const char* pid_file) {
+  FILE* f=fopen(pid_file, "w");
+  if (f) {
+    fprintf(f, "%d", (int)getpid());
+    fclose(f);
+  }
+}
+
+int nxweb_relauncher(void (*main_func)(), const char* pid_file) {
   pid_t pid=fork();
 
   if (pid<0) {
@@ -104,108 +113,48 @@ static int launcher(void (*main_func)()) {
       return 1;
     }
   } else { // we are the child
+    if (pid_file) nxweb_create_pid_file(pid_file);
     main_func();
+    if (pid_file) unlink(pid_file);
     exit(EXIT_SUCCESS);
   }
   return 0;
 }
 
-const char *argp_program_version="nxweb " REVISION;
-const char *argp_program_bug_address="<win@nexoft.ru>";
-
-/* Program documentation. */
-static char doc[]="NXWEB - ultra-fast and super-lightweight web server.";
-
-/* A description of the arguments we accept. */
-static char args_doc[] = "";
-
-/* The options we understand. */
-static struct argp_option options[] = {
-  { "shutdown", 's', 0, 0, "Shutdown server" },
-  { "daemon", 'd', 0, 0, "Run as daemon" },
-  { "work-dir", 'w', "DIR", 0, "Change dir to specified" },
-  { "log-file", 'l', "FILE", 0, "Specify log file (error.log by default)" },
-  { 0 }
-};
-
-/* Used by main to communicate with parse_opt. */
-struct arguments {
-  int daemon;
-  int shutdown;
-  const char* work_dir;
-  const char* log_file;
-};
-
-/* Parse a single option. */
-static error_t parse_opt(int key, char *arg, struct argp_state *state) {
-  struct arguments *arguments=state->input;
-
-  switch (key) {
-    case 's':
-      arguments->shutdown=1;
-      break;
-    case 'd':
-      arguments->daemon=1;
-      break;
-    case 'w':
-      arguments->work_dir=arg;
-      break;
-
-    case ARGP_KEY_ARG:
-    case ARGP_KEY_END:
-      break;
-
-    default:
-      return ARGP_ERR_UNKNOWN;
+int nxweb_shutdown_daemon(const char* work_dir, const char* pid_file) {
+  if (work_dir && chdir(work_dir)<0) {
+    nxweb_die("chdir(work_dir) failed");
   }
-  return 0;
+  FILE* f=fopen(pid_file, "r");
+  if (f) {
+    char pid_str[20];
+    pid_t pid=0;
+    if (fgets(pid_str, sizeof(pid_str), f))
+      pid=strtol(pid_str, 0, 10);
+    fclose(f);
+    if (pid) {
+      kill(pid, SIGTERM);
+      unlink(pid_file);
+      return EXIT_SUCCESS;
+    }
+  }
+  fprintf(stderr, "Could not find PID file %s of running NXWEB\n", pid_file);
+  return EXIT_FAILURE;
 }
 
-/* Our argp parser. */
-static struct argp argp={ options, parse_opt, args_doc, doc };
+int nxweb_run_daemon(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)()) {
+  nxweb_continue_as_daemon(work_dir, log_file);
+  while (nxweb_relauncher(main_func, pid_file)) sleep(2);  // sleep 2 sec and launch again until child exits with EXIT_SUCCESS
+  return EXIT_SUCCESS;
+}
 
-int main(int argc, char* argv[]) {
-  struct arguments args;
-  args.daemon=0;
-  args.shutdown=0;
-  args.work_dir=0;
-  args.log_file=ERROR_LOG_FILE;
-
-  argp_parse(&argp, argc, argv, 0, 0, &args);
-
-  if (args.shutdown) {
-    if (args.work_dir && chdir(args.work_dir)<0) {
-      nxweb_die("chdir(work_dir) failed");
-    }
-    FILE* f=fopen(NXWEB_PID_FILE, "r");
-    if (f) {
-      char pid_str[20];
-      pid_t pid=0;
-      if (fgets(pid_str, sizeof(pid_str), f))
-        pid=strtol(pid_str, 0, 10);
-      fclose(f);
-      if (pid) {
-        kill(pid, SIGTERM);
-        unlink(NXWEB_PID_FILE);
-        return EXIT_SUCCESS;
-      }
-    }
-    fprintf(stderr, "Could not find PID of running %s\n", argv[0]);
-    return EXIT_FAILURE;
+int nxweb_run_normal(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)()) {
+  if (work_dir && chdir(work_dir)<0) {
+    nxweb_die("chdir(work_dir) failed");
   }
-
-  if (args.daemon) {
-    continue_as_daemon(args.work_dir, args.log_file);
-    while (launcher(_nxweb_main)) sleep(2);  // sleep 2 sec and launch again until child exits with EXIT_SUCCESS
-  }
-  else {
-    if (args.work_dir && chdir(args.work_dir)<0) {
-      nxweb_die("chdir(work_dir) failed");
-    }
-    open_log_file(args.log_file);
-    _nxweb_main();
-    unlink(NXWEB_PID_FILE);
-  }
-
+  if (log_file) nxweb_open_log_file(log_file);
+  if (pid_file) nxweb_create_pid_file(pid_file);
+  main_func();
+  if (pid_file) unlink(pid_file);
   return EXIT_SUCCESS;
 }

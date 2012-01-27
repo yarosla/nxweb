@@ -24,32 +24,45 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef MISC_H_INCLUDED
-#define MISC_H_INCLUDED
+#ifndef NX_FILE_READER_H
+#define	NX_FILE_READER_H
 
-void nxweb_open_log_file(const char* log_file);
-void nxweb_continue_as_daemon(const char* work_dir, const char* log_file);
-void nxweb_create_pid_file(const char* pid_file);
-int nxweb_relauncher(void (*main_func)(), const char* pid_file);
-int nxweb_shutdown_daemon(const char* work_dir, const char* pid_file);
-int nxweb_run_daemon(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)());
-int nxweb_run_normal(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)());
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
-void nxweb_die(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
-void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
+#include <stdint.h>
 
-int _nxweb_set_non_block(int fd);
-int _nxweb_setup_listening_socket(int fd);
-int _nxweb_setup_client_socket(int fd);
-void _nxweb_batch_write_begin(int fd);
-void _nxweb_batch_write_end(int fd);
-void _nxweb_close_good_socket(int fd);
-void _nxweb_close_bad_socket(int fd);
-int _nxweb_bind_socket(const char *host_and_port, int backlog);
-struct addrinfo* _nxweb_resolve_host(const char *host_and_port, int passive); // passive for bind(); active for connect()
-void _nxweb_free_addrinfo(struct addrinfo* ai);
-void _nxweb_sleep_us(int us);
+#include "nx_alloc.h"
 
-char* nxweb_trunc_space(char* str);
+#define NXFR_USE_MMAP
+#define NX_FILE_READER_MALLOC_SIZE (32768L)
+#define NX_FILE_READER_MMAP_THRESHOLD (32768L*8)
+#define NX_FILE_READER_MMAP_SIZE (67108864UL)
 
-#endif // MISC_H_INCLUDED
+typedef uint64_t nxfr_size_t;
+
+typedef struct nx_file_reader {
+  int fd;
+  char* mbuf;
+  nxfr_size_t mbuf_offset;
+  nxfr_size_t mbuf_size;
+  nxfr_size_t file_size;
+  _Bool mmapped:1;
+} nx_file_reader;
+
+//int nx_file_reader_open(nx_file_reader* fr, const char* path);
+static inline void nx_file_reader_init(nx_file_reader* fr) {
+  memset(fr, 0, sizeof(*fr));
+}
+
+void nx_file_reader_finalize(nx_file_reader* fr);
+const char* nx_file_reader_get_mbuf_ptr(nx_file_reader* fr, int fd, nxfr_size_t file_size, nxfr_size_t offset, nxfr_size_t* size);
+
+
+#ifdef	__cplusplus
+}
+#endif
+
+#endif	/* NX_FILE_READER_H */
+

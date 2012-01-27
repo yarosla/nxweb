@@ -24,50 +24,56 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
+#ifndef NX_WORKERS_H
+#define	NX_WORKERS_H
 
-#include "nx_queue.h"
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
+#include "nx_queue_tpl.h"
 
-// Can store up to queue_max_size-1 items
+#define NXWEB_MAX_WORKERS 512
+#define NXWEB_MAX_IDLE_WORKERS_IN_QUEUE 32
+#define NXWEB_MAX_WORKERS_IN_QUEUE 128
+#define NXWEB_START_WORKERS_IN_QUEUE 16
 
-// This queue it safe for non-blocking use
-// as long as there is only one producer thread (does push)
-// and only one consumer thread (does pop)
+typedef struct nxw_worker {
+  struct nxw_factory* factory;
+  pthread_t tid;
+  pthread_cond_t start_cond;
+  pthread_mutex_t start_mux;
+  nxe_eventfd_source complete_efs;
+  struct nxw_worker* prev;
+  struct nxw_worker* next;
+  volatile _Bool shutdown_in_progress;
+  volatile _Bool dead;
+  // job spec:
+  void (*do_job)(void* job_param);
+  void* job_param;
+  volatile int* job_done;
+} nxw_worker;
 
-nx_queue* nx_queue_new(int item_size, int queue_max_size) {
-  assert(item_size>0);
-  assert(queue_max_size>2);
-  nx_queue* q=(nx_queue*)calloc(1, sizeof(nx_queue)+item_size*queue_max_size);
-  q->item_size=item_size;
-  q->size=queue_max_size;
-  return q;
+NX_QUEUE_DECLARE(workers, nxw_worker*, NXWEB_MAX_WORKERS_IN_QUEUE)
+
+typedef struct nxw_factory {
+  volatile _Bool shutdown_in_progress;
+  int worker_count;
+  nxe_loop* loop;
+  pthread_mutex_t queue_mux;
+  nx_queue_workers queue;
+  nxw_worker* list;
+} nxw_factory;
+
+void nxw_init_factory(nxw_factory* f, nxe_loop* loop);
+void nxw_finalize_factory(nxw_factory* f);
+void nxw_gc_factory(nxw_factory* f);
+nxw_worker* nxw_get_worker(nxw_factory* f);
+void nxw_start_worker(nxw_worker* w, void (*job_func)(void* job_param), void* job_param, volatile int* job_done);
+
+#ifdef	__cplusplus
 }
+#endif
 
-void nx_queue_init(nx_queue* q, int item_size, int queue_max_size) {
-  assert(item_size>0);
-  assert(queue_max_size>2);
-  q->item_size=item_size;
-  q->size=queue_max_size;
-  q->head=q->tail=0;
-}
+#endif	/* NX_WORKERS_H */
 
-int nx_queue_pop(nx_queue* q, void* item) {
-  if (nx_queue_is_empty(q)) return -1; // empty
-  memcpy(item, q->items+q->head*q->item_size, q->item_size);
-  __sync_synchronize(); // full memory barrier
-  q->head=(q->head+1)%q->size;
-  return 0;
-}
-
-int nx_queue_push(nx_queue* q, const void* item) {
-  if (nx_queue_is_full(q)) return -1; // full
-  void* pitem=q->items+q->tail*q->item_size;
-  if (!pitem) return -1; // full
-  memcpy(pitem, item, q->item_size);
-  __sync_synchronize(); // full memory barrier
-  q->tail=(q->tail+1)%q->size;
-  return 0;
-}

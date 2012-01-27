@@ -30,11 +30,13 @@
 #include <string.h>
 #include <stdarg.h>
 
+#include "nx_alloc.h"
+
 typedef struct nxb_chunk {
   char* end;
   struct nxb_chunk* prev;
-  unsigned should_free:1;
-  unsigned dirty:1;
+  _Bool should_free:1;
+  _Bool dirty:1;
   char buf[3];
 } nxb_chunk;
 
@@ -66,7 +68,8 @@ static inline void* nxb_copy_obj(nxb_buffer* nxb, const void* src, int size) {
   return obj;
 }
 
-static inline char* nxb_finish_stream(nxb_buffer* nxb) {
+static inline char* nxb_finish_stream(nxb_buffer* nxb, int* size) {
+  if (size) *size=nxb->ptr - nxb->base;
   char* obj=nxb->base;
   nxb->base=nxb->ptr;
   nxb->chunk->dirty=1;
@@ -122,6 +125,42 @@ static inline void nxb_append_str(nxb_buffer* nxb, const char* str) {
 
 static inline void nxb_append_str_fast(nxb_buffer* nxb, const char* str) {
   nxb_append_fast(nxb, str, strlen(str));
+}
+
+static inline char* uint_to_decimal_string(unsigned long n, char* buf, int buf_size) {
+  char* p=buf+buf_size;
+  *--p='\0';
+  if (!n) {
+    *--p='0';
+    return p;
+  }
+  while (n) {
+    *--p=n%10+'0';
+    n=n/10;
+  }
+  return p;
+}
+
+static inline char* uint_to_decimal_string_zeropad(unsigned long n, char* buf, int num_digits) {
+  char* p=buf+num_digits;
+  *p='\0';
+  while (num_digits--) {
+    *--p=n%10+'0';
+    n=n/10;
+  }
+  return buf;
+}
+
+#define MAX_UINT_LEN 24
+
+static inline void nxb_append_uint(nxb_buffer* nxb, unsigned long n) {
+  if (nxb->end - nxb->ptr < MAX_UINT_LEN) {
+    if (nxb_realloc_chunk(nxb, MAX_UINT_LEN)) return;
+  }
+  char* p=uint_to_decimal_string(n, nxb->ptr, MAX_UINT_LEN);
+  int plen=strlen(p);
+  memmove(nxb->ptr, p, plen);
+  nxb->ptr+=plen;
 }
 
 static inline void nxb_blank(nxb_buffer* nxb, int size) {

@@ -1,0 +1,237 @@
+/*
+ * Copyright (c) 2011 Yaroslav Stavnichiy <yarosla@gmail.com>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#include "nxweb.h"
+
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <malloc.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+
+typedef struct nxweb_http_proxy_request_data {
+  nxweb_http_server_connection* conn;
+  nxd_http_proxy* hpx;
+  nxe_subscriber proxy_events_sub;
+  nxe_timer timer_backend;
+  nxd_ibuffer ib;
+  nxd_rbuffer rb_req;
+  nxd_rbuffer rb_resp;
+  int retry_count;
+  char* rbuf;
+  _Bool response_sending_started:1;
+  _Bool proxy_request_complete:1;
+  _Bool proxy_request_error:1;
+} nxweb_http_proxy_request_data;
+
+static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data);
+
+static const nxe_subscriber_class nxweb_http_server_proxy_events_sub_class={.on_message=nxweb_http_server_proxy_events_sub_on_message};
+
+static void nxweb_http_proxy_request_finalize(nxd_http_server_proto* hsp, void* req_data) {
+  nxweb_http_proxy_request_data* rdata=req_data;
+  nxweb_http_server_connection* conn=rdata->conn;
+  nxe_loop* loop=conn->tdata->loop;
+  nxe_unset_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
+  if (rdata->rb_resp.data_in.pair) nxe_disconnect_streams(rdata->rb_resp.data_in.pair, &rdata->rb_resp.data_in);
+  if (rdata->rb_resp.data_out.pair) nxe_disconnect_streams(&rdata->rb_resp.data_out, rdata->rb_resp.data_out.pair);
+  if (rdata->rb_req.data_in.pair) nxe_disconnect_streams(rdata->rb_req.data_in.pair, &rdata->rb_req.data_in);
+  if (rdata->rb_req.data_out.pair) nxe_disconnect_streams(&rdata->rb_req.data_out, rdata->rb_req.data_out.pair);
+  if (rdata->proxy_events_sub.pub) nxe_unsubscribe(rdata->proxy_events_sub.pub, &rdata->proxy_events_sub);
+  if (rdata->hpx) {
+    nxd_http_proxy_pool_return(rdata->hpx, rdata->proxy_request_error);
+    rdata->hpx=0;
+  }
+  if (rdata->rbuf) {
+    if (rdata->rbuf) nxp_free(conn->tdata->free_rbuf_pool, rdata->rbuf);
+    rdata->rbuf=0;
+  }
+}
+
+static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_proxy_request_data* rdata) {
+  nxe_loop* loop=conn->tdata->loop;
+  nxweb_handler* handler=conn->handler;
+  assert(handler->idx>=0 && handler->idx<NXWEB_NUM_PROXY_POOLS);
+  nxd_http_proxy* hpx=nxd_http_proxy_pool_connect(&conn->tdata->proxy_pool[handler->idx]);
+  rdata->proxy_request_complete=0;
+  rdata->proxy_request_error=0;
+  rdata->response_sending_started=0;
+  if (hpx) {
+    rdata->hpx=hpx;
+    nxweb_http_request* preq=nxd_http_proxy_prepare(hpx);
+    preq->method=req->method;
+    preq->head_method=req->head_method;
+    preq->content_length=req->content_length;
+    preq->content_type=req->content_type;
+    preq->expect_100_continue=!!req->content_length;
+    if (handler->uri) {
+      const char* path_info=req->path_info? req->path_info : req->uri;
+      if (*handler->uri) {
+        char* uri=nxb_alloc_obj(conn->hsp.nxb, strlen(handler->uri)+strlen(path_info)+1);
+        strcat(strcpy(uri, handler->uri), path_info);
+        preq->uri=uri;
+      }
+      else {
+        preq->uri=path_info;
+      }
+    }
+    else {
+      preq->uri=req->uri;
+    }
+    preq->http11=1;
+    preq->keep_alive=1;
+    preq->user_agent=req->user_agent;
+    preq->x_forwarded_for=conn->remote_addr;
+    preq->x_forwarded_host=req->host;
+    preq->x_forwarded_ssl=nxweb_server_config.listen_config[conn->lconf_idx].secure;
+    nxd_http_proxy_start_request(hpx, preq);
+    nxe_init_subscriber(&rdata->proxy_events_sub, &nxweb_http_server_proxy_events_sub_class);
+    nxe_subscribe(loop, &hpx->hcp.events_pub, &rdata->proxy_events_sub);
+    nxd_rbuffer_init(&rdata->rb_resp, rdata->rbuf, NXWEB_RBUF_SIZE);
+    nxe_connect_streams(loop, &hpx->hcp.resp_body_out, &rdata->rb_resp.data_in);
+    nxe_connect_streams(loop, &rdata->rb_resp.data_out, &conn->hsp.resp_body_in);
+    hpx->hcp.chunked_do_not_decode=1;
+
+    if (req->content_length) { // receive body
+      nxd_rbuffer_init(&rdata->rb_req, rdata->rbuf, NXWEB_RBUF_SIZE); // use same buffer area for request and response bodies, as they do not overlap in time
+      nxe_connect_streams(loop, &conn->hsp.req_body_out, &rdata->rb_req.data_in);
+      nxe_connect_streams(loop, &rdata->rb_req.data_out, &hpx->hcp.req_body_in);
+      req->cdstate.monitor_only=1;
+
+      nxe_ostream_set_ready(loop, &conn->hsp.data_in);
+    }
+    return NXWEB_OK;
+  }
+  else {
+    nxweb_http_response* resp=&conn->hsp._resp;
+    nxweb_send_http_error(resp, 502, "Bad Gateway");
+    return NXWEB_ERROR;
+  }
+}
+
+static void retry_proxy_request(nxweb_http_proxy_request_data* rdata) {
+  nxd_http_proxy* hpx=rdata->hpx;
+  nxweb_http_server_connection* conn=rdata->conn;
+
+  enum nxd_http_server_proto_state state=conn->hsp.state;
+  assert(state==HSP_RECEIVING_HEADERS || state==HSP_RECEIVING_BODY || state==HSP_HANDLING);
+
+  nxd_http_proxy_pool_return(hpx, 1);
+  if (rdata->rb_resp.data_in.pair) nxe_disconnect_streams(rdata->rb_resp.data_in.pair, &rdata->rb_resp.data_in);
+  if (rdata->rb_resp.data_out.pair) nxe_disconnect_streams(&rdata->rb_resp.data_out, rdata->rb_resp.data_out.pair);
+  if (rdata->rb_req.data_in.pair) nxe_disconnect_streams(rdata->rb_req.data_in.pair, &rdata->rb_req.data_in);
+  if (rdata->rb_req.data_out.pair) nxe_disconnect_streams(&rdata->rb_req.data_out, rdata->rb_req.data_out.pair);
+  if (rdata->proxy_events_sub.pub) nxe_unsubscribe(rdata->proxy_events_sub.pub, &rdata->proxy_events_sub);
+  rdata->hpx=0;
+  rdata->retry_count++;
+  start_proxy_request(conn, &conn->hsp.req, rdata);
+}
+
+static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
+  nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)timer-offsetof(nxweb_http_proxy_request_data, timer_backend));
+  nxweb_http_server_connection* conn=rdata->conn;
+  if (rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
+    // can't retry => do nothing continue processing
+    nxweb_log_error("backend connection %p timeout; can't retry", conn);
+  }
+  else if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT) {
+    nxweb_log_error("backend connection %p timeout; retry count exceeded", conn);
+    nxweb_http_server_connection_finalize(conn, data.i==NXE_RDCLOSED);
+  }
+  else {
+    nxweb_log_error("backend connection %p timeout; retrying", conn);
+    retry_proxy_request(rdata);
+  }
+}
+
+static const nxe_timer_class timer_backend_class={.on_timeout=timer_backend_on_timeout};
+
+static nxweb_result nxweb_http_proxy_handler_on_headers(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  nxweb_http_proxy_request_data* rdata=nxb_alloc_obj(conn->hsp.nxb, sizeof(nxweb_http_proxy_request_data));
+  nxe_loop* loop=conn->tdata->loop;
+  memset(rdata, 0, sizeof(nxweb_http_proxy_request_data));
+  rdata->conn=conn;
+  conn->hsp.req_data=rdata;
+  conn->hsp.req_finalize=nxweb_http_proxy_request_finalize;
+  rdata->rbuf=nxp_alloc(conn->tdata->free_rbuf_pool);
+  rdata->timer_backend.super.cls.timer_cls=&timer_backend_class;
+  nxe_set_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
+  return start_proxy_request(conn, req, rdata);
+}
+
+nxweb_handler nxweb_http_proxy_handler={.on_headers=nxweb_http_proxy_handler_on_headers, .flags=NXWEB_HANDLE_ANY|NXWEB_ACCEPT_CONTENT};
+
+static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
+  nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)sub-offsetof(nxweb_http_proxy_request_data, proxy_events_sub));
+  nxweb_http_server_connection* conn=rdata->conn;
+  nxe_loop* loop=sub->super.loop;
+  if (data.i==NXD_HCP_RESPONSE_RECEIVED) {
+    nxe_unset_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
+    //nxweb_http_request* req=&conn->hsp.req;
+    nxd_http_proxy* hpx=rdata->hpx;
+    nxweb_http_response* presp=&hpx->hcp.resp;
+    nxweb_http_response* resp=&conn->hsp._resp;
+    resp->content_type=presp->content_type;
+    resp->content_length=presp->content_length;
+    resp->chunked_encoding=presp->chunked_encoding;
+    resp->headers=presp->headers;
+    nxweb_start_sending_response(conn, resp);
+    rdata->response_sending_started=1;
+    //nxweb_log_error("proxy request [%d] start sending response", conn->hpx->hcp.request_count);
+  }
+  else if (data.i==NXD_HCP_REQUEST_COMPLETE) {
+    rdata->proxy_request_complete=1;
+    //nxweb_log_error("proxy request [%d] complete", conn->hpx->hcp.request_count);
+  }
+  else if (data.i<0) {
+    rdata->proxy_request_error=1;
+    if (!rdata->proxy_request_complete) { // ignore errors after request has been completed; keep connection running
+      nxe_unset_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
+      if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT || rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
+        nxweb_log_error("proxy request conn=%p rc=%d retry=%d error=%d; failed", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
+        nxweb_http_server_connection_finalize(conn, data.i==NXE_RDCLOSED);
+      }
+      else {
+        if (rdata->retry_count || !(data.i==NXE_ERROR || data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED)) {
+          nxweb_log_error("proxy request conn=%p rc=%d retry=%d error=%d; retrying", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
+        }
+        retry_proxy_request(rdata);
+      }
+    }
+  }
+}

@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "nx_pool.h"
 #include "misc.h"
@@ -51,6 +52,7 @@ static void nxp_init_chunk(nxp_pool* pool) {
 }
 
 void nxp_init(nxp_pool* pool, int object_size, nxp_chunk* initial_chunk, int chunk_allocated_size) {
+  object_size+=sizeof(nxp_object);
   pool->chunk=
   pool->initial_chunk=initial_chunk;
   pool->chunk->id=1;
@@ -65,19 +67,34 @@ void nxp_init(nxp_pool* pool, int object_size, nxp_chunk* initial_chunk, int chu
 void nxp_finalize(nxp_pool* pool) {
   nxp_chunk* c=pool->chunk;
   nxp_chunk* cp;
+  int cnt=0;
   while (c!=pool->initial_chunk) {
     cp=c->prev;
-    free(c);
+    nx_free(c);
+    cnt++;
     c=cp;
   }
 }
 
-nxp_object* nxp_get(nxp_pool* pool) {
-  nxp_object *obj=pool->free_first;
+nxp_pool* nxp_create(int object_size, int initial_chunk_size) {
+  object_size=(object_size+7)&~0x7; // align to 8 bytes
+  int alloc_size=(sizeof(nxp_object)+object_size)*initial_chunk_size;
+  nxp_pool* pool=nx_alloc(sizeof(nxp_pool)+sizeof(nxp_chunk)+alloc_size);
+  nxp_init(pool, object_size, (void*)(pool+1), sizeof(nxp_chunk)+alloc_size);
+  return pool;
+}
+
+void nxp_destroy(nxp_pool* pool) {
+  nxp_finalize(pool);
+  nx_free(pool);
+}
+
+void* nxp_alloc(nxp_pool* pool) {
+  nxp_object* obj=pool->free_first;
   if (!obj) {
     int nitems=pool->chunk->nitems*2;
-    if (nitems>512) nitems=512;
-    nxp_chunk* chunk=malloc(offsetof(nxp_chunk, pool)+nitems*pool->object_size);
+    if (nitems>1024) nitems=1024;
+    nxp_chunk* chunk=nx_alloc(offsetof(nxp_chunk, pool)+nitems*pool->object_size);
     if (!chunk) {
       nxweb_log_error("nx_pool: alloc obj[%d] chunk failed", nitems);
       return 0;
@@ -98,15 +115,16 @@ nxp_object* nxp_get(nxp_pool* pool) {
     pool->free_last=0;
   }
 
-  nxp_chunk_id_t chunk_id=obj->chunk_id; // preserve chunk_id
-  memset(obj, 0, pool->object_size);
-  obj->chunk_id=chunk_id;
   obj->in_use=1;
+  obj->prev=0;
+  obj->next=0;
 
-  return obj;
+  return obj+1;
 }
 
-void nxp_recycle(nxp_pool* pool, nxp_object* obj) {
+void nxp_free(nxp_pool* pool, void* ptr) {
+  nxp_object* obj=(nxp_object*)((char*)ptr-sizeof(nxp_object));
+  assert(obj->in_use==1);
   obj->in_use=0;
   if (obj->chunk_id==pool->chunk->id) {
     // belongs to last chunk => put at the end of free list
@@ -123,6 +141,7 @@ void nxp_recycle(nxp_pool* pool, nxp_object* obj) {
     }
   }
   else {
+    assert(obj->chunk_id < pool->chunk->id);
     // put at the beginning of free list
     if (pool->free_first) {
       pool->free_first->prev=obj;
@@ -157,5 +176,5 @@ void nxp_gc(nxp_pool* pool) {
   }
   nxp_chunk* c=pool->chunk;
   pool->chunk=pool->chunk->prev;
-  free(c);
+  nx_free(c);
 }

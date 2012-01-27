@@ -24,7 +24,15 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "nxweb.h"
+#include "misc.h"
+
+#include <string.h>
+
+typedef struct nxweb_mime_type {
+  const char* ext;
+  const char* mime;
+  unsigned charset_required:1;
+} nxweb_mime_type;
 
 static const nxweb_mime_type mime_types[] = {
   {"htm", "text/html", 1}, // default mime type
@@ -124,8 +132,7 @@ const nxweb_mime_type* nxweb_get_mime_type(const char* type_name) {
     if (len>sizeof(buf)-1) return 0;
     strncpy(buf, type_name, len);
     buf[len]='\0';
-    nxweb_trunc_space(buf);
-    type_name=buf;
+    type_name=nxweb_trunc_space(buf);
   }
   const nxweb_mime_type* type=mime_types;
   while (type->ext) {

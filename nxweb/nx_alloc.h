@@ -24,27 +24,23 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "nxweb/nxweb.h"
+#ifndef NX_ALLOC_H
+#define	NX_ALLOC_H
 
-static nxweb_result benchmark(nxweb_uri_handler_phase phase, nxweb_request *req) {
-  nxweb_response_append(req, "<p>Hello, world!</p>");
-  return NXWEB_OK;
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
+#include <malloc.h>
+
+#define MEM_GUARD 64
+#define nx_alloc(size) memalign(MEM_GUARD, (size)+MEM_GUARD)
+#define nx_calloc(size) ({void* _pTr=memalign(MEM_GUARD, (size)+MEM_GUARD); memset(_pTr, 0, (size)); _pTr;})
+#define nx_free(ptr) free(ptr)
+
+
+#ifdef	__cplusplus
 }
+#endif
 
-static nxweb_result benchmark_empty(nxweb_uri_handler_phase phase, nxweb_request *req) {
-  return NXWEB_OK;
-}
-
-static const nxweb_uri_handler uri_handlers[] = {
-  {"/benchmark-inprocess", benchmark, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
-  {"/benchmark-inworker", benchmark, NXWEB_INWORKER|NXWEB_HANDLE_GET},
-  {"/benchmark-empty", benchmark_empty, NXWEB_INPROCESS|NXWEB_HANDLE_GET},
-  {0, 0, 0}
-};
-
-/// Module definition
-// List of active modules is maintained in modules.c file.
-
-const nxweb_module benchmark_module = {
-  .uri_handlers=uri_handlers
-};
+#endif	/* NX_ALLOC_H */
