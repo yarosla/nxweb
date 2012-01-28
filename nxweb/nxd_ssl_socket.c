@@ -353,7 +353,7 @@ static nxe_ssize_t sock_data_send_sendfile(nxe_ostream* os, nxe_istream* is, int
       loop->batch_write_fd=fd;
     }
     const void* ptr;
-    nxe_size_t size;
+    nxfr_size_t size;
     nxe_size_t file_size=offset.offs+count;
     nxe_ssize_t total_bytes_sent=0;
 REPEAT:
