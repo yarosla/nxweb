@@ -40,6 +40,8 @@
 #define MAX_CACHED_ITEMS 500
 #define MAX_CACHE_ITEM_SIZE 32768
 
+enum {FC_ERR_NO_ERROR=0, FC_ERR_NOT_FOUND, FC_ERR_IS_DIR, FC_ERR_TYPE};
+
 typedef struct file_cache_rec {
   nxe_ssize_t content_length;
   const char* content_type;
@@ -49,6 +51,8 @@ typedef struct file_cache_rec {
   uint32_t ref_count;
   struct file_cache_rec* prev;
   struct file_cache_rec* next;
+  int error_code;
+  _Bool gzip_encoded:1;
   char content[];
 } file_cache_rec;
 
@@ -91,6 +95,7 @@ static void cache_finalize() {
   for (ci=alignhash_begin(_file_cache); ci!=alignhash_end(_file_cache); ci++) {
     if (alignhash_exist(_file_cache, ci)) {
       file_cache_rec* rec=alignhash_value(_file_cache, ci);
+      if (rec->ref_count) nxweb_log_error("file %s still in cache with ref_count=%d", alignhash_key(_file_cache, ci), rec->ref_count);
       cache_rec_unlink(rec);
       nx_free(rec);
     }
@@ -124,6 +129,7 @@ static inline void cache_check_size() {
 static void cache_rec_unref(nxd_http_server_proto* hsp, void* req_data) {
   pthread_mutex_lock(&_file_cache_mutex);
   file_cache_rec* rec=req_data;
+  assert(rec->ref_count>0);
   if (!--rec->ref_count) {
     nxe_time_t loop_time=_nxweb_net_thread_data->loop->current_time;
     if (loop_time - rec->cached_time > MAX_CACHED_TIME) {
@@ -131,10 +137,13 @@ static void cache_rec_unref(nxd_http_server_proto* hsp, void* req_data) {
       ah_iter_t ci=alignhash_get(file_cache, _file_cache, fpath);
       if (ci!=alignhash_end(_file_cache)) {
         assert(rec==alignhash_value(_file_cache, ci));
-        cache_rec_unlink(rec);
         alignhash_del(file_cache, _file_cache, ci);
-        nx_free(rec);
+        cache_rec_unlink(rec);
       }
+      else {
+        nxweb_log_error("freed previously removed cache entry %s", fpath);
+      }
+      nx_free(rec);
     }
   }
   cache_check_size();
@@ -156,6 +165,90 @@ static int remove_dots_from_uri_path(char* path) {
   }
 }
 
+static nxweb_result try_cache(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, const char* fpath, char* path_info, _Bool expect_gzip, nxe_time_t loop_time) {
+  ah_iter_t ci;
+  //nxweb_log_error("trying cache for %s", fpath);
+  pthread_mutex_lock(&_file_cache_mutex);
+  if ((ci=alignhash_get(file_cache, _file_cache, fpath))!=alignhash_end(_file_cache)) {
+    file_cache_rec* rec=alignhash_value(_file_cache, ci);
+    if ((loop_time - rec->cached_time <= MAX_CACHED_TIME) || rec->ref_count) {
+      if (rec!=_file_cache_head) {
+        cache_rec_unlink(rec);
+        cache_rec_link(rec); // relink to head
+      }
+      switch (rec->error_code) {
+        case FC_ERR_NOT_FOUND:
+          pthread_mutex_unlock(&_file_cache_mutex);
+          return NXWEB_NEXT;
+        case FC_ERR_IS_DIR:
+          pthread_mutex_unlock(&_file_cache_mutex);
+          assert(!expect_gzip);
+          strcat(path_info, "/");
+          nxweb_send_redirect(resp, 302, path_info);
+          nxweb_start_sending_response(conn, resp);
+          return NXWEB_OK;
+        case FC_ERR_TYPE:
+          pthread_mutex_unlock(&_file_cache_mutex);
+          nxweb_send_http_error(resp, 403, "Forbidden");
+          nxweb_start_sending_response(conn, resp);
+          return NXWEB_ERROR;
+        case FC_ERR_NO_ERROR:
+          if (rec->gzip_encoded == expect_gzip) {
+            rec->ref_count++;
+            pthread_mutex_unlock(&_file_cache_mutex);
+            resp->content_length=rec->content_length;
+            resp->content=rec->content;
+            resp->content_type=rec->content_type;
+            resp->content_charset=rec->content_charset;
+            resp->last_modified=rec->last_modified;
+            resp->gzip_encoded=rec->gzip_encoded;
+            conn->hsp.req_data=rec;
+            conn->hsp.req_finalize=cache_rec_unref;
+            nxweb_start_sending_response(conn, resp);
+            return NXWEB_OK;
+          }
+          break;
+        default:
+          nxweb_log_error("unexpected file cache error_code %d", rec->error_code);
+          break;
+      }
+    }
+    alignhash_del(file_cache, _file_cache, ci);
+    cache_rec_unlink(rec);
+    if (!rec->ref_count) {
+      nx_free(rec);
+    }
+    else {
+      nxweb_log_error("removed %s from cache while its ref_count=%d", fpath, rec->ref_count);
+    }
+  }
+  pthread_mutex_unlock(&_file_cache_mutex);
+  return -1;
+}
+
+static void cache_store_error(const char* fpath, nxe_time_t loop_time, int error_code) {
+  ah_iter_t ci;
+  file_cache_rec* rec=nx_calloc(sizeof(file_cache_rec)+strlen(fpath)+1);
+  char* ptr=(char*)(rec+1);
+  strcpy(ptr, fpath);
+  rec->cached_time=loop_time;
+  rec->error_code=error_code;
+  int ret=0;
+  pthread_mutex_lock(&_file_cache_mutex);
+  ci=alignhash_set(file_cache, _file_cache, ptr, &ret);
+  if (ci!=alignhash_end(_file_cache) && ret!=AH_INS_ERR) {
+    alignhash_value(_file_cache, ci)=rec;
+    cache_rec_link(rec);
+    //rec->ref_count++;
+    cache_check_size();
+    pthread_mutex_unlock(&_file_cache_mutex);
+    nxweb_log_error("cached %s error %d", ptr, error_code);
+    return;
+  }
+  pthread_mutex_unlock(&_file_cache_mutex);
+  nx_free(rec);
+}
+
 static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
@@ -170,7 +263,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   char* path_info=fpath+rlen;
   const char* q=strchr(req->path_info, '?');
   int plen=q? q-req->path_info : strlen(req->path_info);
-  if (rlen+plen>sizeof(fpath)-21) { // leave room for index file name
+  if (rlen+plen>sizeof(fpath)-64) { // leave room for index file name etc.
     nxweb_send_http_error(resp, 414, "Request-URI Too Long");
     return NXWEB_ERROR;
   }
@@ -179,71 +272,68 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   plen=strlen(path_info);
   if (plen>0 && path_info[plen-1]=='/') { // directory index
     strcat(path_info+plen, INDEX_FILE);
+    plen=strlen(path_info);
   }
 
   if (remove_dots_from_uri_path(path_info)) {
-    nxweb_send_http_error(resp, 404, "Not Found");
-    return NXWEB_ERROR;
-  }
-
-  nxe_time_t loop_time=nxweb_get_loop_time(conn);
-  ah_iter_t ci;
-  if (handler->cache) {
-    // check cache
-    pthread_mutex_lock(&_file_cache_mutex);
-    if ((ci=alignhash_get(file_cache, _file_cache, fpath))!=alignhash_end(_file_cache)) {
-      file_cache_rec* rec=alignhash_value(_file_cache, ci);
-      if (loop_time - rec->cached_time <= MAX_CACHED_TIME || rec->ref_count) {
-        if (rec!=_file_cache_head) {
-          cache_rec_unlink(rec);
-          cache_rec_link(rec); // relink to head
-        }
-        resp->content_length=rec->content_length;
-        resp->content=rec->content;
-        resp->content_type=rec->content_type;
-        resp->content_charset=rec->content_charset;
-        resp->last_modified=rec->last_modified;
-        rec->ref_count++;
-        pthread_mutex_unlock(&_file_cache_mutex);
-        conn->hsp.req_data=rec;
-        conn->hsp.req_finalize=cache_rec_unref;
-        nxweb_start_sending_response(conn, resp);
-        return NXWEB_OK;
-      }
-      else {
-        cache_rec_unlink(rec);
-        alignhash_del(file_cache, _file_cache, ci);
-        nx_free(rec);
-      }
-    }
-    pthread_mutex_unlock(&_file_cache_mutex);
-  }
-
-  struct stat finfo;
-  if (stat(fpath, &finfo)==-1) {
-    // no such file
     //nxweb_send_http_error(resp, 404, "Not Found");
     return NXWEB_NEXT;
   }
-  if (S_ISDIR(finfo.st_mode)) {
+
+  _Bool use_cache=handler->cache;
+  _Bool trying_gzip_encoding=req->accept_gzip_encoding;
+  if (trying_gzip_encoding) strcpy(path_info+plen, ".gz");
+
+  nxe_time_t loop_time=nxweb_get_loop_time(conn);
+  ah_iter_t ci;
+RETRY:
+  if (use_cache) {
+    // check cache
+    int cres=try_cache(conn, req, resp, fpath, path_info, trying_gzip_encoding, loop_time);
+    if (cres==NXWEB_NEXT && trying_gzip_encoding) {
+      path_info[plen]='\0'; // cut .gz
+      cres=try_cache(conn, req, resp, fpath, path_info, 0, loop_time);
+      path_info[plen]='.'; // restore
+    }
+    if (cres!=-1) return cres;
+  }
+
+  struct stat finfo;
+  //nxweb_log_error("trying file %s", fpath);
+  if (stat(fpath, &finfo)==-1) {
+    // no such file
+    if (use_cache) cache_store_error(fpath, loop_time, FC_ERR_NOT_FOUND);
+    if (trying_gzip_encoding) {
+      path_info[plen]='\0'; // cut .gz
+      trying_gzip_encoding=0;
+      goto RETRY;
+    }
+    return NXWEB_NEXT;
+  }
+  if (S_ISDIR(finfo.st_mode) && !trying_gzip_encoding) {
+    if (use_cache) cache_store_error(fpath, loop_time, FC_ERR_IS_DIR);
     strcat(path_info, "/");
     nxweb_send_redirect(resp, 302, path_info);
     nxweb_start_sending_response(conn, resp);
     return NXWEB_OK;
   }
   if (!S_ISREG(finfo.st_mode)) { // symlink or ...?
+    if (use_cache) cache_store_error(fpath, loop_time, FC_ERR_TYPE);
     nxweb_send_http_error(resp, 403, "Forbidden");
+    nxweb_start_sending_response(conn, resp);
     return NXWEB_ERROR;
   }
 
-  if (handler->cache && finfo.st_size<=MAX_CACHE_ITEM_SIZE && alignhash_size(_file_cache)<MAX_CACHED_ITEMS+16) {
+  if (use_cache && finfo.st_size<=MAX_CACHE_ITEM_SIZE && alignhash_size(_file_cache)<MAX_CACHED_ITEMS+16) {
     // cache the file
     file_cache_rec* rec=nx_calloc(sizeof(file_cache_rec)+finfo.st_size+1+strlen(fpath)+1);
     rec->content_length=
     resp->content_length=finfo.st_size;
-    char* path_info=((char*)rec)+offsetof(file_cache_rec, content);
+    resp->gzip_encoded=
+    rec->gzip_encoded=trying_gzip_encoding;
+    char* ptr=((char*)rec)+offsetof(file_cache_rec, content);
     int fd=open(fpath, O_RDONLY);
-    if ((fd=open(fpath, O_RDONLY))<0 || read(fd, path_info, finfo.st_size)<finfo.st_size) {
+    if ((fd=open(fpath, O_RDONLY))<0 || read(fd, ptr, finfo.st_size)!=finfo.st_size) {
       if (fd>0) close(fd);
       nx_free(rec);
       nxweb_log_error("sendfile: [%s] stat() was OK, but open/read() failed", fpath);
@@ -251,14 +341,16 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
       return NXWEB_ERROR;
     }
     close(fd);
-    resp->content=path_info;
-    path_info+=finfo.st_size;
-    *path_info++='\0';
-    strcpy(path_info, fpath);
+    resp->content=ptr;
+    ptr+=finfo.st_size;
+    *ptr++='\0';
+    strcpy(ptr, fpath);
     rec->cached_time=loop_time;
     rec->last_modified=
     resp->last_modified=finfo.st_mtime;
-    const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(fpath);
+    if (trying_gzip_encoding) path_info[plen]='\0'; // cut .gz
+    const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(path_info);
+    if (trying_gzip_encoding) path_info[plen]='.'; // restore
     rec->content_type=
     resp->content_type=mtype->mime;
     if (mtype->charset_required) rec->content_charset=resp->content_charset=DEFAULT_CHARSET;
@@ -266,7 +358,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
 
     int ret=0;
     pthread_mutex_lock(&_file_cache_mutex);
-    ci=alignhash_set(file_cache, _file_cache, path_info, &ret);
+    ci=alignhash_set(file_cache, _file_cache, ptr, &ret);
     if (ci!=alignhash_end(_file_cache)) {
       if (ret!=AH_INS_ERR) {
         alignhash_value(_file_cache, ci)=rec;
@@ -274,7 +366,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
         rec->ref_count++;
         cache_check_size();
         pthread_mutex_unlock(&_file_cache_mutex);
-        nxweb_log_error("cached %s", path_info);
+        nxweb_log_error("cached %s", ptr);
         conn->hsp.req_data=rec;
         conn->hsp.req_finalize=cache_rec_unref;
         nxweb_start_sending_response(conn, resp);
@@ -288,6 +380,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
         resp->content_type=rec->content_type;
         resp->content_charset=rec->content_charset;
         resp->last_modified=rec->last_modified;
+        resp->gzip_encoded=rec->gzip_encoded;
         rec->ref_count++;
         pthread_mutex_unlock(&_file_cache_mutex);
         conn->hsp.req_data=rec;
@@ -300,7 +393,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
     nx_free(rec);
   }
 
-  int result=nxweb_send_file(resp, fpath, &finfo, 0, 0, DEFAULT_CHARSET);
+  int result=nxweb_send_file(resp, fpath, &finfo, trying_gzip_encoding, 0, 0, DEFAULT_CHARSET);
   if (result!=0) { // should not happen
     nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
     nxweb_send_http_error(resp, 500, "Internal Server Error");

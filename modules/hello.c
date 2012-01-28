@@ -49,6 +49,7 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
            "content_type=%H<br/>\n"
            "content_length=%d<br/>\n"
            "transfer_encoding=%H<br/>\n"
+           "accept_encoding=%H<br/>\n"
            "request_body=%H</blockquote>\n",
            conn->remote_addr,
            req->method,
@@ -64,6 +65,7 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
            req->content_type,
            req->content_length,
            req->transfer_encoding,
+           req->accept_encoding,
            req->content
           );
 

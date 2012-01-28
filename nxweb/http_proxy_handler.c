@@ -98,6 +98,8 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     preq->head_method=req->head_method;
     preq->content_length=req->content_length;
     preq->content_type=req->content_type;
+    /// Do not forward Accept-Encoding header if you want to process results (eg SSI)
+    // preq->accept_encoding=req->accept_encoding;
     preq->expect_100_continue=!!req->content_length;
     if (handler->uri) {
       const char* path_info=req->path_info? req->path_info : req->uri;

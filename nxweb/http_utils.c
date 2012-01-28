@@ -190,6 +190,7 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_USER_AGENT,
   NXWEB_HTTP_CONTENT_TYPE,
   NXWEB_HTTP_CONTENT_LENGTH,
+  NXWEB_HTTP_ACCEPT_ENCODING,
   NXWEB_HTTP_TRANSFER_ENCODING
 };
 
@@ -222,6 +223,9 @@ static int identify_http_header(const char* name, int name_len) {
       return NXWEB_HTTP_UNKNOWN;
     case 14:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Length")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_LENGTH;
+      return NXWEB_HTTP_UNKNOWN;
+    case 15:
+      if (first_char=='a') return nx_strcasecmp(name, "Accept-Encoding")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_ACCEPT_ENCODING;
       return NXWEB_HTTP_UNKNOWN;
     case 17:
       if (first_char=='t') return nx_strcasecmp(name, "Transfer-Encoding")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_TRANSFER_ENCODING;
@@ -312,6 +316,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
       case NXWEB_HTTP_USER_AGENT: req->user_agent=value; break;
       case NXWEB_HTTP_CONTENT_TYPE: req->content_type=value; break;
       case NXWEB_HTTP_CONTENT_LENGTH: req->content_length=atol(value); break;
+      case NXWEB_HTTP_ACCEPT_ENCODING: req->accept_encoding=value; break;
       case NXWEB_HTTP_TRANSFER_ENCODING: req->transfer_encoding=value; break;
       case NXWEB_HTTP_CONNECTION: req->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_RANGE: req->range=value; break;
@@ -326,6 +331,15 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
   req->headers=header;
 
   req->path_info=0;
+  {
+    const char* g;
+    for (g=req->accept_encoding; g; g=strchr(g+1, 'g')) {
+      if (!strncmp(g, "gzip", 4) && (g==req->accept_encoding || *(g-1)==',' || *(g-1)==' ') && (!g[4] || g[4]==',' || g[4]==' ')) {
+        req->accept_gzip_encoding=1;
+        break;
+      }
+    }
+  }
   req->chunked_encoding=req->transfer_encoding && !nx_strcasecmp(req->transfer_encoding, "chunked");
   if (req->chunked_encoding) req->content_length=-1;
   req->expect_100_continue=req->content_length && expect && !nx_strcasecmp(expect, "100-continue");
@@ -548,6 +562,9 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     nxb_blank_fast(nxb, nxweb_format_http_time(nxb_get_room(nxb, 0), &tm));
     nxb_append_str_fast(nxb, "\r\n");
   }
+  if (resp->gzip_encoded) {
+    nxb_append_str(nxb, "Content-Encoding: gzip\r\n");
+  }
   nxb_make_room(nxb, 48);
   if (resp->content_length>=0) {
     nxb_append_str_fast(nxb, "Content-Length: ");
@@ -611,7 +628,7 @@ void nxweb_send_http_error(nxweb_http_response *resp, int code, const char* mess
   //resp->keep_alive=0; // close connection after error response
 }
 
-int nxweb_send_file(nxweb_http_response *resp, const char* fpath, struct stat* finfo, off_t offset, size_t size, const char* charset) {
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const char* charset) {
   if (fpath==0) { // cancel sendfile
     if (resp->sendfile_fd) close(resp->sendfile_fd);
     resp->sendfile_fd=0;
@@ -642,7 +659,14 @@ int nxweb_send_file(nxweb_http_response *resp, const char* fpath, struct stat* f
   resp->content_length=size? size : finfo->st_size-offset;
   resp->sendfile_end=offset+resp->content_length;
   resp->last_modified=finfo->st_mtime;
+  resp->gzip_encoded=gzip_encoded;
+  int flen;
+  if (gzip_encoded) {
+    flen=strlen(fpath);
+    fpath[flen-3]='\0'; // cut .gz
+  }
   const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(fpath);
+  if (gzip_encoded) fpath[flen-3]='.'; // restore
   resp->content_type=mtype->mime;
   if (mtype->charset_required) resp->content_charset=charset;
   return 0;
@@ -659,7 +683,7 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
 
   nxb_buffer* nxb=req->nxb;
 
-  nxb_make_room(nxb, 200);
+  nxb_make_room(nxb, 250);
   nxb_append_str(nxb, req->head_method? "HEAD" : req->method);
   nxb_append_char_fast(nxb, ' ');
   nxb_append_str(nxb, req->uri);
@@ -715,6 +739,13 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
       nxb_append_str(nxb, "\r\n");
     }
   }
+
+  if (req->accept_encoding) {
+    nxb_append_str(nxb, "Accept-Encoding: ");
+    nxb_append_str(nxb, req->accept_encoding);
+    nxb_append_str(nxb, "\r\n");
+  }
+
   if (req->content_length) {
     nxb_append_str(nxb, "Content-Type: ");
     nxb_append_str(nxb, req->content_type? req->content_type : "application/x-www-form-urlencoded");
@@ -790,7 +821,6 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
     if (!value) continue;
     name_len=value-name;
     *value++='\0';
-    //value+=strspn(value, " \t");
     value=nxweb_trunc_space(value);
 
     header_name_id=identify_http_header(name, name_len);

@@ -83,6 +83,7 @@ typedef struct nxweb_http_request {
   unsigned get_method:1;
   unsigned post_method:1;
   unsigned other_method:1;
+  unsigned accept_gzip_encoding:1;
   unsigned expect_100_continue:1;
   unsigned chunked_encoding:1;
   unsigned chunked_content_complete:1;
@@ -103,6 +104,7 @@ typedef struct nxweb_http_request {
   nxe_ssize_t content_length; // -1 = unspecified: chunked or until close
   nxe_size_t content_received;
   const char* transfer_encoding;
+  const char* accept_encoding;
   const char* range;
   const char* path_info; // points right after uri_handler's prefix
 
@@ -129,6 +131,7 @@ typedef struct nxweb_http_response {
   unsigned keep_alive:1;
   unsigned http11:1;
   unsigned chunked_encoding:1;
+  unsigned gzip_encoded:1;
   //unsigned chunked_content_complete:1;
 
   // Building response:
@@ -261,7 +264,8 @@ static inline void nxweb_response_append_uint(nxweb_http_response* resp, unsigne
 
 void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location);
 void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* message);
-int nxweb_send_file(nxweb_http_response *resp, const char* fpath, struct stat* finfo, off_t offset, size_t size, const char* charset);
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, struct stat* finfo, int gzip_encoded, // if gzip_encoded then fpath MUST end with '.gz'
+        off_t offset, size_t size, const char* charset);
 void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, const char* content_type);
 
 // Internal use only:
