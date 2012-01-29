@@ -152,7 +152,7 @@ typedef struct nxweb_http_response {
 } nxweb_http_response;
 
 typedef struct nxweb_mime_type {
-  const char* ext;
+  const char* ext; // must be lowercase
   const char* mime;
   unsigned charset_required:1;
 } nxweb_mime_type;
@@ -165,6 +165,11 @@ extern const unsigned char PIXEL_GIF[43]; // transparent pixel
 
 static inline char nx_tolower(char c) {
   return c>='A' && c<='Z' ? c+('a'-'A') : c;
+}
+
+static inline char* nx_tolower_str(char* dst, const char* src) {
+  while ((*dst++=nx_tolower(*src++))) ;
+  return dst;
 }
 
 static inline int nx_strcasecmp(const char* s1, const char* s2) {

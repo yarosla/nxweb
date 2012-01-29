@@ -24,17 +24,23 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "misc.h"
+#include "nxweb.h"
 
 #include <string.h>
+#include <assert.h>
 
-typedef struct nxweb_mime_type {
-  const char* ext;
-  const char* mime;
-  unsigned charset_required:1;
-} nxweb_mime_type;
+#include "../deps/ulib/alignhash_tpl.h"
+#include "../deps/ulib/hash.h"
 
-static const nxweb_mime_type mime_types[] = {
+#define mime_cache_hash_fn(key) hash_djb2((const unsigned char*)(key))
+#define mime_cache_eq_fn(a, b) (!strcmp((a), (b)))
+
+DECLARE_ALIGNHASH(mime_cache, const char*, const nxweb_mime_type*, 1, mime_cache_hash_fn, mime_cache_eq_fn)
+
+static alignhash_t(mime_cache) *_mime_cache_by_ext;
+static alignhash_t(mime_cache) *_mime_cache_by_type;
+
+static const nxweb_mime_type const mime_types[] = {
   {"htm", "text/html", 1}, // default mime type
   {"html", "text/html", 1},
   {"txt", "text/plain", 1},
@@ -108,19 +114,54 @@ static const nxweb_mime_type mime_types[] = {
   {"qt", "video/quicktime", 0},
   {"asf", "video/x-ms-asf", 0},
   {"asx", "video/x-ms-asf", 0},
-  {0, "text/html", 0}
-  // {0, "application/octet-stream", 0}
+  {0}
 };
+
+void nxweb_add_mime_type(const nxweb_mime_type* type) {
+  assert(!_nxweb_net_thread_data); // mime cache is not thread safe
+                                   // this function must be called before nxweb threads launched,
+                                   // i.e. before nxweb_run() or from on_server_startup
+  ah_iter_t ci;
+  int ret=0;
+  ci=alignhash_set(mime_cache, _mime_cache_by_ext, type->ext, &ret);
+  if (ci!=alignhash_end(_mime_cache_by_ext)) {
+    alignhash_value(_mime_cache_by_ext, ci)=type;
+  }
+  ci=alignhash_set(mime_cache, _mime_cache_by_type, type->mime, &ret);
+  if (ci!=alignhash_end(_mime_cache_by_type)) {
+    alignhash_value(_mime_cache_by_type, ci)=type;
+  }
+}
+
+static void init_mime_cache() __attribute__((constructor));
+static void init_mime_cache() {
+  _mime_cache_by_ext=alignhash_init(mime_cache);
+  _mime_cache_by_type=alignhash_init(mime_cache);
+  const nxweb_mime_type* type=mime_types;
+  while (type->ext) {
+    nxweb_add_mime_type(type);
+    type++;
+  }
+}
+
+static void finalize_mime_cache() __attribute__((destructor));
+static void finalize_mime_cache() {
+  alignhash_destroy(mime_cache, _mime_cache_by_ext);
+  alignhash_destroy(mime_cache, _mime_cache_by_type);
+}
 
 const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext) {
   const char* ext=strrchr(fpath_or_ext, '.');
   ext=ext? ext+1 : fpath_or_ext;
-  const nxweb_mime_type* type=mime_types;
-  while (type->ext) {
-    if (!strcasecmp(type->ext, ext)) break;
-    type++;
+  int ext_len=strlen(ext);
+  char _ext[32];
+  if (ext_len>sizeof(_ext)-1) return &mime_types[0];
+  nx_tolower_str(_ext, ext);
+  ah_iter_t ci;
+  if ((ci=alignhash_get(mime_cache, _mime_cache_by_ext, _ext))!=alignhash_end(_mime_cache_by_ext)) {
+    return alignhash_value(_mime_cache_by_ext, ci);
   }
-  return type;
+  return &mime_types[0];
 }
 
 const nxweb_mime_type* nxweb_get_mime_type(const char* type_name) {
@@ -134,10 +175,9 @@ const nxweb_mime_type* nxweb_get_mime_type(const char* type_name) {
     buf[len]='\0';
     type_name=nxweb_trunc_space(buf);
   }
-  const nxweb_mime_type* type=mime_types;
-  while (type->ext) {
-    if (!strcmp(type->mime, type_name)) break;
-    type++;
+  ah_iter_t ci;
+  if ((ci=alignhash_get(mime_cache, _mime_cache_by_type, type_name))!=alignhash_end(_mime_cache_by_type)) {
+    return alignhash_value(_mime_cache_by_type, ci);
   }
-  return type->ext? type : 0;
+  return 0;
 }
