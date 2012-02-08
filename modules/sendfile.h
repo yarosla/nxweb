@@ -31,6 +31,12 @@
 extern "C" {
 #endif
 
+#define INDEX_FILE "index.htm"
+#define DEFAULT_CHARSET "utf-8"
+#define DEFAULT_CACHED_TIME 30000000
+#define MAX_CACHED_ITEMS 500
+#define MAX_CACHE_ITEM_SIZE 32768
+
 // Other modules can use this function to send files:
 nxweb_result nxweb_sendfile_try(nxweb_http_server_connection* conn, nxweb_http_response* resp,
         char* fpath, char* path_info, // path_info MUST point to fpath+doc_root_len; path_info MUST be contained in fpath; function modifies this string by appending index file name, etc.
@@ -38,6 +44,8 @@ nxweb_result nxweb_sendfile_try(nxweb_http_server_connection* conn, nxweb_http_r
         _Bool try_gzip_encoding, // try appending ".gz" to path_info to see if gzip-encoded content is available
         const struct stat* finfo, const nxweb_mime_type* mtype // optional; if you already have these, then provide to avoid extra calls
         );
+
+int nxweb_remove_dots_from_uri_path(char* path);
 
 #ifdef	__cplusplus
 }

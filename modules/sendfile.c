@@ -36,12 +36,6 @@
 #include "../deps/ulib/alignhash_tpl.h"
 #include "../deps/ulib/hash.h"
 
-#define INDEX_FILE "index.htm"
-#define DEFAULT_CHARSET "utf-8"
-#define DEFAULT_CACHED_TIME 30000000
-#define MAX_CACHED_ITEMS 500
-#define MAX_CACHE_ITEM_SIZE 32768
-
 enum {FC_ERR_NO_ERROR=0, FC_ERR_NOT_FOUND, FC_ERR_IS_DIR, FC_ERR_TYPE};
 
 typedef struct file_cache_rec {
@@ -153,7 +147,7 @@ static void cache_rec_unref(nxd_http_server_proto* hsp, void* req_data) {
   pthread_mutex_unlock(&_file_cache_mutex);
 }
 
-static int remove_dots_from_uri_path(char* path) {
+int nxweb_remove_dots_from_uri_path(char* path) {
   if (!*path) return 0; // end of path
   if (*path!='/') return -1; // invalid path
   while (1) {
@@ -163,7 +157,7 @@ static int remove_dots_from_uri_path(char* path) {
     }
     char* p1=strchr(path+1, '/');
     if (!p1) return 0;
-    if (!remove_dots_from_uri_path(p1)) return 0;
+    if (!nxweb_remove_dots_from_uri_path(p1)) return 0;
     memmove(path, p1, strlen(p1)+1);
   }
 }
@@ -407,7 +401,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
     plen=strlen(path_info);
   }
 
-  if (remove_dots_from_uri_path(path_info)) {
+  if (nxweb_remove_dots_from_uri_path(path_info)) {
     //nxweb_send_http_error(resp, 404, "Not Found");
     return NXWEB_NEXT;
   }
