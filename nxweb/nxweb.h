@@ -269,8 +269,8 @@ static inline void nxweb_response_append_uint(nxweb_http_response* resp, unsigne
 
 void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location);
 void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* message);
-int nxweb_send_file(nxweb_http_response *resp, char* fpath, struct stat* finfo, int gzip_encoded, // if gzip_encoded then fpath MUST end with '.gz'
-        off_t offset, size_t size, const char* charset);
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded, // if gzip_encoded then fpath MUST end with '.gz'
+        off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect
 void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, const char* content_type);
 
 // Internal use only:

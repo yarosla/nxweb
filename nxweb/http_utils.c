@@ -628,7 +628,7 @@ void nxweb_send_http_error(nxweb_http_response *resp, int code, const char* mess
   //resp->keep_alive=0; // close connection after error response
 }
 
-int nxweb_send_file(nxweb_http_response *resp, char* fpath, struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const char* charset) {
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset) {
   if (fpath==0) { // cancel sendfile
     if (resp->sendfile_fd) close(resp->sendfile_fd);
     resp->sendfile_fd=0;
@@ -660,13 +660,15 @@ int nxweb_send_file(nxweb_http_response *resp, char* fpath, struct stat* finfo, 
   resp->sendfile_end=offset+resp->content_length;
   resp->last_modified=finfo->st_mtime;
   resp->gzip_encoded=gzip_encoded;
-  int flen;
-  if (gzip_encoded) {
-    flen=strlen(fpath);
-    fpath[flen-3]='\0'; // cut .gz
+  if (!mtype) {
+    int flen;
+    if (gzip_encoded) {
+      flen=strlen(fpath);
+      fpath[flen-3]='\0'; // cut .gz
+    }
+    mtype=nxweb_get_mime_type_by_ext(fpath);
+    if (gzip_encoded) fpath[flen-3]='.'; // restore
   }
-  const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(fpath);
-  if (gzip_encoded) fpath[flen-3]='.'; // restore
   resp->content_type=mtype->mime;
   if (mtype->charset_required) resp->content_charset=charset;
   return 0;
