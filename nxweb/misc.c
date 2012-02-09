@@ -28,6 +28,7 @@
 
 #include "misc.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <stdio.h>
@@ -255,4 +256,17 @@ void _nxweb_sleep_us(int us) {
   req.tv_sec=sec;
   req.tv_nsec=us*1000L;
   while (nanosleep(&req, &req)==-1) ;
+}
+
+int nxweb_mkpath(char* file_path, mode_t mode) {
+  assert(file_path && *file_path);
+  char* p;
+  for (p=strchr(file_path+1, '/'); p; p=strchr(p+1, '/')) {
+    *p='\0';
+    if (mkdir(file_path, mode)==-1) {
+      if (errno!=EEXIST) { *p='/'; return -1; }
+    }
+    *p='/';
+  }
+  return 0;
 }

@@ -27,6 +27,8 @@
 #ifndef MISC_H_INCLUDED
 #define MISC_H_INCLUDED
 
+#include <sys/stat.h>
+
 void nxweb_open_log_file(const char* log_file);
 void nxweb_continue_as_daemon(const char* work_dir, const char* log_file);
 void nxweb_create_pid_file(const char* pid_file);
@@ -51,5 +53,7 @@ void _nxweb_free_addrinfo(struct addrinfo* ai);
 void _nxweb_sleep_us(int us);
 
 char* nxweb_trunc_space(char* str);
+
+int nxweb_mkpath(char* file_path, mode_t mode); // ensure all dirs exist to the file path specified
 
 #endif // MISC_H_INCLUDED

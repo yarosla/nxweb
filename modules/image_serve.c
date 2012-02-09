@@ -27,6 +27,7 @@
 #include "../nxweb/nxweb.h"
 #include <malloc.h>
 #include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
 #include <sys/fcntl.h>
 #include <sys/stat.h>
@@ -34,10 +35,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <utime.h>
 
 #include <wand/MagickWand.h>
 
 #include "sendfile.h"
+
+#include "../deps/sha1-c/sha1.h"
 
 /**
  * ImageMagick Notes
@@ -51,33 +55,345 @@
  * Perhaps need to disable more unneeded modules like ps, x, etc.
  */
 
+#define WATERMARK_FILE_NAME "watermark.png"
+#define MAX_PATH 1024
 
-static MagickWand* watermark;
+#ifndef max
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+#endif
+
+#ifndef min
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+#endif
+
+typedef struct isrv_cmd {
+  char cmd;
+  _Bool dont_watermark:1;
+  _Bool gravity_top:1;
+  _Bool gravity_right:1;
+  _Bool gravity_bottom:1;
+  _Bool gravity_left:1;
+  int width;
+  int height;
+  char color[8]; // "#FF00AA\0"
+} isrv_cmd;
+
+
+static isrv_cmd allowed_cmds[]={
+  {.cmd='s', .width=50, .height=50},
+  {.cmd='s', .width=100, .height=100},
+  {.cmd='s', .width=500, .height=500},
+  {.cmd='c', .width=50, .height=50},
+  {.cmd='c', .width=100, .height=100},
+  {.cmd='f', .width=50, .height=50},
+  {.cmd='f', .width=100, .height=100}
+};
+
 
 static int image_serve_init() {
   MagickWandGenesis();
-  watermark=NewMagickWand();
-  MagickReadImage(watermark, "test/image_serve/watermark.png");
-  MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
   return 0;
 }
 
 static void image_serve_finalize() {
-  DestroyMagickWand(watermark);
   MagickWandTerminus();
 }
 
 NXWEB_MODULE(image_serve, .on_server_startup=image_serve_init, .on_server_shutdown=image_serve_finalize);
 
+static int locate_watermark(const char* fpath, const char* path_info, char* wpath) {
+  strcpy(wpath, fpath);
+  const char* wpath_info=wpath+(path_info-fpath);
+  char* p;
+  struct stat finfo;
+  while ((p=strrchr(wpath_info, '/'))) {
+    strcpy(p+1, WATERMARK_FILE_NAME);
+    if (stat(wpath, &finfo)==0 && !S_ISDIR(finfo.st_mode)) {
+      return !!finfo.st_size;
+    }
+    *p='\0';
+  }
+  return 0; // not found
+}
+
+static int process_cmd(const char* fpath, const char* path_info, MagickWand* image, isrv_cmd* cmd) {
+  int width=MagickGetImageWidth(image);
+  int height=MagickGetImageHeight(image);
+/*
+  nxweb_log_error("cmd=%c width=%d height=%d color=%s", cmd->cmd, cmd->width, cmd->height, cmd->color);
+  const char* bgc=cmd->color[0]? cmd->color : (supports_transparency?"none":"white");
+  nxweb_log_error("Alpha=%d AlChDepth=%ld ComprQ=%ld Fmt=%s supports_transparency=%d bgc=%s", MagickGetImageAlphaChannel(image),
+          MagickGetImageChannelDepth(image, AlphaChannel),
+          MagickGetImageCompressionQuality(image),
+          MagickGetImageFormat(image),
+          supports_transparency, bgc);
+*/
+  if (width<=0 || height<=0) {
+    nxweb_log_error("illegal width or height of image %s", fpath);
+    return 0;
+  }
+  int dirty=0;
+  if (cmd->cmd=='s') {
+    int max_width=cmd->width;
+    int max_height=cmd->height;
+    if (width>max_width || height>max_height) { // don't enlarge!
+      double scale_x=(double)max_width/(double)width;
+      double scale_y=(double)max_height/(double)height;
+      if (scale_x<scale_y) {
+        width=max_width;
+        height=round(scale_x*height);
+      }
+      else {
+        width=round(scale_y*width);
+        height=max_height;
+      }
+      MagickResizeImage(image, width, height, LanczosFilter, 1);
+      dirty=1;
+    }
+  }
+  else if (cmd->cmd=='c') {
+    int max_width=cmd->width;
+    int max_height=cmd->height;
+    double scale_x=(double)max_width/(double)width;
+    double scale_y=(double)max_height/(double)height;
+    double scale=max(scale_x, scale_y);
+    if (scale<1.) { // don't enlarge!
+      width=round(scale*width);
+      height=round(scale*height);
+      MagickResizeImage(image, width, height, LanczosFilter, 1);
+      dirty=1;
+    }
+    if (width!=max_width || height!=max_height) {
+      PixelWand* pwand=NewPixelWand();
+     _Bool supports_transparency=MagickGetImageFormat(image)[0]!='J'; // only JPEG does not support transparency
+      PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
+      MagickSetImageBackgroundColor(image, pwand);
+      int offset_x=cmd->gravity_left? 0 : (cmd->gravity_right? -(max_width-width) : -(max_width-width)/2);
+      int offset_y=cmd->gravity_top? 0 : (cmd->gravity_bottom? -(max_height-height) : -(max_height-height)/2);
+      MagickExtentImage(image, max_width, max_height, offset_x, offset_y);
+      width=max_width;
+      height=max_height;
+      DestroyPixelWand(pwand);
+      dirty=1;
+    }
+  }
+  else if (cmd->cmd=='f') {
+    int max_width=cmd->width;
+    int max_height=cmd->height;
+    if (width>max_width || height>max_height) { // don't enlarge!
+      double scale_x=(double)max_width/(double)width;
+      double scale_y=(double)max_height/(double)height;
+      if (scale_x<scale_y) {
+        width=max_width;
+        height=round(scale_x*height);
+      }
+      else {
+        width=round(scale_y*width);
+        height=max_height;
+      }
+      MagickResizeImage(image, width, height, LanczosFilter, 1);
+      dirty=1;
+    }
+    if (width!=max_width || height!=max_height) {
+      PixelWand* pwand=NewPixelWand();
+     _Bool supports_transparency=MagickGetImageFormat(image)[0]!='J'; // only JPEG does not support transparency
+      PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
+      MagickSetImageBackgroundColor(image, pwand);
+      int offset_x=cmd->gravity_left? 0 : (cmd->gravity_right? -(max_width-width) : -(max_width-width)/2);
+      int offset_y=cmd->gravity_top? 0 : (cmd->gravity_bottom? -(max_height-height) : -(max_height-height)/2);
+      MagickExtentImage(image, max_width, max_height, offset_x, offset_y);
+      width=max_width;
+      height=max_height;
+      DestroyPixelWand(pwand);
+      dirty=1;
+    }
+  }
+  if (!cmd->dont_watermark && width>=200 && height>=200) { // don't watermark images smaller than 200x200
+    char wpath[2096];
+    if (locate_watermark(fpath, path_info, wpath)) {
+      MagickWand* watermark=NewMagickWand();
+      MagickReadImage(watermark, wpath);
+      int wwidth=MagickGetImageWidth(watermark);
+      int wheight=MagickGetImageHeight(watermark);
+      if (width>2*wwidth && height>=2*wheight) { // don't watermark images smaller than 2 x watermark
+        MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
+        MagickCompositeImage(image, watermark, OverCompositeOp, width-wwidth-10, height-wheight-10);
+        dirty=1;
+      }
+      DestroyMagickWand(watermark);
+    }
+  }
+  return dirty;
+}
+
+static int decode_cmd(char* path, isrv_cmd* cmd) { // modifies path
+  memset(cmd, 0, sizeof(*cmd));
+  char* filename=strrchr(path, '/');
+  if (filename) filename++;
+  else filename=path;
+  if (!strcmp(filename, WATERMARK_FILE_NAME)) {
+    cmd->dont_watermark=1;
+    return -1;
+  }
+  else {
+    char* p;
+    for (p=strchr(filename, '.'); p; p=strchr(p+1, '.')) {
+      if (p[1]=='n' && p[2]=='o' && p[3]=='w' && p[4]=='m' && p[5]=='k') {
+        cmd->dont_watermark=1;
+        break;
+      }
+    }
+  }
+  char* ext=strrchr(filename, '.');
+  if (!ext) return -1;
+  *ext='\0'; // cut
+  char* cp=strrchr(filename, '.');
+  *ext='.'; // restore
+  if (!cp) return -1;
+  char* cc=cp;
+  char c=*++cp;
+  int w=0, h=0;
+  if (c=='c' || c=='f') {
+    cp++;
+  }
+  else {
+    if (!(c=='x' || (c>='1' && c<='9'))) return -1;
+    c='s';
+  }
+  while (*cp>='0' && *cp<='9') {
+    if (*cp=='0' && w==0) return -1; // no leading zeros
+    w=w*10+(*cp-'0');
+    cp++;
+  }
+  if (*cp!='x') return -1;
+  cp++;
+  while (*cp>='0' && *cp<='9') {
+    if (*cp=='0' && h==0) return -1; // no leading zeros
+    h=h*10+(*cp-'0');
+    cp++;
+  }
+  if (c=='c' || c=='f') {
+    if (*cp=='t') {
+      cmd->gravity_top=1;
+      cp++;
+      if (*cp=='r') {
+        cmd->gravity_right=1;
+        cp++;
+      }
+      else if (*cp=='l') {
+        cmd->gravity_left=1;
+        cp++;
+      }
+    }
+    else if (*cp=='b') {
+      cmd->gravity_bottom=1;
+      cp++;
+      if (*cp=='r') {
+        cmd->gravity_right=1;
+        cp++;
+      }
+      else if (*cp=='l') {
+        cmd->gravity_left=1;
+        cp++;
+      }
+    }
+    else if (*cp=='r') {
+      cmd->gravity_right=1;
+      cp++;
+    }
+    else if (*cp=='l') {
+      cmd->gravity_left=1;
+      cp++;
+    }
+  }
+  if (*cp=='.') {
+    cmd->cmd=c;
+    cmd->width=w;
+    cmd->height=h;
+    memmove(cc, ext, strlen(ext)+1);
+    if (!strcmp(filename, WATERMARK_FILE_NAME)) cmd->dont_watermark=1;
+    return 0;
+  }
+  if (c!='f' && c!='c') return -1;
+  if (*cp!='x') return -1;
+  cp++;
+  int i;
+  cmd->color[0]='#';
+  for (i=1; i<=6; i++, cp++) {
+    if ((*cp>='0' && *cp<='9') || (*cp>='A' && *cp<='F')) cmd->color[i]=*cp;
+    else return -1;
+  }
+  if (*cp!='.') return -1;
+  cmd->cmd=c;
+  cmd->width=w;
+  cmd->height=h;
+  memmove(cc, ext, strlen(ext)+1);
+  if (!strcmp(filename, WATERMARK_FILE_NAME)) cmd->dont_watermark=1;
+  return 0;
+}
+
+static int copy_file(const char* src, const char* dst) {
+  int sfd=open(src, O_RDONLY);
+  if (sfd==-1) return -1;
+  int dfd=open(dst, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+  if (dfd==-1) {
+    close(sfd);
+    return -1;
+  }
+  char buf[4096];
+  ssize_t cnt;
+  while ((cnt=read(sfd, buf, sizeof(buf)))>0) {
+    if (write(dfd, buf, cnt)!=cnt) {
+      close(sfd);
+      close(dfd);
+      unlink(dst);
+      return -1;
+    }
+  }
+  close(sfd);
+  close(dfd);
+  return 0;
+}
+
+static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
+
+static void sha1(const char* str, char* result) {
+  SHA1Context sha;
+  SHA1Reset(&sha);
+  SHA1Input(&sha, (const unsigned char*)str, strlen(str));
+  SHA1Result(&sha);
+  int i;
+  char* p=result;
+  for (i=0; i<5; i++) {
+    uint32_t n=sha.Message_Digest[i];
+    *p++=HEX_DIGIT(n>>28);
+    *p++=HEX_DIGIT(n>>24);
+    *p++=HEX_DIGIT(n>>20);
+    *p++=HEX_DIGIT(n>>16);
+    *p++=HEX_DIGIT(n>>12);
+    *p++=HEX_DIGIT(n>>8);
+    *p++=HEX_DIGIT(n>>4);
+    *p++=HEX_DIGIT(n);
+  }
+  *p='\0';
+}
 
 static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
   nxweb_handler* handler=conn->handler;
   const char* document_root=handler->dir;
+  const char* image_cache_root=handler->cdir;
   assert(document_root);
+  assert(image_cache_root);
 
-  char fpath[2048];
+  char fpath[MAX_PATH];
   int rlen=strlen(document_root);
   assert(rlen<sizeof(fpath));
   strcpy(fpath, document_root);
@@ -93,35 +409,90 @@ static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nx
   plen=strlen(path_info);
   if (plen>0 && path_info[plen-1]=='/') { // directory index
     strcat(path_info+plen, INDEX_FILE);
-    plen=strlen(path_info);
   }
 
   if (nxweb_remove_dots_from_uri_path(path_info)) {
     //nxweb_send_http_error(resp, 404, "Not Found");
     return NXWEB_NEXT;
   }
+  plen=strlen(path_info);
 
   const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(path_info);
-  if (!strcmp(mtype->ext, "png") || !strcmp(mtype->ext, "jpg") || !strcmp(mtype->ext, "gif")) {
-    MagickWand* image;
-    image=NewMagickWand();
-    MagickReadImage(image, fpath);
+  if (!strcmp(mtype->ext, "jpg") || !strcmp(mtype->ext, "png") || !strcmp(mtype->ext, "gif")) {
+    char ipath[MAX_PATH];
+    int clen=strlen(image_cache_root);
+    assert(clen<sizeof(ipath));
+    strcpy(ipath, image_cache_root);
+    char* ipath_info=ipath+clen;
+    if (clen+plen>sizeof(ipath)-16) { // leave room for .gz?
+      nxweb_send_http_error(resp, 414, "Request-URI Too Long");
+      return NXWEB_ERROR;
+    }
+    strcpy(ipath_info, path_info);
+
+    nxweb_result res=nxweb_sendfile_try(conn, resp, ipath, ipath_info, handler->cache? DEFAULT_CACHED_TIME : 0, 0, 0, 0, mtype);
+    if (res!=NXWEB_NEXT) {
+      return res;
+    }
+
+    if (nxweb_mkpath(ipath, 0755)) {
+      nxweb_log_error("can't make path to store file %s", ipath);
+      nxweb_send_http_error(resp, 500, "Internal Server Error");
+      return NXWEB_ERROR;
+    }
+
+    isrv_cmd cmd;
+    char sha1_result[41];
+    sha1(ipath_info, sha1_result);
+    nxweb_log_error("pi=%s sha1=%s", ipath_info, sha1_result);
+    if (!decode_cmd(path_info, &cmd)) {
+      // TODO check if cmd is allowed
+    }
+
+    struct stat finfo;
+    if (stat(fpath, &finfo)==-1) {
+      // source image not found
+      return NXWEB_NEXT;
+    }
+
+    MagickWand* image=NewMagickWand();
+    if (!MagickReadImage(image, fpath)) {
+      DestroyMagickWand(image);
+      nxweb_log_error("MagickReadImage(%s) failed", fpath);
+      nxweb_send_http_error(resp, 500, "Internal Server Error");
+      return NXWEB_ERROR;
+    }
     MagickStripImage(image);
 
-    MagickCompositeImage(image, watermark, OverCompositeOp, 10, 10);
+    if (process_cmd(fpath, path_info, image, &cmd)) {
+      nxweb_log_error("writing image file %s", ipath);
+      if (!MagickWriteImage(image, ipath)) {
+        DestroyMagickWand(image);
+        nxweb_log_error("MagickWriteImage(%s) failed", ipath);
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+      DestroyMagickWand(image);
+    }
+    else {
+      // processing changed nothing => just copy the original
+      DestroyMagickWand(image);
+      nxweb_log_error("copying image file %s", ipath);
+      if (copy_file(fpath, ipath)) {
+        nxweb_log_error("error %d copying image file %s", errno, ipath);
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+    }
 
-    strcat(strcat(path_info, ".wmk."), mtype->ext);
-    nxweb_log_error("writing %s image file", fpath);
-    MagickWriteImage(image, fpath);
-    DestroyMagickWand(image);
+    struct utimbuf ut={.actime=finfo.st_atime, .modtime=finfo.st_mtime};
+    utime(ipath, &ut);
 
-    return nxweb_sendfile_try(conn, resp, fpath, path_info, handler->cache? DEFAULT_CACHED_TIME : 0, 0, 0, mtype);
+    return nxweb_sendfile_try(conn, resp, ipath, ipath_info, handler->cache? DEFAULT_CACHED_TIME : 0, 1, 0, 0, mtype);
   }
-  else {
-    return nxweb_sendfile_try(conn, resp, fpath, path_info, handler->cache? DEFAULT_CACHED_TIME : 0, req->accept_gzip_encoding, 0, mtype);
-  }
+  return nxweb_sendfile_try(conn, resp, fpath, path_info, handler->cache? DEFAULT_CACHED_TIME : 0, 1, req->accept_gzip_encoding, 0, mtype);
 }
 
 nxweb_handler image_serve_handler={.on_select=image_serve_on_select, .flags=NXWEB_HANDLE_GET};
 
-NXWEB_SET_HANDLER(image_serve, "/is", &image_serve_handler, .priority=10000, .dir="html", .cache=1);
+NXWEB_SET_HANDLER(image_serve, "/is", &image_serve_handler, .priority=10000, .dir="html", .cdir="test/image_serve/cache", .cache=1);

@@ -41,6 +41,7 @@ extern "C" {
 nxweb_result nxweb_sendfile_try(nxweb_http_server_connection* conn, nxweb_http_response* resp,
         char* fpath, char* path_info, // path_info MUST point to fpath+doc_root_len; path_info MUST be contained in fpath; function modifies this string by appending index file name, etc.
         nxe_time_t use_cache_time, // 0= do not use cache; otherwise cache small files for this amount of time
+        _Bool cache_error, // 0= do not cache errors
         _Bool try_gzip_encoding, // try appending ".gz" to path_info to see if gzip-encoded content is available
         const struct stat* finfo, const nxweb_mime_type* mtype // optional; if you already have these, then provide to avoid extra calls
         );

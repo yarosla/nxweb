@@ -72,6 +72,7 @@ typedef struct nxweb_handler {
   nxe_data param;
   const char* uri;
   const char* dir;
+  const char* cdir;
   _Bool cache:1;
   int idx;
   struct nxweb_handler* next;

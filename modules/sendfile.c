@@ -246,7 +246,7 @@ static void cache_store_error(const char* fpath, nxe_time_t loop_time, int error
   nx_free(rec);
 }
 
-nxweb_result nxweb_sendfile_try(nxweb_http_server_connection* conn, nxweb_http_response* resp, char* fpath, char* path_info, nxe_time_t use_cache_time, _Bool try_gzip_encoding, const struct stat* finfo, const nxweb_mime_type* mtype) {
+nxweb_result nxweb_sendfile_try(nxweb_http_server_connection* conn, nxweb_http_response* resp, char* fpath, char* path_info, nxe_time_t use_cache_time, _Bool cache_error, _Bool try_gzip_encoding, const struct stat* finfo, const nxweb_mime_type* mtype) {
   nxe_time_t loop_time=nxweb_get_loop_time(conn);
   _Bool use_cache=!!use_cache_time;
   int plen=strlen(path_info);
@@ -268,7 +268,7 @@ RETRY:
     //nxweb_log_error("trying file %s", fpath);
     if (stat(fpath, &_finfo)==-1) {
       // no such file
-      if (use_cache) cache_store_error(fpath, loop_time, FC_ERR_NOT_FOUND);
+      if (cache_error) cache_store_error(fpath, loop_time, FC_ERR_NOT_FOUND);
       if (try_gzip_encoding) {
         path_info[plen]='\0'; // cut .gz
         try_gzip_encoding=0;
@@ -279,14 +279,14 @@ RETRY:
     finfo=&_finfo;
   }
   if (S_ISDIR(finfo->st_mode) && !try_gzip_encoding) {
-    if (use_cache) cache_store_error(fpath, loop_time, FC_ERR_IS_DIR);
+    if (cache_error) cache_store_error(fpath, loop_time, FC_ERR_IS_DIR);
     strcat(path_info, "/");
     nxweb_send_redirect(resp, 302, path_info);
     nxweb_start_sending_response(conn, resp);
     return NXWEB_OK;
   }
   if (!S_ISREG(finfo->st_mode)) { // symlink or ...?
-    if (use_cache) cache_store_error(fpath, loop_time, FC_ERR_TYPE);
+    if (cache_error) cache_store_error(fpath, loop_time, FC_ERR_TYPE);
     nxweb_send_http_error(resp, 403, "Forbidden");
     nxweb_start_sending_response(conn, resp);
     return NXWEB_ERROR;
@@ -398,7 +398,6 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   plen=strlen(path_info);
   if (plen>0 && path_info[plen-1]=='/') { // directory index
     strcat(path_info+plen, INDEX_FILE);
-    plen=strlen(path_info);
   }
 
   if (nxweb_remove_dots_from_uri_path(path_info)) {
@@ -406,7 +405,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
     return NXWEB_NEXT;
   }
 
-  return nxweb_sendfile_try(conn, resp, fpath, path_info, handler->cache? DEFAULT_CACHED_TIME : 0, req->accept_gzip_encoding, 0, 0);
+  return nxweb_sendfile_try(conn, resp, fpath, path_info, handler->cache? DEFAULT_CACHED_TIME : 0, 1, req->accept_gzip_encoding, 0, 0);
 }
 
 nxweb_handler sendfile_handler={.on_select=sendfile_on_select, .flags=NXWEB_HANDLE_GET};
