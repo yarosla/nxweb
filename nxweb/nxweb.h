@@ -62,6 +62,7 @@ enum nxweb_timers {
 typedef struct nx_simple_map_entry {
   const char* name;
   const char* value;
+  struct nx_simple_map_entry* next;
 } nx_simple_map_entry, nxweb_http_header, nxweb_http_parameter, nxweb_http_cookie;
 
 enum nxweb_chunked_decoder_state_code {CDS_CR1=-2, CDS_LF1=-1, CDS_SIZE=0, CDS_LF2, CDS_DATA};
@@ -185,32 +186,35 @@ static inline int nx_strcasecmp(const char* s1, const char* s2) {
   return result;
 }
 
-static inline const char* nx_simple_map_get(nx_simple_map_entry map[], const char* name) {
-  int i;
-  for (i=0; map[i].name; i++) {
-    if (strcmp(map[i].name, name)==0) return map[i].value;
+static inline const char* nx_simple_map_get(nx_simple_map_entry* map, const char* name) {
+  while (map) {
+    if (strcmp(map->name, name)==0) return map->value;
+    map=map->next;
   }
   return 0;
 }
 
-static inline const char* nx_simple_map_get_nocase(nx_simple_map_entry map[], const char* name) {
-  int i;
-  for (i=0; map[i].name; i++) {
-    if (nx_strcasecmp(map[i].name, name)==0) return map[i].value;
+static inline const char* nx_simple_map_get_nocase(nx_simple_map_entry* map, const char* name) {
+  while (map) {
+    if (strcasecmp(map->name, name)==0) return map->value;
+    map=map->next;
   }
   return 0;
 }
 
-static inline void nx_simple_map_add(nx_simple_map_entry map[], const char* name, const char* value, int max_entries) {
-  int i;
-  for (i=0; i<max_entries-1; i++) {
-    if (!map[i].name) {
-      map[i].name=name;
-      map[i].value=value;
-      return;
-    }
-  }
+static inline nx_simple_map_entry* nx_simple_map_add(nx_simple_map_entry* map, nx_simple_map_entry* new_entry) {
+  new_entry->next=map;
+  return new_entry; // returns pointer to new map
 }
+
+static inline nx_simple_map_entry* nx_simple_map_itr_begin(nx_simple_map_entry* map) {
+  return map;
+}
+
+static inline nx_simple_map_entry* nx_simple_map_itr_next(nx_simple_map_entry* itr) {
+  return itr->next;
+}
+
 
 int nxweb_listen(const char* host_and_port, int backlog, _Bool secure, const char* cert_file, const char* key_file, const char* dh_params_file);
 int nxweb_setup_http_proxy_pool(int idx, const char* host_and_port);

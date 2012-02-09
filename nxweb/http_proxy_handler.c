@@ -118,6 +118,7 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     preq->http11=1;
     preq->keep_alive=1;
     preq->user_agent=req->user_agent;
+    preq->cookie=req->cookie;
     preq->x_forwarded_for=conn->remote_addr;
     preq->x_forwarded_host=req->host;
     preq->x_forwarded_ssl=nxweb_server_config.listen_config[conn->lconf_idx].secure;

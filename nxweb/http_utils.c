@@ -96,7 +96,8 @@ void nxweb_parse_request_parameters(nxweb_http_request *req, int preserve_uri) {
     }
   }
   // last param must be nulled (nx_buffer allocates objects in reverse direction)
-  nxweb_http_parameter* param=nxb_calloc_obj(nxb, sizeof(nxweb_http_parameter));
+  nxweb_http_parameter* param_map=0;
+  nxweb_http_parameter* param;
   if (query_string) {
     for (name=query_string; name; name=next) {
       next=strchr(name, '&');
@@ -108,9 +109,10 @@ void nxweb_parse_request_parameters(nxweb_http_request *req, int preserve_uri) {
         nxweb_url_decode(name, 0);
         name=nxweb_trunc_space(name);
         nxweb_url_decode(value, 0);
-        param=nxb_alloc_obj(nxb, sizeof(nxweb_http_parameter));
+        param=nxb_calloc_obj(nxb, sizeof(nxweb_http_parameter));
         param->name=name;
         param->value=value;
+        param_map=nx_simple_map_add(param_map, param);
       }
     }
   }
@@ -125,14 +127,15 @@ void nxweb_parse_request_parameters(nxweb_http_request *req, int preserve_uri) {
         nxweb_url_decode(name, 0);
         name=nxweb_trunc_space(name);
         nxweb_url_decode(value, 0);
-        param=nxb_alloc_obj(nxb, sizeof(nxweb_http_parameter));
+        param=nxb_calloc_obj(nxb, sizeof(nxweb_http_parameter));
         param->name=name;
         param->value=value;
+        param_map=nx_simple_map_add(param_map, param);
       }
     }
     req->content=0;
   }
-  req->parameters=param;
+  req->parameters=param_map;
 }
 
 // Modifies conn->cookie content (does url_decode inplace)
@@ -143,7 +146,8 @@ void nxweb_parse_request_cookies(nxweb_http_request *req) {
   nxb_buffer* nxb=req->nxb;
   char *name, *value, *next;
   // last cookie must be nulled (nx_buffer allocates objects in reverse direction)
-  nxweb_http_cookie* cookie=nxb_calloc_obj(nxb, sizeof(nxweb_http_cookie));
+  nxweb_http_cookie* cookie_map=0;
+  nxweb_http_cookie* cookie;
   if (req->cookie) {
     for (name=(char*)req->cookie; name; name=next) {
       next=strchr(name, ';');
@@ -154,14 +158,15 @@ void nxweb_parse_request_cookies(nxweb_http_request *req) {
         nxweb_url_decode(name, 0);
         name=nxweb_trunc_space(name);
         if (value) nxweb_url_decode(value, 0);
-        cookie=nxb_alloc_obj(nxb, sizeof(nxweb_http_cookie));
+        cookie=nxb_calloc_obj(nxb, sizeof(nxweb_http_cookie));
         cookie->name=name;
         cookie->value=value;
+        cookie_map=nx_simple_map_add(cookie_map, cookie);
       }
     }
     req->cookie=0;
   }
-  req->cookies=cookie;
+  req->cookies=cookie_map;
 }
 
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body) {
@@ -286,7 +291,8 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
   char* value=0;
   char* expect=0;
   // last header must be nulled
-  nxweb_http_header* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
+  nxweb_http_header* header_map=0;
+  nxweb_http_header* header;
   while (pl<end_of_headers) {
     name=pl;
     pl=strchr(pl, '\n');
@@ -322,13 +328,14 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
       case NXWEB_HTTP_RANGE: req->range=value; break;
       case NXWEB_HTTP_TRAILER: return -2; // not implemented
       default:
-        header=nxb_alloc_obj(nxb, sizeof(nxweb_http_header));
+        header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=name;
         header->value=value;
+        header_map=nx_simple_map_add(header_map, header);
         break;
     }
   }
-  req->headers=header;
+  req->headers=header_map;
 
   req->path_info=0;
   {
@@ -494,8 +501,10 @@ void nxweb_set_response_charset(nxweb_http_response* resp, const char* charset) 
 
 void nxweb_add_response_header(nxweb_http_response* resp, const char* name, const char* value) {
   nxb_buffer* nxb=resp->nxb;
-  if (!resp->headers) resp->headers=nxb_calloc_obj(nxb, NXWEB_MAX_RESPONSE_HEADERS*sizeof(nxweb_http_header));
-  nx_simple_map_add(resp->headers, name, value, NXWEB_MAX_RESPONSE_HEADERS);
+  nx_simple_map_entry* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
+  header->name=name;
+  header->value=value;
+  resp->headers=nx_simple_map_add(resp->headers, header);
 }
 
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) {
@@ -523,10 +532,11 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
 
   if (resp->headers) {
     // write added headers
-    int i;
+    nx_simple_map_entry* itr;
     const char* name;
     int header_name_id;
-    for (i=0; (name=resp->headers[i].name); i++) {
+    for (itr=nx_simple_map_itr_begin(resp->headers); itr; itr=nx_simple_map_itr_next(itr)) {
+      name=itr->name;
       header_name_id=identify_http_header(name, 0);
       switch (header_name_id) {
         case NXWEB_HTTP_CONNECTION:
@@ -539,10 +549,10 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
           continue;
       }
 
-      nxb_append_str(nxb, resp->headers[i].name);
+      nxb_append_str(nxb, name);
       nxb_append_char(nxb, ':');
       nxb_append_char(nxb, ' ');
-      nxb_append_str(nxb, resp->headers[i].value);
+      nxb_append_str(nxb, itr->value);
       nxb_append_str(nxb, "\r\n");
     }
   }
@@ -730,14 +740,20 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
     nxb_append_str(nxb, "User-Agent: nxweb/" REVISION "\r\n");
   }
 
+  if (req->cookie) {
+    nxb_append_str(nxb, "Cookie: ");
+    nxb_append_str(nxb, req->cookie);
+    nxb_append_str(nxb, "\r\n");
+  }
+
   if (req->headers) {
     // write added headers
-    int i;
-    for (i=0; req->headers[i].name; i++) {
-      nxb_append_str(nxb, req->headers[i].name);
+    nx_simple_map_entry* itr;
+    for (itr=nx_simple_map_itr_begin(req->headers); itr; itr=nx_simple_map_itr_next(itr)) {
+      nxb_append_str(nxb, itr->name);
       nxb_append_char(nxb, ':');
       nxb_append_char(nxb, ' ');
-      nxb_append_str(nxb, req->headers[i].value);
+      nxb_append_str(nxb, itr->value);
       nxb_append_str(nxb, "\r\n");
     }
   }
@@ -804,7 +820,8 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
   char* value=0;
   char* transfer_encoding=0;
   // last header must be nulled
-  nxweb_http_header* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
+  nxweb_http_header* header_map=0;
+  nxweb_http_header* header;
   while (pl<end_of_headers) {
     name=pl;
     pl=strchr(pl, '\n');
@@ -833,13 +850,14 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       case NXWEB_HTTP_CONNECTION: resp->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_KEEP_ALIVE: /* skip */ break;
       default:
-        header=nxb_alloc_obj(nxb, sizeof(nxweb_http_header));
+        header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=name;
         header->value=value;
+        header_map=nx_simple_map_add(header_map, header);
         break;
     }
   }
-  resp->headers=header;
+  resp->headers=header_map;
 
   if (transfer_encoding && !nx_strcasecmp(transfer_encoding, "chunked")) {
     resp->chunked_encoding=1;

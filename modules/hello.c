@@ -69,20 +69,29 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
            req->content
           );
 
+  if (req->headers) {
+    nxweb_response_append_str(resp, "<h3>Headers:</h3>\n<ul>\n");
+    nx_simple_map_entry* itr;
+    for (itr=nx_simple_map_itr_begin(req->headers); itr; itr=nx_simple_map_itr_next(itr)) {
+      nxweb_response_printf(resp, "<li>%H=%H</li>\n", itr->name, itr->value);
+    }
+    nxweb_response_append_str(resp, "</ul>\n");
+  }
+
   if (req->parameters) {
     nxweb_response_append_str(resp, "<h3>Parameters:</h3>\n<ul>\n");
-    int i;
-    for (i=0; req->parameters[i].name; i++) {
-      nxweb_response_printf(resp, "<li>%H=%H</li>\n", req->parameters[i].name, req->parameters[i].value);
+    nx_simple_map_entry* itr;
+    for (itr=nx_simple_map_itr_begin(req->parameters); itr; itr=nx_simple_map_itr_next(itr)) {
+      nxweb_response_printf(resp, "<li>%H=%H</li>\n", itr->name, itr->value);
     }
     nxweb_response_append_str(resp, "</ul>\n");
   }
 
   if (req->cookies) {
     nxweb_response_append_str(resp, "<h3>Cookies:</h3>\n<ul>\n");
-    int i;
-    for (i=0; req->cookies[i].name; i++) {
-      nxweb_response_printf(resp, "<li>%H=%H</li>\n", req->cookies[i].name, req->cookies[i].value);
+    nx_simple_map_entry* itr;
+    for (itr=nx_simple_map_itr_begin(req->cookies); itr; itr=nx_simple_map_itr_next(itr)) {
+      nxweb_response_printf(resp, "<li>%H=%H</li>\n", itr->name, itr->value);
     }
     nxweb_response_append_str(resp, "</ul>\n");
   }
