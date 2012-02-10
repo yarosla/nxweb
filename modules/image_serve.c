@@ -197,7 +197,9 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
     }
     if (width!=max_width || height!=max_height) {
       PixelWand* pwand=NewPixelWand();
-     _Bool supports_transparency=MagickGetImageFormat(image)[0]!='J'; // only JPEG does not support transparency
+      char* format=MagickGetImageFormat(image); // returns "JPEG", "GIF", or "PNG"
+      _Bool supports_transparency=*format!='J'; // only JPEG does not support transparency
+      MagickRelinquishMemory(format);
       PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
       MagickSetImageBackgroundColor(image, pwand);
       int offset_x=cmd->gravity_left? 0 : (cmd->gravity_right? -(max_width-width) : -(max_width-width)/2);
@@ -479,7 +481,7 @@ static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nx
     }
     strcpy(ipath_info, path_info);
 
-    nxweb_result res=nxweb_sendfile_try(conn, resp, ipath, ipath_info, handler->cache? DEFAULT_CACHED_TIME : 0, 0, 0, 0, mtype);
+    nxweb_result res=nxweb_sendfile_try(conn, resp, ipath, ipath_info, req->if_modified_since, handler->cache? DEFAULT_CACHED_TIME : 0, 0, 0, 0, mtype);
     if (res!=NXWEB_NEXT) {
       return res;
     }
@@ -556,9 +558,9 @@ static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nx
     struct utimbuf ut={.actime=finfo.st_atime, .modtime=finfo.st_mtime};
     utime(ipath, &ut);
 
-    return nxweb_sendfile_try(conn, resp, ipath, ipath_info, handler->cache? DEFAULT_CACHED_TIME : 0, 1, 0, 0, mtype);
+    return nxweb_sendfile_try(conn, resp, ipath, ipath_info, req->if_modified_since, handler->cache? DEFAULT_CACHED_TIME : 0, 1, 0, 0, mtype);
   }
-  return nxweb_sendfile_try(conn, resp, fpath, path_info, handler->cache? DEFAULT_CACHED_TIME : 0, 1, req->accept_gzip_encoding, 0, mtype);
+  return nxweb_sendfile_try(conn, resp, fpath, path_info, req->if_modified_since, handler->cache? DEFAULT_CACHED_TIME : 0, 1, req->accept_gzip_encoding, 0, mtype);
 }
 
 nxweb_handler image_serve_handler={.on_select=image_serve_on_select, .flags=NXWEB_HANDLE_GET};

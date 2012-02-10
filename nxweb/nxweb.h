@@ -109,6 +109,8 @@ typedef struct nxweb_http_request {
   const char* range;
   const char* path_info; // points right after uri_handler's prefix
 
+  time_t if_modified_since;
+
   const char* x_forwarded_for;
   const char* x_forwarded_host;
 
@@ -276,6 +278,9 @@ void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* mess
 int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded, // if gzip_encoded then fpath MUST end with '.gz'
         off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect
 void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, const char* content_type);
+
+int nxweb_format_http_time(char* buf, struct tm* tm);
+time_t nxweb_parse_http_time(const char* str);
 
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);

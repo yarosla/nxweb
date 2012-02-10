@@ -43,7 +43,7 @@ static const char* WEEK_DAY[]={"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 static const char* MONTH[]={"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 int nxweb_format_http_time(char* buf, struct tm* tm) {
-  // eg. Tue, 24 Jan 2012 13:05:54 GMT
+  // eg. Tue, 24 Jan 2012 13:05:54 GMT (29 chars)
   char* p=buf;
   char num[16];
   strcpy(p, WEEK_DAY[tm->tm_wday]);
@@ -74,6 +74,98 @@ int nxweb_format_http_time(char* buf, struct tm* tm) {
   *p++='T';
   *p='\0';
   return p-buf;
+}
+
+time_t nxweb_parse_http_time(const char* str) { // must be GMT
+  // eg. Tue, 24 Jan 2012 13:05:54 GMT
+  struct tm tm;
+  memset(&tm, 0, sizeof(tm));
+  const char* p=str+3;
+  if (*p++!=',') return 0;
+  if (*p++!=' ') return 0;
+  tm.tm_mday=strtol(p, (char**)&p, 10);
+  if (tm.tm_mday<=0 || tm.tm_mday>31) return 0;
+  if (*p++!=' ') return 0;
+  switch (*p++) {
+    case 'J':
+      if (*p=='a') {
+        tm.tm_mon=0;
+        if (*p++!='n') return 0;
+        break;
+      }
+      if (*p++!='u') return 0;
+      if (*p=='n') tm.tm_mon=5;
+      else if (*p=='l') tm.tm_mon=6;
+      else return 0;
+      p++;
+      break;
+    case 'F':
+      tm.tm_mon=1;
+      if (*p++!='e') return 0;
+      if (*p++!='b') return 0;
+      break;
+    case 'M':
+      if (*p++!='a') return 0;
+      if (*p=='y') tm.tm_mon=4;
+      else if (*p=='r') tm.tm_mon=2;
+      else return 0;
+      p++;
+      break;
+    case 'A':
+      if (*p=='p') {
+        tm.tm_mon=3;
+        if (*p++!='r') return 0;
+        break;
+      }
+      if (*p=='u') {
+        tm.tm_mon=7;
+        if (*p++!='g') return 0;
+        break;
+      }
+      return 0;
+    case 'S':
+      tm.tm_mon=8;
+      if (*p++!='e') return 0;
+      if (*p++!='p') return 0;
+      break;
+    case 'O':
+      tm.tm_mon=9;
+      if (*p++!='c') return 0;
+      if (*p++!='t') return 0;
+      break;
+    case 'N':
+      tm.tm_mon=10;
+      if (*p++!='o') return 0;
+      if (*p++!='v') return 0;
+      break;
+    case 'D':
+      tm.tm_mon=11;
+      if (*p++!='e') return 0;
+      if (*p++!='c') return 0;
+      break;
+    default:
+      return 0;
+  }
+  if (*p++!=' ') return 0;
+  tm.tm_year=strtol(p, (char**)&p, 10)-1900;
+  if (tm.tm_year<0 || tm.tm_year>1000) return 0; // from 1900 to 2900
+  if (*p++!=' ') return 0;
+  tm.tm_hour=strtol(p, (char**)&p, 10);
+  if (tm.tm_hour<0 || tm.tm_hour>=24) return 0;
+  if (*p++!=':') return 0;
+  tm.tm_min=strtol(p, (char**)&p, 10);
+  if (tm.tm_min<0 || tm.tm_min>=60) return 0;
+  if (*p++!=':') return 0;
+  tm.tm_sec=strtol(p, (char**)&p, 10);
+  if (tm.tm_sec<0 || tm.tm_sec>=60) return 0;
+  if (*p++!=' ') return 0;
+  if (*p++!='G') return 0;
+  if (*p++!='M') return 0;
+  if (*p++!='T') return 0;
+  tm.tm_isdst=-1; // auto-detect
+  time_t t=mktime(&tm) - timezone;
+  if (t==-1) return 0;
+  return t;
 }
 
 
@@ -196,6 +288,7 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_CONTENT_TYPE,
   NXWEB_HTTP_CONTENT_LENGTH,
   NXWEB_HTTP_ACCEPT_ENCODING,
+  NXWEB_HTTP_IF_MODIFIED_SINCE,
   NXWEB_HTTP_TRANSFER_ENCODING
 };
 
@@ -234,6 +327,7 @@ static int identify_http_header(const char* name, int name_len) {
       return NXWEB_HTTP_UNKNOWN;
     case 17:
       if (first_char=='t') return nx_strcasecmp(name, "Transfer-Encoding")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_TRANSFER_ENCODING;
+      if (first_char=='i') return nx_strcasecmp(name, "If-Modified-Since")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_IF_MODIFIED_SINCE;
       return NXWEB_HTTP_UNKNOWN;
     default:
       return NXWEB_HTTP_UNKNOWN;
@@ -324,6 +418,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
       case NXWEB_HTTP_CONTENT_LENGTH: req->content_length=atol(value); break;
       case NXWEB_HTTP_ACCEPT_ENCODING: req->accept_encoding=value; break;
       case NXWEB_HTTP_TRANSFER_ENCODING: req->transfer_encoding=value; break;
+      case NXWEB_HTTP_IF_MODIFIED_SINCE: req->if_modified_since=nxweb_parse_http_time(value); break;
       case NXWEB_HTTP_CONNECTION: req->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_RANGE: req->range=value; break;
       case NXWEB_HTTP_TRAILER: return -2; // not implemented
@@ -513,6 +608,12 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
 
   nxb_buffer* nxb=resp->nxb;
 
+  _Bool must_not_have_body=(resp->status_code==304 || resp->status_code==204 || resp->status_code==205);
+  if (must_not_have_body) {
+    if (resp->content_length) nxweb_log_error("content_length specified for response that must not contain entity body");
+    if (resp->gzip_encoded) nxweb_log_error("gzip encoding specified for response that must not contain entity body");
+  }
+
   nxb_make_room(nxb, 200);
   nxb_append_fast(nxb, "HTTP/1.", 7);
   nxb_append_char_fast(nxb, resp->http11? '1':'0');
@@ -556,13 +657,18 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
       nxb_append_str(nxb, "\r\n");
     }
   }
-  nxb_append_str(nxb, "Content-Type: ");
-  nxb_append_str(nxb, resp->content_type? resp->content_type : "text/html");
-  if (resp->content_charset) {
-    nxb_append_str(nxb, "; charset=");
-    nxb_append_str(nxb, resp->content_charset);
+  if (resp->content_length) {
+    nxb_append_str(nxb, "Content-Type: ");
+    nxb_append_str(nxb, resp->content_type? resp->content_type : "text/html");
+    if (resp->content_charset) {
+      nxb_append_str(nxb, "; charset=");
+      nxb_append_str(nxb, resp->content_charset);
+    }
+    nxb_append_str(nxb, "\r\n");
+    if (resp->gzip_encoded) {
+      nxb_append_str(nxb, "Content-Encoding: gzip\r\n");
+    }
   }
-  nxb_append_str(nxb, "\r\n");
   if (resp->last_modified) {
     gmtime_r(&resp->last_modified, &tm);
     nxb_make_room(nxb, 48);
@@ -572,18 +678,18 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     nxb_blank_fast(nxb, nxweb_format_http_time(nxb_get_room(nxb, 0), &tm));
     nxb_append_str_fast(nxb, "\r\n");
   }
-  if (resp->gzip_encoded) {
-    nxb_append_str(nxb, "Content-Encoding: gzip\r\n");
+  if (resp->content_length || !must_not_have_body) {
+    nxb_make_room(nxb, 48);
+    if (resp->content_length>=0) {
+      nxb_append_str_fast(nxb, "Content-Length: ");
+      nxb_append_str_fast(nxb, uint_to_decimal_string(resp->content_length, buf, sizeof(buf)));
+    }
+    else {
+      nxb_append_str_fast(nxb, "Transfer-Encoding: chunked");
+    }
+    nxb_append_fast(nxb, "\r\n", 2);
   }
-  nxb_make_room(nxb, 48);
-  if (resp->content_length>=0) {
-    nxb_append_str_fast(nxb, "Content-Length: ");
-    nxb_append_str_fast(nxb, uint_to_decimal_string(resp->content_length, buf, sizeof(buf)));
-  }
-  else {
-    nxb_append_str_fast(nxb, "Transfer-Encoding: chunked");
-  }
-  nxb_append_fast(nxb, "\r\n\r\n", 5);
+  nxb_append(nxb, "\r\n", 3);
 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
 }
