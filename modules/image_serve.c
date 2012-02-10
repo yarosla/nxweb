@@ -41,12 +41,34 @@
 
 #include "sendfile.h"
 
+#ifdef WITH_SSL
+#include <nettle/sha.h>
+#else
 #include "../deps/sha1-c/sha1.h"
+#endif
+
+/**
+ * image_serv module can do the following:
+ *
+ *  * generate image thumbnails on the fly using following commands (inserted into file name):
+ *    - filename.100x100.ext -- scale filename.ext to fit the box
+ *    - filename.c100x100.ext -- scale & crop to fit the box exactly
+ *    - filename.f100x100.ext -- scale & fill to fit the box exactly
+ *    - filename.f100x100xFF8800.ext -- provide fill color (hex in uppercase only)
+ *    - filename.f100x100tl.ext -- specify gravity for fill & crop (t, r, b, l, tl, tr, bl, br)
+ *  * watermark images by watermark.png file if such a file exists up in directory tree
+ *  * cache generated files in cdir (see handler config record)
+ *  * transparently serve all static files using sendfile module (including its memory caching abilities)
+ *
+ * Only GIF, PNG and JPG files supported.
+ *
+ * Not all commands will be allowed by default. See notes for allowed_cmds[] below.
+ */
 
 /**
  * ImageMagick Notes
  *
- * Using ImageMagick 6.7.5-3 Q16 built from source.
+ * Tested with ImageMagick 6.7.5-3 Q16 built from source.
  * Lots of valgrind errors when using default config (need to investigate more).
  * Using the following config have reduced errors to a minimum:
  *   ./configure --prefix=/opt/ImageMagick-6.7.5-3-noomp --disable-openmp --disable-installed \
@@ -54,6 +76,9 @@
  *
  * Perhaps need to disable more unneeded modules like ps, x, etc.
  */
+
+// don't forget to change secret key in your setup
+#define CMD_SIGN_SECRET_KEY "XbLBZeqSsUgfKWooMKoh0r1gjzqG856yVCMLf1pz"
 
 #define WATERMARK_FILE_NAME "watermark.png"
 #define MAX_PATH 1024
@@ -84,15 +109,25 @@ typedef struct isrv_cmd {
   char color[8]; // "#FF00AA\0"
 } isrv_cmd;
 
+/**
+ * Only commands listed below will be allowed (to protect from DoS).
+ * Arbitrary command can also be executed if signed by QUERY_STRING.
+ * Eg. GET /is/benchmark/watermark.c500x500.png?1B4A0DF16BFF7050B9C7C6A63576F8F2D1695CF1
+ * Signature calculated as SHA1(uri_path+CMD_SIGN_SECRET_KEY)
+ */
 
 static isrv_cmd allowed_cmds[]={
   {.cmd='s', .width=50, .height=50},
   {.cmd='s', .width=100, .height=100},
+  {.cmd='s', .width=100, .height=0},
+  {.cmd='s', .width=500, .height=0},
   {.cmd='s', .width=500, .height=500},
   {.cmd='c', .width=50, .height=50},
   {.cmd='c', .width=100, .height=100},
   {.cmd='f', .width=50, .height=50},
-  {.cmd='f', .width=100, .height=100}
+  {.cmd='f', .width=100, .height=100},
+  {.cmd='f', .width=100, .height=100, .color="#FF8800"},
+  {.cmd=0}
 };
 
 
@@ -125,23 +160,16 @@ static int locate_watermark(const char* fpath, const char* path_info, char* wpat
 static int process_cmd(const char* fpath, const char* path_info, MagickWand* image, isrv_cmd* cmd) {
   int width=MagickGetImageWidth(image);
   int height=MagickGetImageHeight(image);
-/*
-  nxweb_log_error("cmd=%c width=%d height=%d color=%s", cmd->cmd, cmd->width, cmd->height, cmd->color);
-  const char* bgc=cmd->color[0]? cmd->color : (supports_transparency?"none":"white");
-  nxweb_log_error("Alpha=%d AlChDepth=%ld ComprQ=%ld Fmt=%s supports_transparency=%d bgc=%s", MagickGetImageAlphaChannel(image),
-          MagickGetImageChannelDepth(image, AlphaChannel),
-          MagickGetImageCompressionQuality(image),
-          MagickGetImageFormat(image),
-          supports_transparency, bgc);
-*/
   if (width<=0 || height<=0) {
     nxweb_log_error("illegal width or height of image %s", fpath);
     return 0;
   }
   int dirty=0;
+  int max_width=cmd->width;
+  int max_height=cmd->height;
   if (cmd->cmd=='s') {
-    int max_width=cmd->width;
-    int max_height=cmd->height;
+    if (max_width==0) max_width=1000000;
+    if (max_height==0) max_height=1000000;
     if (width>max_width || height>max_height) { // don't enlarge!
       double scale_x=(double)max_width/(double)width;
       double scale_y=(double)max_height/(double)height;
@@ -158,8 +186,6 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
     }
   }
   else if (cmd->cmd=='c') {
-    int max_width=cmd->width;
-    int max_height=cmd->height;
     double scale_x=(double)max_width/(double)width;
     double scale_y=(double)max_height/(double)height;
     double scale=max(scale_x, scale_y);
@@ -184,8 +210,6 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
     }
   }
   else if (cmd->cmd=='f') {
-    int max_width=cmd->width;
-    int max_height=cmd->height;
     if (width>max_width || height>max_height) { // don't enlarge!
       double scale_x=(double)max_width/(double)width;
       double scale_y=(double)max_height/(double)height;
@@ -221,7 +245,7 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
       MagickReadImage(watermark, wpath);
       int wwidth=MagickGetImageWidth(watermark);
       int wheight=MagickGetImageHeight(watermark);
-      if (width>2*wwidth && height>=2*wheight) { // don't watermark images smaller than 2 x watermark
+      if (width>=2*wwidth && height>=2*wheight) { // don't watermark images smaller than 2 x watermark
         MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
         MagickCompositeImage(image, watermark, OverCompositeOp, width-wwidth-10, height-wheight-10);
         dirty=1;
@@ -313,6 +337,7 @@ static int decode_cmd(char* path, isrv_cmd* cmd) { // modifies path
     }
   }
   if (*cp=='.') {
+    if ((c!='s' && (w==0 || h==0)) || (c=='s' && w==0 && h==0)) return -1; // wildcards allowed for scale command only and only for one dimension
     cmd->cmd=c;
     cmd->width=w;
     cmd->height=h;
@@ -363,10 +388,32 @@ static int copy_file(const char* src, const char* dst) {
 
 static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
-static void sha1(const char* str, char* result) {
+#ifdef WITH_SSL
+
+static void sha1sign(const char* str, unsigned str_len, char* result) {
+  struct sha1_ctx sha;
+  uint8_t res[SHA1_DIGEST_SIZE];
+  sha1_init(&sha);
+  sha1_update(&sha, str_len, (uint8_t*)str);
+  sha1_update(&sha, sizeof(CMD_SIGN_SECRET_KEY)-1, (uint8_t*)CMD_SIGN_SECRET_KEY);
+  sha1_digest(&sha, SHA1_DIGEST_SIZE, res);
+  int i;
+  char* p=result;
+  for (i=0; i<SHA1_DIGEST_SIZE; i++) {
+    uint32_t n=res[i];
+    *p++=HEX_DIGIT(n>>4);
+    *p++=HEX_DIGIT(n);
+  }
+  *p='\0';
+}
+
+#else
+
+static void sha1sign(const char* str, unsigned str_len, char* result) {
   SHA1Context sha;
   SHA1Reset(&sha);
-  SHA1Input(&sha, (const unsigned char*)str, strlen(str));
+  SHA1Input(&sha, (const unsigned char*)str, str_len);
+  SHA1Input(&sha, (const unsigned char*)CMD_SIGN_SECRET_KEY, sizeof(CMD_SIGN_SECRET_KEY)-1);
   SHA1Result(&sha);
   int i;
   char* p=result;
@@ -384,6 +431,8 @@ static void sha1(const char* str, char* result) {
   *p='\0';
 }
 
+#endif
+
 static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
@@ -398,8 +447,8 @@ static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nx
   assert(rlen<sizeof(fpath));
   strcpy(fpath, document_root);
   char* path_info=fpath+rlen;
-  const char* q=strchr(req->path_info, '?');
-  int plen=q? q-req->path_info : strlen(req->path_info);
+  const char* query_string=strchr(req->path_info, '?');
+  int plen=query_string? query_string-req->path_info : strlen(req->path_info);
   if (rlen+plen>sizeof(fpath)-64) { // leave room for index file name etc.
     nxweb_send_http_error(resp, 414, "Request-URI Too Long");
     return NXWEB_ERROR;
@@ -418,7 +467,7 @@ static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nx
   plen=strlen(path_info);
 
   const nxweb_mime_type* mtype=nxweb_get_mime_type_by_ext(path_info);
-  if (!strcmp(mtype->ext, "jpg") || !strcmp(mtype->ext, "png") || !strcmp(mtype->ext, "gif")) {
+  if (!strcmp(mtype->ext, "jpg") || !strcmp(mtype->ext, "png") || !strcmp(mtype->ext, "gif") || !strcmp(mtype->ext, "jpeg")) {
     char ipath[MAX_PATH];
     int clen=strlen(image_cache_root);
     assert(clen<sizeof(ipath));
@@ -442,11 +491,30 @@ static nxweb_result image_serve_on_select(nxweb_http_server_connection* conn, nx
     }
 
     isrv_cmd cmd;
-    char sha1_result[41];
-    sha1(ipath_info, sha1_result);
-    nxweb_log_error("pi=%s sha1=%s", ipath_info, sha1_result);
     if (!decode_cmd(path_info, &cmd)) {
-      // TODO check if cmd is allowed
+      // check if cmd is allowed
+      isrv_cmd* ac=allowed_cmds;
+      _Bool allowed=0;
+      while (ac->cmd) {
+        if (cmd.cmd==ac->cmd && cmd.width==ac->width && cmd.height==ac->height
+                && cmd.gravity_top==ac->gravity_top && cmd.gravity_bottom==ac->gravity_bottom
+                && cmd.gravity_left==ac->gravity_left && cmd.gravity_right==ac->gravity_right
+                && !strcmp(cmd.color, ac->color)) {
+          allowed=1;
+          break;
+        }
+        ac++;
+      }
+      if (!allowed && query_string) {
+        char signature[41];
+        sha1sign(req->uri, query_string - req->uri, signature);
+        //nxweb_log_error("uri=%s sha1sign=%s query_string=%s", req->uri, signature, query_string+1);
+        if (!strcmp(query_string+1, signature)) allowed=1;
+      }
+      if (!allowed) {
+        nxweb_send_http_error(resp, 403, "Forbidden");
+        return NXWEB_ERROR;
+      }
     }
 
     struct stat finfo;
