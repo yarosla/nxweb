@@ -91,7 +91,8 @@ typedef struct nxweb_handler {
   nxe_data param;
   const char* uri;
   const char* dir;
-  const char* cdir;
+  const char* charset;
+  const char* index_file;
   const char* gzip_dir;
   const char* img_dir;
   _Bool cache:1;

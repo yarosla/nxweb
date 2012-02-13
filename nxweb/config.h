@@ -48,6 +48,7 @@ extern "C" {
 #define NXWEB_MAX_CACHED_ITEMS 500
 #define NXWEB_MAX_CACHED_ITEM_SIZE 32768
 #define NXWEB_DEFAULT_CHARSET "utf-8"
+#define NXWEB_DEFAULT_INDEX_FILE "index.htm"
 
 // All paths are relative to working directory:
 #define SSL_CERT_FILE "ssl/server_cert.pem"

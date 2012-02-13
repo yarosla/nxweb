@@ -295,6 +295,7 @@ void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, c
 
 int nxweb_format_http_time(char* buf, struct tm* tm);
 time_t nxweb_parse_http_time(const char* str);
+int nxweb_remove_dots_from_uri_path(char* path);
 
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);

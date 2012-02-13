@@ -58,7 +58,9 @@ NXWEB_SET_HANDLER(nxweb_8777, "/8777", &nxweb_http_proxy_handler, .priority=1000
 
 // This serves static files from $(work_dir)/html directory (see modules/sendfile.c):
 NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
-        .filters={&image_filter, &gzip_filter}, .dir="html", .gzip_dir="cache/gzip", .img_dir="cache/img", .cache=1);
+        .filters={&image_filter, &gzip_filter}, .dir="html",
+        .charset=NXWEB_DEFAULT_CHARSET, .index_file=NXWEB_DEFAULT_INDEX_FILE,
+        .gzip_dir="cache/gzip", .img_dir="cache/img", .cache=1);
 
 
 // Server main():
