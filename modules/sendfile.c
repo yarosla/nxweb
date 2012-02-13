@@ -36,7 +36,9 @@
 #include "../deps/ulib/alignhash_tpl.h"
 #include "../deps/ulib/hash.h"
 
-enum {FC_ERR_NO_ERROR=0, FC_ERR_NOT_FOUND, FC_ERR_IS_DIR, FC_ERR_TYPE};
+#define MAX_PATH 1024
+
+enum {FC_ERR_NO_ERROR=0, FC_ERR_NOT_FOUND, FC_ERR_REDIRECT, FC_ERR_TYPE};
 
 typedef struct file_cache_rec {
   nxe_ssize_t content_length;
@@ -177,7 +179,7 @@ static nxweb_result try_cache(nxweb_http_server_connection* conn, nxweb_http_res
         case FC_ERR_NOT_FOUND:
           pthread_mutex_unlock(&_file_cache_mutex);
           return NXWEB_NEXT;
-        case FC_ERR_IS_DIR:
+        case FC_ERR_REDIRECT:
           pthread_mutex_unlock(&_file_cache_mutex);
           assert(!expect_gzip);
           strcat(path_info, "/");
@@ -286,7 +288,7 @@ RETRY:
     finfo=&_finfo;
   }
   if (S_ISDIR(finfo->st_mode) && !try_gzip_encoding) {
-    if (cache_error) cache_store_error(fpath, loop_time, FC_ERR_IS_DIR);
+    if (cache_error) cache_store_error(fpath, loop_time, FC_ERR_REDIRECT);
     strcat(path_info, "/");
     nxweb_send_redirect(resp, 302, path_info);
     nxweb_start_sending_response(conn, resp);
@@ -378,7 +380,7 @@ RETRY:
     nx_free(rec);
   }
 
-  int result=nxweb_send_file(resp, fpath, finfo, try_gzip_encoding, 0, 0, mtype, DEFAULT_CHARSET);
+  int result=nxweb_send_file(resp, fpath, path_info-fpath, finfo, try_gzip_encoding, 0, 0, mtype, DEFAULT_CHARSET);
   if (result!=0) { // should not happen
     nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
     nxweb_send_http_error(resp, 500, "Internal Server Error");
@@ -396,7 +398,83 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   const char* document_root=handler->dir;
   assert(document_root);
 
-  char fpath[2048];
+  char fpath[MAX_PATH];
+  int rlen;
+  char* path_info;
+  if (resp->cache_key) {
+    assert(strlen(resp->cache_key)+1<sizeof(fpath));
+    strcpy(fpath, resp->cache_key);
+    rlen=resp->cache_key_root_len;
+    path_info=fpath+rlen;
+  }
+  else {
+    rlen=strlen(document_root);
+    assert(rlen<sizeof(fpath));
+    strcpy(fpath, document_root);
+    path_info=fpath+rlen;
+    const char* q=strchr(req->path_info, '?');
+    int plen=q? q-req->path_info : strlen(req->path_info);
+    if (rlen+plen>sizeof(fpath)-64) { // leave room for index file name etc.
+      nxweb_send_http_error(resp, 414, "Request-URI Too Long");
+      return NXWEB_ERROR;
+    }
+    strncat(path_info, req->path_info, plen);
+    nxweb_url_decode(path_info, 0);
+    plen=strlen(path_info);
+    if (plen>0 && path_info[plen-1]=='/') { // directory index
+      strcat(path_info+plen, INDEX_FILE);
+    }
+
+    if (nxweb_remove_dots_from_uri_path(path_info)) {
+      //nxweb_send_http_error(resp, 404, "Not Found");
+      return NXWEB_NEXT;
+    }
+  }
+
+  struct stat finfo;
+  if (stat(fpath, &finfo)==-1) {
+    return NXWEB_NEXT;
+  }
+
+  if (S_ISDIR(finfo.st_mode)) {
+    nxweb_send_redirect2(resp, 302, path_info, "/");
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_OK;
+  }
+/*
+  if (!S_ISREG(finfo.st_mode)) { // symlink or ...?
+    nxweb_send_http_error(resp, 403, "Forbidden");
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_ERROR;
+  }
+*/
+
+  if (req->if_modified_since && finfo.st_mtime<=req->if_modified_since) {
+    resp->status_code=304;
+    resp->status="Not Modified";
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_OK;
+  }
+
+  int result=nxweb_send_file(resp, fpath, rlen, &finfo, 0, 0, 0, resp->mtype, DEFAULT_CHARSET);
+  if (result!=0) { // should not happen
+    nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
+    nxweb_send_http_error(resp, 500, "Internal Server Error");
+    return NXWEB_ERROR;
+  }
+
+  nxweb_start_sending_response(conn, resp);
+  return NXWEB_OK;
+}
+
+static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
+
+  nxweb_handler* handler=conn->handler;
+  const char* document_root=handler->dir;
+  assert(document_root);
+
+  char fpath[MAX_PATH];
   int rlen=strlen(document_root);
   assert(rlen<sizeof(fpath));
   strcpy(fpath, document_root);
@@ -418,8 +496,37 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
     //nxweb_send_http_error(resp, 404, "Not Found");
     return NXWEB_NEXT;
   }
-
-  return nxweb_sendfile_try(conn, resp, fpath, path_info, req->if_modified_since, handler->cache? DEFAULT_CACHED_TIME : 0, 1, req->accept_gzip_encoding, 0, 0);
+  resp->cache_key=nxb_copy_obj(req->nxb, fpath, strlen(fpath)+1);
+  resp->cache_key_root_len=rlen;
+  return NXWEB_OK;
 }
 
-nxweb_handler sendfile_handler={.on_select=sendfile_on_select, .flags=NXWEB_HANDLE_GET};
+static nxweb_result sendfile_on_serve_from_cache(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
+
+  struct stat* finfo=&resp->sendfile_info;
+
+  if (S_ISDIR(finfo->st_mode)) {
+    nxweb_send_redirect2(resp, 302, resp->cache_key+resp->cache_key_root_len, "/");
+    return NXWEB_OK;
+  }
+/*
+  if (!S_ISREG(finfo->st_mode)) { // symlink or ...?
+    nxweb_send_http_error(resp, 403, "Forbidden");
+    return NXWEB_OK;
+  }
+*/
+
+  int result=nxweb_send_file(resp, (char*)resp->cache_key, resp->cache_key_root_len, finfo, 0, 0, 0, resp->mtype, DEFAULT_CHARSET);
+  if (result!=0) { // should not happen
+    nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", resp->cache_key);
+    nxweb_send_http_error(resp, 500, "Internal Server Error");
+    return NXWEB_ERROR;
+  }
+
+  return NXWEB_OK;
+}
+
+nxweb_handler sendfile_handler={.on_select=sendfile_on_select,
+        .on_generate_cache_key=sendfile_generate_cache_key, .on_serve_from_cache=sendfile_on_serve_from_cache,
+        .flags=NXWEB_HANDLE_GET};

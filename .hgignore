@@ -5,12 +5,14 @@ nxweb_error_log
 nxweb\.pid
 nxweb\.layout
 html/benchmark
+cache
 experimental
 private
 upload\.tmp
 .*\.crt
 .*\.key
 .*\.pem
+.*\.psd
 build
 dist
 test

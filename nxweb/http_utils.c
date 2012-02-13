@@ -695,9 +695,22 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
 }
 
 void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* location) {
+  nxweb_send_redirect2(resp, code, location, 0);
+}
+
+void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info) {
   char buf[32];
 
   nxb_buffer* nxb=resp->nxb;
+
+  resp->status_code=code;
+  resp->status=code==302? "Found":(code==301? "Moved Permanently":"Redirect");
+  resp->content=0;
+  resp->content_type=0;
+  resp->content_length=0;
+  resp->sendfile_path=0;
+  resp->sendfile_fd=0;
+  resp->content_out=0;
 
   nxb_make_room(nxb, 250);
   nxb_append_fast(nxb, "HTTP/1.", 7);
@@ -705,7 +718,7 @@ void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* locati
   nxb_append_char_fast(nxb, ' ');
   nxb_append_str_fast(nxb, uint_to_decimal_string(code, buf, sizeof(buf)));
   nxb_append_char_fast(nxb, ' ');
-  nxb_append_str(nxb, code==302? "Found":(code==301? "Moved Permanently":"Redirect"));
+  nxb_append_str(nxb, resp->status);
   nxb_append_str_fast(nxb, "\r\n"
                       "Server: nxweb/" REVISION "\r\n"
                       "Date: ");
@@ -722,6 +735,7 @@ void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* locati
     nxb_append_str(nxb, resp->host);
     nxb_append_str(nxb, location);
   }
+  if (location_path_info) nxb_append_str(nxb, location_path_info);
   nxb_append_str(nxb, "\r\n\r\n");
 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
@@ -741,10 +755,14 @@ void nxweb_send_http_error(nxweb_http_response *resp, int code, const char* mess
   int size;
   resp->content=nxb_finish_stream(nxb, &size);
   resp->content_length=size;
+  resp->content_type="text/html";
+  resp->sendfile_path=0;
+  resp->sendfile_fd=0;
+  resp->content_out=0;
   //resp->keep_alive=0; // close connection after error response
 }
 
-int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset) {
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, const struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset) {
   if (fpath==0) { // cancel sendfile
     if (resp->sendfile_fd) close(resp->sendfile_fd);
     resp->sendfile_fd=0;
@@ -768,9 +786,11 @@ int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* f
     return -3;
   }
 
-  int fd=open(fpath, O_RDONLY|O_NONBLOCK);
-  if (fd==-1) return -1;
-  resp->sendfile_fd=fd;
+  //int fd=open(fpath, O_RDONLY|O_NONBLOCK);
+  //if (fd==-1) return -1;
+  resp->sendfile_path=fpath;
+  resp->sendfile_path_root_len=fpath_root_len;
+  //resp->sendfile_fd=fd;
   resp->sendfile_offset=offset;
   resp->content_length=size? size : finfo->st_size-offset;
   resp->sendfile_end=offset+resp->content_length;
@@ -778,13 +798,17 @@ int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* f
   resp->gzip_encoded=gzip_encoded;
   if (!mtype) {
     int flen;
+    int ends_with_gz=0;
     if (gzip_encoded) {
       flen=strlen(fpath);
-      fpath[flen-3]='\0'; // cut .gz
+      ends_with_gz=(fpath[flen-3]=='.' && fpath[flen-2]=='g' && fpath[flen-1]=='z');
+      if (ends_with_gz) fpath[flen-3]='\0'; // cut .gz
     }
     mtype=nxweb_get_mime_type_by_ext(fpath);
-    if (gzip_encoded) fpath[flen-3]='.'; // restore
+    if (ends_with_gz) fpath[flen-3]='.'; // restore
   }
+  resp->sendfile_info=*finfo;
+  resp->mtype=mtype;
   resp->content_type=mtype->mime;
   if (mtype->charset_required) resp->content_charset=charset;
   return 0;

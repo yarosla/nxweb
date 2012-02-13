@@ -28,6 +28,7 @@
 
 #include <unistd.h>
 #include <sys/socket.h>
+#include <fcntl.h>
 
 static const char* response_100_continue = "HTTP/1.1 100 Continue\r\n\r\n";
 
@@ -453,25 +454,40 @@ void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nx
   nxe_loop* loop=hsp->data_in.super.loop;
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hsp->timer_read);
   if (!resp->nxb) resp->nxb=hsp->nxb;
-  if (!hsp->resp_body_in.pair) {
-    if (!resp->content && !resp->sendfile_fd) {
-      int size;
-      nxb_get_unfinished(resp->nxb, &size);
-      if (size) {
-        resp->content=nxb_finish_stream(resp->nxb, &size);
-        resp->content_length=size;
-      }
+
+  if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd && !resp->content_out) {
+    int size;
+    nxb_get_unfinished(resp->nxb, &size);
+    if (size) {
+      resp->content=nxb_finish_stream(resp->nxb, &size);
+      resp->content_length=size;
     }
-    if (resp->content && resp->content_length>0) {
-      nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
-      nxe_connect_streams(loop, &hsp->ob.data_out, &hsp->resp_body_in);
-    }
-    else if (resp->sendfile_fd && resp->content_length>0) {
+  }
+
+  if (resp->content && resp->content_length>0) {
+    nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
+    nxe_connect_streams(loop, &hsp->ob.data_out, &hsp->resp_body_in);
+  }
+  else if (resp->sendfile_fd && resp->content_length>0) {
+    nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+    nxe_connect_streams(loop, &hsp->fb.data_out, &hsp->resp_body_in);
+  }
+  else if (resp->sendfile_path && resp->content_length>0) {
+    resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
+    if (resp->sendfile_fd!=-1) {
       nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
       nxe_connect_streams(loop, &hsp->fb.data_out, &hsp->resp_body_in);
     }
+    else {
+      nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
+    }
   }
+  else if (resp->content_out) {
+    nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
+  }
+
   if (!resp->raw_headers) _nxweb_prepare_response_headers(loop, resp);
+
   if (!req->sending_100_continue) {
     hsp->resp_headers_ptr=resp->raw_headers;
     nxe_istream_set_ready(loop, &hsp->data_out);

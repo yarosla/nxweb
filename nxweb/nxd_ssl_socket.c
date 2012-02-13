@@ -284,6 +284,7 @@ static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* pt
       if (bytes_received!=GNUTLS_E_AGAIN) nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
       return 0;
     }
+/*
     if (bytes_received<size) {
       nxe_istream_unset_ready(is);
       if (bytes_received==0) {
@@ -291,6 +292,7 @@ static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* pt
         return 0;
       }
     }
+*/
     return bytes_received;
   }
   return 0;

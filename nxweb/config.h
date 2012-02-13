@@ -43,6 +43,11 @@ extern "C" {
 #define NXWEB_RBUF_SIZE 16384
 #define NXWEB_PROXY_RETRY_COUNT 4
 #define NXWEB_CONN_NXB_SIZE (NXWEB_MAX_REQUEST_HEADERS_SIZE+1024)
+#define NXWEB_MAX_FILTERS 16
+#define NXWEB_DEFAULT_CACHED_TIME 30000000
+#define NXWEB_MAX_CACHED_ITEMS 500
+#define NXWEB_MAX_CACHED_ITEM_SIZE 32768
+#define NXWEB_DEFAULT_CHARSET "utf-8"
 
 // All paths are relative to working directory:
 #define SSL_CERT_FILE "ssl/server_cert.pem"

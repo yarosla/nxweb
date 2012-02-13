@@ -42,7 +42,9 @@ typedef enum nxweb_result {
   NXWEB_OK=0,
   NXWEB_NEXT=1,
   NXWEB_ASYNC=2,
-  NXWEB_ERROR=-1
+  NXWEB_ERROR=-1,
+  NXWEB_REVALIDATE=-2,
+  NXWEB_MISS=-3
 } nxweb_result;
 
 typedef enum nxweb_handler_flags {
@@ -61,7 +63,24 @@ typedef enum nxweb_handler_flags {
 
 struct nxweb_http_server_connection;
 
-typedef nxweb_result (*nxweb_handler_callback)(/*nxweb_handler_event evt,*/ struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+typedef nxweb_result (*nxweb_handler_callback)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+
+typedef struct nxweb_filter_data {
+  void (*finalize)(struct nxweb_filter_data* fdata);
+  const char* cache_key;
+  int cache_key_root_len;
+  struct stat cache_key_finfo;
+  unsigned bypass:1;
+} nxweb_filter_data;
+
+typedef struct nxweb_filter {
+  const char* name;
+  nxweb_filter_data* (*init)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+  const char* (*decode_uri)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri);
+  nxweb_result (*translate_cache_key)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len);
+  nxweb_result (*serve_from_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  nxweb_result (*do_filter)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+} nxweb_filter;
 
 typedef struct nxweb_handler {
   const char* name;
@@ -73,9 +92,15 @@ typedef struct nxweb_handler {
   const char* uri;
   const char* dir;
   const char* cdir;
+  const char* gzip_dir;
+  const char* img_dir;
   _Bool cache:1;
   int idx;
   struct nxweb_handler* next;
+  nxweb_filter* filters[NXWEB_MAX_FILTERS];
+  int num_filters;
+  nxweb_handler_callback on_generate_cache_key;
+  nxweb_handler_callback on_serve_from_cache;
   nxweb_handler_callback on_select;
   nxweb_handler_callback on_headers;
   nxweb_handler_callback on_post_data;
@@ -189,15 +214,16 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           _nxweb_register_handler(&_nxweb_ ## _name ## _handler, (_base)); \
         }
 
-static inline void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http_response* resp) {
-  nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
-}
+void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http_response* resp);
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good);
 
 static inline nxe_time_t nxweb_get_loop_time(nxweb_http_server_connection* conn) {
   return conn->tdata->loop->current_time;
 }
+
+nxweb_result nxweb_cache_try(nxweb_http_server_connection* conn, nxweb_http_response* resp, const char* key, time_t if_modified_since, time_t revalidated_mtime);
+nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxweb_http_response* resp);
 
 extern nxweb_handler nxweb_http_proxy_handler;
 

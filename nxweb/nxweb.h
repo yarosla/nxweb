@@ -118,6 +118,8 @@ typedef struct nxweb_http_request {
   nxweb_http_parameter* parameters;
   nxweb_http_cookie* cookies;
 
+  struct nxweb_filter_data* filter_data[NXWEB_MAX_FILTERS];
+
   nxweb_chunked_decoder_state cdstate;
 
 } nxweb_http_request;
@@ -148,9 +150,18 @@ typedef struct nxweb_http_response {
 
   nxweb_chunked_decoder_state cdstate;
 
+  const char* cache_key;
+  int cache_key_root_len;
+  const struct nxweb_mime_type* mtype;
+
+  const char* sendfile_path;
+  int sendfile_path_root_len;
   int sendfile_fd;
   off_t sendfile_offset;
   off_t sendfile_end;
+  struct stat sendfile_info;
+
+  nxe_istream* content_out;
 
 } nxweb_http_response;
 
@@ -158,6 +169,8 @@ typedef struct nxweb_mime_type {
   const char* ext; // must be lowercase
   const char* mime;
   unsigned charset_required:1;
+  unsigned gzippable:1;
+  unsigned image:1;
 } nxweb_mime_type;
 
 #include "nxd.h"
@@ -274,8 +287,9 @@ static inline void nxweb_response_append_uint(nxweb_http_response* resp, unsigne
 }
 
 void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location);
+void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info);
 void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* message);
-int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded, // if gzip_encoded then fpath MUST end with '.gz'
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, const struct stat* finfo, int gzip_encoded,
         off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect
 void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, const char* content_type);
 

@@ -127,7 +127,7 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     nxe_subscribe(loop, &hpx->hcp.events_pub, &rdata->proxy_events_sub);
     nxd_rbuffer_init(&rdata->rb_resp, rdata->rbuf, NXWEB_RBUF_SIZE);
     nxe_connect_streams(loop, &hpx->hcp.resp_body_out, &rdata->rb_resp.data_in);
-    nxe_connect_streams(loop, &rdata->rb_resp.data_out, &conn->hsp.resp_body_in);
+    //nxe_connect_streams(loop, &rdata->rb_resp.data_out, &conn->hsp.resp_body_in);
     hpx->hcp.chunked_do_not_decode=1;
 
     if (req->content_length) { // receive body
@@ -213,6 +213,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->content_length=presp->content_length;
     resp->chunked_encoding=presp->chunked_encoding;
     resp->headers=presp->headers;
+    resp->content_out=&rdata->rb_resp.data_out;
     nxweb_start_sending_response(conn, resp);
     rdata->response_sending_started=1;
     //nxweb_log_error("proxy request [%d] start sending response", conn->hpx->hcp.request_count);

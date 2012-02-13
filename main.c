@@ -39,13 +39,16 @@ extern nxweb_handler benchmark_handler_inworker;
 extern nxweb_handler test_handler;
 extern nxweb_handler sendfile_handler;
 
+extern nxweb_filter gzip_filter;
+extern nxweb_filter image_filter;
+
 // These are benchmarking handlers (see modules/benchmark.c):
 NXWEB_SET_HANDLER(benchmark, "/benchmark-inprocess", &benchmark_handler, .priority=100);
 NXWEB_SET_HANDLER(benchmark_inworker, "/benchmark-inworker", &benchmark_handler_inworker, .priority=100);
 NXWEB_SET_HANDLER(test, "/test", &test_handler, .priority=900);
 
 // This is sample handler (see modules/hello.c):
-NXWEB_SET_HANDLER(hello, "/hello", &hello_handler, .priority=1000);
+NXWEB_SET_HANDLER(hello, "/hello", &hello_handler, .priority=1000, .filters={&gzip_filter});
 
 // This proxies requests to backend number 0 (see proxy setup below):
 NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=10000, .idx=0, .uri="/java-test");
@@ -54,7 +57,8 @@ NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=
 NXWEB_SET_HANDLER(nxweb_8777, "/8777", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="");
 
 // This serves static files from $(work_dir)/html directory (see modules/sendfile.c):
-NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000, .dir="html", .cache=1);
+NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
+        .filters={&image_filter, &gzip_filter}, .dir="html", .gzip_dir="cache/gzip", .img_dir="cache/img", .cache=1);
 
 
 // Server main():
