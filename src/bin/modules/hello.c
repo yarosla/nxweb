@@ -24,7 +24,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "../nxweb/nxweb.h"
+#include "nxweb/nxweb.h"
 
 static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");

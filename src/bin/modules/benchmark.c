@@ -24,7 +24,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "../nxweb/nxweb.h"
+#include "nxweb/nxweb.h"
 
 #include <malloc.h>
 #include <fcntl.h>

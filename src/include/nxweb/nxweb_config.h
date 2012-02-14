@@ -31,6 +31,10 @@
 extern "C" {
 #endif
 
+//#ifdef HAVE_CONFIG_H
+#include "config.h"
+//#endif
+
 #define NXWEB_MAX_LISTEN_SOCKETS 4
 #define NXWEB_LISTEN_HOST_AND_PORT ":8055"
 #define NXWEB_LISTEN_HOST_AND_PORT_SSL ":8056"

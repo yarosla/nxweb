@@ -29,8 +29,8 @@
 #include <string.h>
 #include <assert.h>
 
-#include "../deps/ulib/alignhash_tpl.h"
-#include "../deps/ulib/hash.h"
+#include "deps/ulib/alignhash_tpl.h"
+#include "deps/ulib/hash.h"
 
 #define mime_cache_hash_fn(key) hash_djb2((const unsigned char*)(key))
 #define mime_cache_eq_fn(a, b) (!strcmp((a), (b)))

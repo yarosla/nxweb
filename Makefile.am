@@ -1,0 +1,6 @@
+EXTRA_DIST = reconf configure www/root/index.htm www/root/watermark.png www/root/pic.jpg
+
+SUBDIRS = src/include src/lib src/bin
+if WITH_SSL
+SUBDIRS += ssl
+endif

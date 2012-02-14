@@ -24,7 +24,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "../nxweb/nxweb.h"
+#include "nxweb.h"
+
 #include <malloc.h>
 #include <unistd.h>
 #include <errno.h>
@@ -39,10 +40,10 @@
 
 #include <wand/MagickWand.h>
 
-#ifdef WITH_SSL
+#ifdef WITH_NETTLE
 #include <nettle/sha.h>
 #else
-#include "../deps/sha1-c/sha1.h"
+#include "deps/sha1-c/sha1.h"
 #endif
 
 /**
@@ -399,7 +400,7 @@ static int copy_file(const char* src, const char* dst) {
 
 static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
-#ifdef WITH_SSL
+#ifdef WITH_NETTLE
 
 static void sha1sign(const char* str, unsigned str_len, char* result) {
   struct sha1_ctx sha;

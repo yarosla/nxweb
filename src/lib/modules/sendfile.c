@@ -24,7 +24,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "../nxweb/nxweb.h"
+#include "nxweb.h"
+
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/fcntl.h>

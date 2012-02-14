@@ -29,8 +29,8 @@
 #include <pthread.h>
 #include <sys/fcntl.h>
 
-#include "../deps/ulib/alignhash_tpl.h"
-#include "../deps/ulib/hash.h"
+#include "deps/ulib/alignhash_tpl.h"
+#include "deps/ulib/hash.h"
 
 typedef struct nxweb_cache_rec {
   nxe_ssize_t content_length;

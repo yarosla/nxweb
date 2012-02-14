@@ -33,9 +33,9 @@
 #define MEM_GUARD 64
 #define nx_alloc(size) memalign(MEM_GUARD, (size)+MEM_GUARD)
 
-#define REVISION "3.0.0-dev"
+#define REVISION VERSION
 
-#include "config.h"
+#include "nxweb_config.h"
 
 #include <stdlib.h>
 
