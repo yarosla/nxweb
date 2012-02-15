@@ -231,8 +231,12 @@ static inline nx_simple_map_entry* nx_simple_map_itr_next(nx_simple_map_entry* i
 }
 
 
-int nxweb_listen(const char* host_and_port, int backlog, _Bool secure, const char* cert_file, const char* key_file, const char* dh_params_file);
+int nxweb_listen(const char* host_and_port, int backlog);
+#ifdef WITH_SSL
+int nxweb_listen_ssl(const char* host_and_port, int backlog, _Bool secure, const char* cert_file, const char* key_file, const char* dh_params_file, const char* cipher_priority_string);
+#endif
 int nxweb_setup_http_proxy_pool(int idx, const char* host_and_port);
+void nxweb_set_timeout(enum nxweb_timers timer_idx, nxe_time_t timeout);
 void nxweb_run();
 
 void nxweb_parse_request_parameters(nxweb_http_request *req, int preserve_uri); // Modifies conn->uri and request_body content (does url_decode inplace)

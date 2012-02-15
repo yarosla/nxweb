@@ -86,7 +86,7 @@ static void nxweb_http_proxy_request_finalize(nxd_http_server_proto* hsp, void* 
 static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_proxy_request_data* rdata) {
   nxe_loop* loop=conn->tdata->loop;
   nxweb_handler* handler=conn->handler;
-  assert(handler->idx>=0 && handler->idx<NXWEB_NUM_PROXY_POOLS);
+  assert(handler->idx>=0 && handler->idx<NXWEB_MAX_PROXY_POOLS);
   nxd_http_proxy* hpx=nxd_http_proxy_pool_connect(&conn->tdata->proxy_pool[handler->idx]);
   rdata->proxy_request_complete=0;
   rdata->proxy_request_error=0;

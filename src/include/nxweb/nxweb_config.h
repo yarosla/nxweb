@@ -24,8 +24,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef CONFIG_H
-#define	CONFIG_H
+#ifndef NXWEB_CONFIG_H
+#define	NXWEB_CONFIG_H
 
 #ifdef	__cplusplus
 extern "C" {
@@ -36,14 +36,9 @@ extern "C" {
 //#endif
 
 #define NXWEB_MAX_LISTEN_SOCKETS 4
-#define NXWEB_LISTEN_HOST_AND_PORT ":8055"
-#define NXWEB_LISTEN_HOST_AND_PORT_SSL ":8056"
-
-#define NXWEB_SSL_PRIORITIES "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"
-#define NXWEB_NUM_PROXY_POOLS 4
+#define NXWEB_MAX_PROXY_POOLS 4
 #define NXWEB_MAX_REQUEST_HEADERS_SIZE 4096
 #define NXWEB_MAX_REQUEST_BODY_SIZE 512000
-#define NXWEB_MAX_RESPONSE_HEADERS 32
 #define NXWEB_RBUF_SIZE 16384
 #define NXWEB_PROXY_RETRY_COUNT 4
 #define NXWEB_CONN_NXB_SIZE (NXWEB_MAX_REQUEST_HEADERS_SIZE+1024)
@@ -51,13 +46,6 @@ extern "C" {
 #define NXWEB_DEFAULT_CACHED_TIME 30000000
 #define NXWEB_MAX_CACHED_ITEMS 500
 #define NXWEB_MAX_CACHED_ITEM_SIZE 32768
-#define NXWEB_DEFAULT_CHARSET "utf-8"
-#define NXWEB_DEFAULT_INDEX_FILE "index.htm"
-
-// All paths are relative to working directory:
-#define SSL_CERT_FILE "ssl/server_cert.pem"
-#define SSL_KEY_FILE "ssl/server_key.pem"
-#define SSL_DH_PARAMS_FILE "ssl/dh.pem"
 
 #ifdef NX_DEBUG
 #define NXWEB_MAX_NET_THREADS 1
@@ -65,17 +53,18 @@ extern "C" {
 #define NXWEB_MAX_NET_THREADS 16
 #endif
 
+// timeouts can be overriden by calling nxweb_set_timeout() before starting the server
 // timeouts are in micro-seconds:
-#define NXWEB_KEEP_ALIVE_TIMEOUT 60000000
-#define NXWEB_WRITE_TIMEOUT 30000000
-#define NXWEB_READ_TIMEOUT 30000000
-#define NXWEB_BACKEND_TIMEOUT 2000000
-#define NXWEB_100CONTINUE_TIMEOUT 1500000
+#define NXWEB_DEFAULT_KEEP_ALIVE_TIMEOUT 60000000
+#define NXWEB_DEFAULT_WRITE_TIMEOUT 30000000
+#define NXWEB_DEFAULT_READ_TIMEOUT 30000000
+#define NXWEB_DEFAULT_BACKEND_TIMEOUT 2000000
+#define NXWEB_DEFAULT_100CONTINUE_TIMEOUT 1500000
 
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif	/* CONFIG_H */
+#endif	/* NXWEB_CONFIG_H */
 

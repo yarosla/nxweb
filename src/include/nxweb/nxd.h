@@ -73,7 +73,7 @@ void nxd_ssl_server_socket_finalize(nxd_ssl_socket* ss, int good);
 
 int nxd_ssl_socket_init_server_parameters(gnutls_certificate_credentials_t* x509_cred,
         gnutls_dh_params_t* dh_params, gnutls_priority_t* priority_cache, gnutls_datum_t* session_ticket_key,
-        const char* cert_file, const char* key_file, const char* dh_file);
+        const char* cert_file, const char* key_file, const char* dh_file, const char* cipher_priority_string);
 void nxd_ssl_socket_finalize_server_parameters(gnutls_certificate_credentials_t x509_cred, gnutls_dh_params_t dh_params,
         gnutls_priority_t priority_cache, gnutls_datum_t* session_ticket_key);
 

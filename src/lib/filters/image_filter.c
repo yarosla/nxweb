@@ -490,7 +490,7 @@ static nxweb_result img_translate_cache_key(struct nxweb_http_server_connection*
 }
 
 static nxweb_result img_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
-  nxweb_send_file(resp, (char*)fdata->cache_key, fdata->cache_key_root_len, &fdata->cache_key_finfo, 0, 0, 0, resp->mtype, NXWEB_DEFAULT_CHARSET);
+  nxweb_send_file(resp, (char*)fdata->cache_key, fdata->cache_key_root_len, &fdata->cache_key_finfo, 0, 0, 0, resp->mtype, conn->handler->charset);
   return NXWEB_OK;
 }
 

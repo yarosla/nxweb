@@ -54,6 +54,14 @@ static nxweb_net_thread_data net_threads[NXWEB_MAX_NET_THREADS];
 int _nxweb_num_net_threads;
 __thread nxweb_net_thread_data* _nxweb_net_thread_data;
 
+static nxe_time_t _nxe_timeouts[NXE_NUMBER_OF_TIMER_QUEUES] = {
+  [NXWEB_TIMER_KEEP_ALIVE]=NXWEB_DEFAULT_KEEP_ALIVE_TIMEOUT,
+  [NXWEB_TIMER_READ]=NXWEB_DEFAULT_READ_TIMEOUT,
+  [NXWEB_TIMER_WRITE]=NXWEB_DEFAULT_WRITE_TIMEOUT,
+  [NXWEB_TIMER_BACKEND]=NXWEB_DEFAULT_BACKEND_TIMEOUT,
+  [NXWEB_TIMER_100CONTINUE]=NXWEB_DEFAULT_100CONTINUE_TIMEOUT
+};
+
 static nxweb_result default_on_headers(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_send_http_error(resp, 404, "Not Found");
   return NXWEB_ERROR;
@@ -516,7 +524,7 @@ static void on_net_thread_shutdown(nxe_subscriber* sub, nxe_publisher* pub, nxe_
   nxw_finalize_factory(&tdata->workers_factory);
 
   // close keep-alive connections to backends
-  for (i=0; i<NXWEB_NUM_PROXY_POOLS; i++) {
+  for (i=0; i<NXWEB_MAX_PROXY_POOLS; i++) {
     nxd_http_proxy_pool_finalize(&tdata->proxy_pool[i]);
   }
 }
@@ -567,11 +575,11 @@ static void* net_thread_main(void* ptr) {
   nxe_loop* loop=nxe_create(128);
   tdata->loop=loop;
 
-  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_KEEP_ALIVE, NXWEB_KEEP_ALIVE_TIMEOUT);
-  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_READ, NXWEB_READ_TIMEOUT);
-  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_WRITE, NXWEB_WRITE_TIMEOUT);
-  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_BACKEND, NXWEB_BACKEND_TIMEOUT);
-  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_100CONTINUE, NXWEB_100CONTINUE_TIMEOUT);
+  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_KEEP_ALIVE, _nxe_timeouts[NXWEB_TIMER_KEEP_ALIVE]);
+  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_READ, _nxe_timeouts[NXWEB_TIMER_READ]);
+  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_WRITE, _nxe_timeouts[NXWEB_TIMER_WRITE]);
+  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_BACKEND, _nxe_timeouts[NXWEB_TIMER_BACKEND]);
+  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_100CONTINUE, _nxe_timeouts[NXWEB_TIMER_100CONTINUE]);
 
   nxweb_server_listen_config* lconf;
   nxweb_http_server_listening_socket* lsock;
@@ -600,7 +608,7 @@ static void* net_thread_main(void* ptr) {
   nxw_init_factory(&tdata->workers_factory, loop);
 
   // initialize proxy pools:
-  for (i=0; i<NXWEB_NUM_PROXY_POOLS; i++) {
+  for (i=0; i<NXWEB_MAX_PROXY_POOLS; i++) {
     if (nxweb_server_config.http_proxy_pool_config[i].host) {
       nxd_http_proxy_pool_init(&tdata->proxy_pool[i], loop, tdata->free_conn_nxb_pool,
               nxweb_server_config.http_proxy_pool_config[i].host,
@@ -613,7 +621,7 @@ static void* net_thread_main(void* ptr) {
     if (mod->on_thread_startup) {
       if (mod->on_thread_startup()) {
         nxweb_log_error("module %s on_thread_startup() returned non-zero", mod->name);
-        exit(EXIT_SUCCESS); // not to be respawned
+        exit(EXIT_SUCCESS); // simulate normal exit so nxweb is not respawned
       }
       else {
         nxweb_log_error("module %s [%d] network thread successfully initialized", mod->name, mod->priority);
@@ -671,7 +679,16 @@ static void on_sigalrm(int sig) {
   exit(EXIT_SUCCESS);
 }
 
-int nxweb_listen(const char* host_and_port, int backlog, _Bool secure, const char* cert_file, const char* key_file, const char* dh_params_file) {
+void nxweb_set_timeout(enum nxweb_timers timer_idx, nxe_time_t timeout) {
+  assert(timer_idx>=0 && timer_idx<NXE_NUMBER_OF_TIMER_QUEUES);
+  _nxe_timeouts[timer_idx]=timeout;
+}
+
+int nxweb_listen(const char* host_and_port, int backlog) {
+  return nxweb_listen_ssl(host_and_port, backlog, 0, 0, 0, 0, 0);
+}
+
+int nxweb_listen_ssl(const char* host_and_port, int backlog, _Bool secure, const char* cert_file, const char* key_file, const char* dh_params_file, const char* cipher_priority_string) {
   assert(nxweb_server_config.listen_config_idx>=0 && nxweb_server_config.listen_config_idx<NXWEB_MAX_LISTEN_SOCKETS);
 
   nxweb_log_error("nxweb binding %s for http%s", host_and_port, secure?"s":"");
@@ -685,14 +702,14 @@ int nxweb_listen(const char* host_and_port, int backlog, _Bool secure, const cha
 #ifdef WITH_SSL
   lconf->secure=secure;
   if (secure) {
-    nxd_ssl_socket_init_server_parameters(&lconf->x509_cred, &lconf->dh_params, &lconf->priority_cache, &lconf->session_ticket_key, cert_file, key_file, dh_params_file);
+    nxd_ssl_socket_init_server_parameters(&lconf->x509_cred, &lconf->dh_params, &lconf->priority_cache, &lconf->session_ticket_key, cert_file, key_file, dh_params_file, cipher_priority_string);
   }
 #endif // WITH_SSL
   return 0;
 }
 
 int nxweb_setup_http_proxy_pool(int idx, const char* host_and_port) {
-  assert(idx>=0 && idx<NXWEB_NUM_PROXY_POOLS);
+  assert(idx>=0 && idx<NXWEB_MAX_PROXY_POOLS);
   nxweb_server_config.http_proxy_pool_config[idx].host=host_and_port;
   nxweb_server_config.http_proxy_pool_config[idx].saddr=_nxweb_resolve_host(host_and_port, 0);
   return !!nxweb_server_config.http_proxy_pool_config[idx].saddr;
@@ -724,7 +741,7 @@ void nxweb_run() {
     if (mod->on_server_startup) {
       if (mod->on_server_startup()) {
         nxweb_log_error("module %s on_server_startup() returned non-zero", mod->name);
-        exit(EXIT_SUCCESS); // not to be respawned
+        exit(EXIT_SUCCESS); // simulate normal exit so nxweb is not respawned
       }
       else {
         nxweb_log_error("module %s [%d] successfully initialized", mod->name, mod->priority);
@@ -752,7 +769,7 @@ void nxweb_run() {
   sigaddset(&set, SIGHUP);
   if (pthread_sigmask(SIG_BLOCK, &set, NULL)) {
     nxweb_log_error("can't set pthread_sigmask");
-    exit(EXIT_FAILURE);
+    exit(EXIT_SUCCESS); // simulate normal exit so nxweb is not respawned
   }
 
   nxweb_net_thread_data* tdata;
@@ -765,7 +782,7 @@ void nxweb_run() {
     pthread_attr_setaffinity_np(&tattr, sizeof(cpu_set_t), &cpuset);
     if (pthread_create(&tdata->thread_id, &tattr, net_thread_main, tdata)) {
       nxweb_log_error("can't start network thread %d", i);
-      exit(EXIT_FAILURE);
+      exit(EXIT_SUCCESS); // simulate normal exit so nxweb is not respawned
     }
     pthread_attr_destroy(&tattr);
   }
@@ -779,7 +796,7 @@ void nxweb_run() {
   sigdelset(&set, SIGPIPE); // except SIGPIPE
   if (pthread_sigmask(SIG_UNBLOCK, &set, NULL)) {
     nxweb_log_error("can't unset pthread_sigmask");
-    exit(EXIT_FAILURE);
+    exit(EXIT_SUCCESS); // simulate normal exit so nxweb is not respawned
   }
 
   for (i=0; i<_nxweb_num_net_threads; i++) {
@@ -803,7 +820,7 @@ void nxweb_run() {
     }
   }
 
-  for (i=0; i<NXWEB_NUM_PROXY_POOLS; i++) {
+  for (i=0; i<NXWEB_MAX_PROXY_POOLS; i++) {
     if (nxweb_server_config.http_proxy_pool_config[i].saddr)
       _nxweb_free_addrinfo(nxweb_server_config.http_proxy_pool_config[i].saddr);
   }

@@ -139,7 +139,7 @@ typedef struct nxweb_net_thread_data {
   nxp_pool* free_conn_pool;
   nxp_pool* free_conn_nxb_pool;
   nxp_pool* free_rbuf_pool;
-  nxd_http_proxy_pool proxy_pool[NXWEB_NUM_PROXY_POOLS];
+  nxd_http_proxy_pool proxy_pool[NXWEB_MAX_PROXY_POOLS];
 } nxweb_net_thread_data __attribute__ ((aligned(64)));
 
 typedef struct nxweb_http_server_connection {
@@ -179,7 +179,7 @@ typedef struct nxweb_server_listen_config {
 struct nxweb_server_config {
   int listen_config_idx;
   nxweb_server_listen_config listen_config[NXWEB_MAX_LISTEN_SOCKETS];
-  nxweb_http_proxy_pool_config http_proxy_pool_config[NXWEB_NUM_PROXY_POOLS];
+  nxweb_http_proxy_pool_config http_proxy_pool_config[NXWEB_MAX_PROXY_POOLS];
   nxweb_handler_callback request_dispatcher;
   nxweb_handler* handler_list;
   nxweb_module* module_list;

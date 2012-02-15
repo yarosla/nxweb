@@ -30,6 +30,18 @@
 
 // Note: see config.h for most nxweb #defined parameters
 
+#define NXWEB_LISTEN_HOST_AND_PORT ":8055"
+#define NXWEB_LISTEN_HOST_AND_PORT_SSL ":8056"
+
+#define NXWEB_DEFAULT_CHARSET "utf-8"
+#define NXWEB_DEFAULT_INDEX_FILE "index.htm"
+
+// All paths are relative to working directory:
+#define SSL_CERT_FILE "ssl/server_cert.pem"
+#define SSL_KEY_FILE "ssl/server_key.pem"
+#define SSL_DH_PARAMS_FILE "ssl/dh.pem"
+
+#define SSL_PRIORITIES "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"
 
 // Setup modules & handlers (this can be done from any file linked to nxweb):
 
@@ -58,13 +70,13 @@ NXWEB_SET_HANDLER(hello, "/hello", &hello_handler, .priority=1000, .filters={
 #endif
 });
 
-// This proxies requests to backend number 0 (see proxy setup below):
+// This proxies requests to backend number 0 (see proxy setup further below):
 NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=10000, .idx=0, .uri="/java-test");
 
 // This proxies requests to backend number 1 (I have another nxweb listening at port 8777):
 NXWEB_SET_HANDLER(nxweb_8777, "/8777", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="");
 
-// This serves static files from $(work_dir)/html directory (see modules/sendfile.c):
+// This serves static files from $(work_dir)/www/root directory:
 NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
         .filters={
 #ifdef WITH_IMAGEMAGICK
@@ -83,14 +95,17 @@ NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
 static void server_main() {
 
   // Add listening interfaces:
-  if (nxweb_listen(NXWEB_LISTEN_HOST_AND_PORT, 4096, 0, 0, 0, 0)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen(NXWEB_LISTEN_HOST_AND_PORT, 4096)) return; // simulate normal exit so nxweb is not respawned
 #ifdef WITH_SSL
-  if (nxweb_listen(NXWEB_LISTEN_HOST_AND_PORT_SSL, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen_ssl(NXWEB_LISTEN_HOST_AND_PORT_SSL, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
 #endif // WITH_SSL
 
   // Setup proxies:
   nxweb_setup_http_proxy_pool(0, "localhost:8080");
   nxweb_setup_http_proxy_pool(1, "localhost:8777");
+
+  // Override default timers (if needed):
+  //nxweb_set_timeout(NXWEB_TIMER_KEEP_ALIVE, 120);
 
   // Go!
   nxweb_run();

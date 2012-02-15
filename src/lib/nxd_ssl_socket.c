@@ -80,7 +80,8 @@ void nxd_ssl_socket_global_finalize(void) {
 
 int nxd_ssl_socket_init_server_parameters(gnutls_certificate_credentials_t* x509_cred,
         gnutls_dh_params_t* dh_params, gnutls_priority_t* priority_cache, gnutls_datum_t* session_ticket_key,
-        const char* cert_file, const char* key_file, const char* dh_params_file) {
+        const char* cert_file, const char* key_file, const char* dh_params_file,
+        const char* cipher_priority_string) {
   int ret;
 
   gnutls_certificate_allocate_credentials(x509_cred);
@@ -149,7 +150,8 @@ int nxd_ssl_socket_init_server_parameters(gnutls_certificate_credentials_t* x509
     gnutls_dh_params_cpy(*dh_params, dh_params_generated);
   }
 
-  ret=gnutls_priority_init(priority_cache, NXWEB_SSL_PRIORITIES, 0); // "PERFORMANCE:%SERVER_PRECEDENCE" or "NORMAL:%COMPAT"
+  if (!cipher_priority_string) cipher_priority_string="NORMAL:%COMPAT";
+  ret=gnutls_priority_init(priority_cache, cipher_priority_string, 0); // "PERFORMANCE:%SERVER_PRECEDENCE" or "NORMAL:%COMPAT"
   if (ret<0) {
     nxweb_log_error("gnutls_priority_init() failed %d (check priority string syntax)", ret);
     return -1;

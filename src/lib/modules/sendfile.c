@@ -68,7 +68,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
     return NXWEB_OK;
   }
 
-  int result=nxweb_send_file(resp, (char*)fpath, rlen, &resp->sendfile_info, 0, 0, 0, resp->mtype, handler->charset? handler->charset : NXWEB_DEFAULT_CHARSET);
+  int result=nxweb_send_file(resp, (char*)fpath, rlen, &resp->sendfile_info, 0, 0, 0, resp->mtype, handler->charset);
   if (result!=0) { // should not happen
     nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
     nxweb_send_http_error(resp, 500, "Internal Server Error");
@@ -85,6 +85,7 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
   nxweb_handler* handler=conn->handler;
   const char* document_root=handler->dir;
   assert(document_root);
+  assert(handler->index_file);
 
   char fpath[MAX_PATH];
   int rlen=strlen(document_root);
@@ -101,7 +102,7 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
   nxweb_url_decode(path_info, 0);
   plen=strlen(path_info);
   if (plen>0 && path_info[plen-1]=='/') { // directory index
-    strcat(path_info+plen, handler->index_file? handler->index_file: NXWEB_DEFAULT_INDEX_FILE);
+    strcat(path_info+plen, handler->index_file);
   }
 
   if (nxweb_remove_dots_from_uri_path(path_info)) {
@@ -129,7 +130,7 @@ static nxweb_result sendfile_on_serve_from_cache(nxweb_http_server_connection* c
   }
 */
 
-  int result=nxweb_send_file(resp, (char*)resp->cache_key, resp->cache_key_root_len, finfo, 0, 0, 0, resp->mtype, conn->handler->charset? conn->handler->charset : NXWEB_DEFAULT_CHARSET);
+  int result=nxweb_send_file(resp, (char*)resp->cache_key, resp->cache_key_root_len, finfo, 0, 0, 0, resp->mtype, conn->handler->charset);
   if (result!=0) { // should not happen
     nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", resp->cache_key);
     nxweb_send_http_error(resp, 500, "Internal Server Error");

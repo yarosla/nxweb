@@ -17,7 +17,7 @@ Before writing NXWEB I evaluated a number of existing light/embeddable web serve
 * good (if not best) performance; see [[Benchmarks|benchmarks]]
 * can serve thousands concurrent requests
 * small memory footprint
-* multi-threaded model designed to scale
+* event-driven & multi-threaded model designed to scale
 * exceptionally light code base
 * simple API
 * decent HTTP protocol handling
