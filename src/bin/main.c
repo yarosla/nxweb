@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -83,15 +83,29 @@ NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
         .gzip_dir="www/cache/gzip", .img_dir="www/cache/img", .cache=1);
 
 
+// Command-line options:
+static const char* user_name=0;
+static const char* group_name=0;
+static int port=8055;
+static int ssl_port=8056;
+
+
 // Server main():
 
 static void server_main() {
 
-  // Add listening interfaces:
-  if (nxweb_listen(NXWEB_LISTEN_HOST_AND_PORT, 4096)) return; // simulate normal exit so nxweb is not respawned
+  // Bind listening interfaces:
+  char host_and_port[32];
+  snprintf(host_and_port, sizeof(host_and_port), ":%d", port);
+  if (nxweb_listen(host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
 #ifdef WITH_SSL
-  if (nxweb_listen_ssl(NXWEB_LISTEN_HOST_AND_PORT_SSL, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
+  char ssl_host_and_port[32];
+  snprintf(ssl_host_and_port, sizeof(ssl_host_and_port), ":%d", ssl_port);
+  if (nxweb_listen_ssl(ssl_host_and_port, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
 #endif // WITH_SSL
+
+  // Drop privileges:
+  if (nxweb_drop_privileges(group_name, user_name)==-1) return;
 
   // Setup proxies:
   nxweb_setup_http_proxy_pool(0, "localhost:8080");
@@ -114,6 +128,12 @@ static void show_help(void) {
           " -w dir   set work dir    (default: ./)\n"
           " -l file  set log file    (default: stderr or nxweb_error_log for daemon)\n"
           " -p file  set pid file    (default: nxweb.pid)\n"
+          " -u user  set process uid\n"
+          " -g group set process gid\n"
+          " -P port  set http port\n"
+#ifdef WITH_SSL
+          " -S port  set https port\n"
+#endif
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
@@ -129,7 +149,7 @@ int main(int argc, char** argv) {
   const char* pid_file="nxweb.pid";
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:p:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:p:u:g:P:S:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -155,6 +175,26 @@ int main(int argc, char** argv) {
         break;
       case 'p':
         pid_file=optarg;
+        break;
+      case 'u':
+        user_name=optarg;
+        break;
+      case 'g':
+        group_name=optarg;
+        break;
+      case 'P':
+        port=atoi(optarg);
+        if (port<=0) {
+          fprintf(stderr, "invalid port: %s\n\n", optarg);
+          return EXIT_FAILURE;
+        }
+        break;
+      case 'S':
+        ssl_port=atoi(optarg);
+        if (ssl_port<=0) {
+          fprintf(stderr, "invalid ssl port: %s\n\n", optarg);
+          return EXIT_FAILURE;
+        }
         break;
       case '?':
         fprintf(stderr, "unkown option: -%c\n\n", optopt);

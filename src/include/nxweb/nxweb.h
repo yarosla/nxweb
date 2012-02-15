@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -225,9 +225,7 @@ static inline nx_simple_map_entry* nx_simple_map_itr_next(nx_simple_map_entry* i
 
 
 int nxweb_listen(const char* host_and_port, int backlog);
-#ifdef WITH_SSL
 int nxweb_listen_ssl(const char* host_and_port, int backlog, _Bool secure, const char* cert_file, const char* key_file, const char* dh_params_file, const char* cipher_priority_string);
-#endif
 int nxweb_setup_http_proxy_pool(int idx, const char* host_and_port);
 void nxweb_set_timeout(enum nxweb_timers timer_idx, nxe_time_t timeout);
 void nxweb_run();

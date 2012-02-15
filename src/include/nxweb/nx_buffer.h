@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -24,6 +24,7 @@
 #include <stdarg.h>
 
 #include "nx_alloc.h"
+#include "misc.h"
 
 typedef struct nxb_chunk {
   char* end;
@@ -118,30 +119,6 @@ static inline void nxb_append_str(nxb_buffer* nxb, const char* str) {
 
 static inline void nxb_append_str_fast(nxb_buffer* nxb, const char* str) {
   nxb_append_fast(nxb, str, strlen(str));
-}
-
-static inline char* uint_to_decimal_string(unsigned long n, char* buf, int buf_size) {
-  char* p=buf+buf_size;
-  *--p='\0';
-  if (!n) {
-    *--p='0';
-    return p;
-  }
-  while (n) {
-    *--p=n%10+'0';
-    n=n/10;
-  }
-  return p;
-}
-
-static inline char* uint_to_decimal_string_zeropad(unsigned long n, char* buf, int num_digits) {
-  char* p=buf+num_digits;
-  *p='\0';
-  while (num_digits--) {
-    *--p=n%10+'0';
-    n=n/10;
-  }
-  return buf;
 }
 
 #define MAX_UINT_LEN 24
