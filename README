@@ -1,0 +1,73 @@
+= NXWEB =
+
+Ultra-fast and super-lightweight web server for applications written in C.
+
+== Rationale ==
+
+Sometimes web applications need small and fast components that are best written in C.
+
+Example: ad banner rotation engine. It gets invoked many times on every page of your site producing little HTML snippets based on predefined configuration. How would you implement it?
+
+CGI is not an option as it gets loaded and unloaded on every request. Writing a module for your main web server such as Apache httpd or nginx gives best performance but server's API isn't very friendly (take a look at basic hello-world module for nginx [[http://blog.zhuzhaoyuan.com/2009/08/creating-a-hello-world-nginx-module/|here]], not talking about dealing with shared memory, etc.). What we need is sort of servlet container for C (just like Java has).
+
+Before writing NXWEB I evaluated a number of existing light/embeddable web servers (mongoose, microhttpd, libevent, G-WAN) each one having their own drawbacks (see notes to [[Benchmarks|benchmarks]]).
+
+=== What NXWEB offers:
+
+* good (if not best) performance; see [[Benchmarks|benchmarks]]
+* can serve thousands concurrent requests
+* small memory footprint
+* multi-threaded model designed to scale
+* exceptionally light code base
+* simple API
+* decent HTTP protocol handling
+* keep-alive connections
+* SSL support (via GNUTLS)
+* HTTP proxy (with keep-alive connection pooling)
+* non-blocking sendfile support (with configurable small file memory cache)
+* cacheable gzip content encoding
+* cacheable image thumbnails with watermarks (via ImageMagick)
+* modular design for developers
+* can be run as daemon; relaunches itself on error
+* open source
+
+=== Limitations:
+
+* only tested on Linux
+
+== Architecture ==
+
+Main thread binds TCP port, accepts connections and distributes them among network threads.
+
+//Network threads// work in non-blocking fashion (using epoll) handling HTTP protocol exchange. There should be no need in using more network threads than the number of CPU cores you have, as every thread is very efficient and can easily handle thousands of concurrent connections. Numbers of network threads is automatically configured but could be limited by {{{#define NXWEB_MAX_NET_THREADS}}} directive.
+
+After receiving complete HTTP request network thread finds and invokes application's //URI handler//. The invocation could happen within network thread (should only be used for quick non-blocking handlers) or within worker thread (should be used for slower or blocking handlers).
+
+//Worker threads// are organized in pool. Each thread takes new job from queue, invokes URI handler, signals network thread after handler completes the job. Number of worker threads is dynamically configured depending on the load with limits specified by #define directives.
+
+
+== API
+
+See [[https://bitbucket.org/yarosla/nxweb/src|source code]]. {{{hello.c}}} and {{{sendfile.c}}} are examples of user modules. nxweb.h contains function and struct definitions.
+
+== Benchmarks
+
+See [[Benchmarks|NXWEB benchmarks here]].
+
+== Building from source
+
+# Download archive [[https://bitbucket.org/yarosla/nxweb/downloads|from here]]
+# Follow INSTALL file notes
+
+== Issues
+
+Please report issues via [[https://bitbucket.org/yarosla/nxweb/issues|issue tracker]].
+
+== Discussions & Announcements
+
+{{http://groups.google.com/intl/en/images/logos/groups_logo_sm.gif}}\\
+**nxweb**\\
+[[http://groups.google.com/group/nxweb?hl=en|Visit this group]]
+
+**nxweb-ru** (in Russian)\\
+[[http://groups.google.com/group/nxweb-ru?hl=ru|Visit this group]]

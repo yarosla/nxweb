@@ -45,3 +45,11 @@ _strace
 ^missing$
 ^(.*/)?stamp-h1$
 ^nxweb-.*\.tar\.gz$
+^Makefile$
+^src/bin/Makefile$
+^src/bin/nxweb$
+^src/include/Makefile$
+^src/include/nxweb/config\.h$
+^src/lib/Makefile$
+^src/lib/nxweb\.pc$
+^ssl/Makefile$

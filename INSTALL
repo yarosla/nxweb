@@ -1,0 +1,73 @@
+NXWEB Installation Notes
+
+0. Download & Extract
+
+tar xfz nxweb-***.tar.gz
+cd nxweb-***
+
+*** - is the version number.
+
+1. Configure
+
+./configure
+  This will configure NXWEB without SSL support and without ImageMagick image filter.
+  The script will automatically detect if zlib library is available on your computer
+  to enable gzip content compression filter.
+
+./configure --without-zlib
+  Disable gzip filter even if zlib is present.
+
+./configure --with-gnutls
+  This will configure NXWEB with SSL support. GNUTLS library should be available
+  at one of default locations.
+
+  GNUTLS version 3.0.12+ is required.
+
+./configure --with-gnutls=/install-prefix-of-gnutls
+  Specify GNUTLS location explicitly.
+
+./configure --with-imagemagick
+  This will configure NXWEB to use ImageMagick library. ImageMagick should be available
+  at one of default locations.
+
+  ImageMagick version 6.6.0+ is required.
+
+./configure --with-imagemagick=/install-prefix-of-imagemagick
+  Specify ImageMagick location explicitly.
+
+./configure --prefix=/path-to-install
+  This is how you can change NXWEB binary, includes, and libraries install location.
+
+2. Adjust Parameters
+
+  You can tune NXWEB parameters by modifying its header files,
+  src/include/nxweb_config.h in particular.
+
+3. Compile
+
+make
+  After successful compilation the following files become available:
+    - src/bin/nxweb      -- NXWEB binary
+    - src/include        -- NXWEB include headers
+    - src/lib/libnxweb.a -- NXWEB static library to link your modules to.
+        See src/bin/main.c and src/bin/modules/* for examples.
+    - ssl/*              -- sample SSL keys generated for you.
+    - www/root           -- sample static html & images content.
+
+3. Install (optional)
+
+  You can install compiled binary, include, and library files to your system's
+  default location (or location specified by --prefix switch):
+
+sudo make install
+
+  To uninstall run:
+
+sudo make uninstall
+
+4. Compiling and linking your own main.c & modules:
+
+gcc -O2 -g main.c modules/*.c -o mynxweb `pkg-config --cflags --libs --static nxweb`
+
+  pkg-config will search for NXWEB libraries at system's default locations
+  if not custom configured.
