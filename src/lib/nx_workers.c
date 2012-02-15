@@ -141,7 +141,11 @@ static nxw_worker* nxw_create_worker(nxw_factory* f) {
   nxe_register_eventfd_source(f->loop, &w->complete_efs);
   link_worker(w);
   f->worker_count++;
-  pthread_create(&w->tid, 0, nxw_worker_main, w);
+  if (pthread_create(&w->tid, 0, nxw_worker_main, w)) {
+    nxweb_log_error("can't create worker thread");
+    nxw_destroy_worker(w);
+    return 0;
+  }
   return w;
 }
 

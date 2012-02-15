@@ -50,7 +50,8 @@ static pthread_t main_thread_id=0;
 static volatile int shutdown_in_progress=0;
 static volatile int num_connections=0;
 
-static nxweb_net_thread_data net_threads[N_NET_THREADS];
+static nxweb_net_thread_data net_threads[NXWEB_MAX_NET_THREADS];
+int _nxweb_num_net_threads;
 __thread nxweb_net_thread_data* _nxweb_net_thread_data;
 
 static nxweb_result default_on_headers(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
@@ -652,7 +653,7 @@ static void on_sigterm(int sig) {
 
   int i;
   nxweb_net_thread_data* tdata;
-  for (i=0, tdata=net_threads; i<N_NET_THREADS; i++, tdata++) {
+  for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
 /*
     // wake up workers
     pthread_mutex_lock(&tdata->job_queue_mux);
@@ -702,10 +703,12 @@ void nxweb_run() {
 
   pid_t pid=getpid();
   main_thread_id=pthread_self();
+  _nxweb_num_net_threads=(int)sysconf(_SC_NPROCESSORS_ONLN);
+  if (_nxweb_num_net_threads>NXWEB_MAX_NET_THREADS) _nxweb_num_net_threads=NXWEB_MAX_NET_THREADS;
 
-  nxweb_log_error("NXWEB startup: pid=%d N_NET_THREADS=%d pg=%d"
+  nxweb_log_error("NXWEB startup: pid=%d net_threads=%d pg=%d"
                   " short=%d int=%d long=%d size_t=%d evt=%d conn=%d req=%d td=%d",
-                  (int)pid, N_NET_THREADS, (int)sysconf(_SC_PAGE_SIZE),
+                  (int)pid, _nxweb_num_net_threads, (int)sysconf(_SC_PAGE_SIZE),
                   (int)sizeof(short), (int)sizeof(int), (int)sizeof(long), (int)sizeof(size_t),
                   (int)sizeof(nxe_event), (int)sizeof(nxweb_http_server_connection), (int)sizeof(nxweb_http_request),
                   (int)sizeof(nxweb_net_thread_data));
@@ -748,19 +751,22 @@ void nxweb_run() {
   sigaddset(&set, SIGQUIT);
   sigaddset(&set, SIGHUP);
   if (pthread_sigmask(SIG_BLOCK, &set, NULL)) {
-    nxweb_log_error("Can't set pthread_sigmask");
+    nxweb_log_error("can't set pthread_sigmask");
     exit(EXIT_FAILURE);
   }
 
   nxweb_net_thread_data* tdata;
-  for (i=0, tdata=net_threads; i<N_NET_THREADS; i++, tdata++) {
+  for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
     pthread_attr_t tattr;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(i, &cpuset);
     pthread_attr_init(&tattr);
     pthread_attr_setaffinity_np(&tattr, sizeof(cpu_set_t), &cpuset);
-    pthread_create(&tdata->thread_id, &tattr, net_thread_main, tdata);
+    if (pthread_create(&tdata->thread_id, &tattr, net_thread_main, tdata)) {
+      nxweb_log_error("can't start network thread %d", i);
+      exit(EXIT_FAILURE);
+    }
     pthread_attr_destroy(&tattr);
   }
 
@@ -772,11 +778,11 @@ void nxweb_run() {
   // other threads have inherited sigmask we set earlier
   sigdelset(&set, SIGPIPE); // except SIGPIPE
   if (pthread_sigmask(SIG_UNBLOCK, &set, NULL)) {
-    nxweb_log_error("Can't unset pthread_sigmask");
+    nxweb_log_error("can't unset pthread_sigmask");
     exit(EXIT_FAILURE);
   }
 
-  for (i=0; i<N_NET_THREADS; i++) {
+  for (i=0; i<_nxweb_num_net_threads; i++) {
     pthread_join(net_threads[i].thread_id, 0);
   }
 

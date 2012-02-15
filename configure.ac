@@ -1,4 +1,4 @@
-AC_INIT([nxweb], [3.0-dev])
+AC_INIT([nxweb], [3.0.1-dev])
 AC_CONFIG_HEADER(src/include/nxweb/config.h)
 AM_INIT_AUTOMAKE
 AC_PROG_CC([gcc])

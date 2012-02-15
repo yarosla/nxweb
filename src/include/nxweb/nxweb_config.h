@@ -60,9 +60,9 @@ extern "C" {
 #define SSL_DH_PARAMS_FILE "ssl/dh.pem"
 
 #ifdef NX_DEBUG
-#define N_NET_THREADS 1
+#define NXWEB_MAX_NET_THREADS 1
 #else
-#define N_NET_THREADS 4
+#define NXWEB_MAX_NET_THREADS 16
 #endif
 
 // timeouts are in micro-seconds:
