@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -695,7 +695,8 @@ int nxweb_listen_ssl(const char* host_and_port, int backlog, _Bool secure, const
 #ifdef WITH_SSL
   lconf->secure=secure;
   if (secure) {
-    nxd_ssl_socket_init_server_parameters(&lconf->x509_cred, &lconf->dh_params, &lconf->priority_cache, &lconf->session_ticket_key, cert_file, key_file, dh_params_file, cipher_priority_string);
+    if (nxd_ssl_socket_init_server_parameters(&lconf->x509_cred, &lconf->dh_params, &lconf->priority_cache,
+            &lconf->session_ticket_key, cert_file, key_file, dh_params_file, cipher_priority_string)==-1) return -1;
   }
 #endif // WITH_SSL
   return 0;

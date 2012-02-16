@@ -16,6 +16,8 @@ syntax: regexp
 .*\.pem$
 .*\.psd$
 .*\.o$
+.*\.lo$
+.*\.la$
 .*\.a$
 ^build/
 ^dist/
@@ -28,7 +30,6 @@ _strace
 /nbproject$
 ^Makefile\.nb$
 ^autom4te\.cache/
-^.deps/
 ^install-sh$
 ^config.guess$
 ^config.sub$
@@ -41,8 +42,11 @@ _strace
 /Makefile\.in$
 ^\.deps/
 /\.deps/
+/\.libs/
 ^depcomp$
 ^missing$
+^libtool$
+^ltmain.sh$
 ^(.*/)?stamp-h1$
 ^nxweb-.*\.tar\.gz$
 ^Makefile$

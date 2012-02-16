@@ -17,9 +17,10 @@
 
 AC_INIT([nxweb], [3.0.1-dev])
 AC_CONFIG_HEADER(src/include/nxweb/config.h)
+AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 AC_PROG_CC([gcc])
-AC_PROG_RANLIB
+AC_PROG_LIBTOOL
 
 AC_CANONICAL_HOST
 case $host_os in
@@ -80,17 +81,20 @@ AC_CHECK_FUNC(register_printf_specifier, AC_DEFINE([USE_REGISTER_PRINTF_SPECIFIE
 
 AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread")
 
+AC_SUBST(NXWEB_LIB_VERSION_INFO, "0:0:0")
+
 AC_CONFIG_FILES([Makefile src/lib/Makefile src/include/Makefile src/bin/Makefile ssl/Makefile src/lib/nxweb.pc])
 AC_OUTPUT
 
 AC_MSG_NOTICE([Summary of build options:
 
-  Version:           ${VERSION}
-  Host OS:           ${host_os}
-  Install prefix:    ${prefix}
-  Compiler:          ${CC}
-  CFlags:            ${CFLAGS}
-  SSL support:       $with_gnutls
-  ImageMagick:       $with_imagemagick
-  GZIP compression:  $with_zlib
+  Version:            ${VERSION}
+  Host OS:            ${host_os}
+  Install prefix:     ${prefix}
+  Compiler:           ${CC}
+  CFlags:             ${CFLAGS}
+  SSL support:        $with_gnutls
+  ImageMagick:        $with_imagemagick
+  GZIP compression:   $with_zlib
+  Shared lib version: $NXWEB_LIB_VERSION_INFO
 ])

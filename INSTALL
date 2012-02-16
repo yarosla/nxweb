@@ -67,7 +67,7 @@ sudo make uninstall
 
 4. Compiling and linking your own main.c & modules:
 
-gcc -O2 -g main.c modules/*.c -o mynxweb `pkg-config --cflags --libs --static nxweb`
+gcc -O2 -g main.c modules/*.c -o mynxweb `pkg-config --cflags --libs nxweb`
 
   pkg-config will search for NXWEB libraries at system's default locations
   if not custom configured.

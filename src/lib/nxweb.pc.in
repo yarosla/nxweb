@@ -2,7 +2,7 @@
 #
 # After installing this file the following command can be used
 # to compile and link modules to libnxweb:
-#  gcc -O2 -g main.c modules/*.c `pkg-config --cflags --libs --static nxweb`
+#  gcc -O2 -g main.c modules/*.c -o mynxweb `pkg-config --cflags --libs nxweb`
 
 
 prefix=@prefix@
@@ -14,6 +14,6 @@ Name: nxweb
 Description: NXWEB - ultra-fast and super-lightweight web server
 URL: https://bitbucket.org/yarosla/nxweb/
 Version: @VERSION@
-Libs: -L${libdir} -lnxweb
-Libs.private: @NXWEB_EXT_LIBS@
+Libs: -L${libdir} -lnxweb @NXWEB_EXT_LIBS@
+# Libs.private: @NXWEB_EXT_LIBS@
 Cflags: -I${includedir}
