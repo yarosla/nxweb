@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -110,10 +110,13 @@ void myfree(void* q, void* p) {
 
 #define BUF_SIZE 8192
 
-static int gzip_file(const char* src, const char* dst) {
-  struct stat finfo;
-  if (stat(src, &finfo)==-1) {
-    return -1;
+static int gzip_file(const char* src, const char* dst, struct stat* src_finfo) {
+  struct stat _finfo;
+  if (!src_finfo) {
+    if (stat(src, &_finfo)==-1) {
+      return -1;
+    }
+    src_finfo=&_finfo;
   }
   int sfd=open(src, O_RDONLY);
   if (sfd==-1) return -1;
@@ -166,7 +169,7 @@ static int gzip_file(const char* src, const char* dst) {
   nx_free(obuf);
   close(sfd);
   close(dfd);
-  struct utimbuf ut={.actime=finfo.st_atime, .modtime=finfo.st_mtime};
+  struct utimbuf ut={.actime=src_finfo->st_atime, .modtime=src_finfo->st_mtime};
   utime(dst, &ut);
   return 0;
 }
@@ -206,11 +209,12 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   if (resp->sendfile_path) { // gzip on disk
     assert(fdata->cache_key);
+    assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
     int rlen=fdata->cache_key_root_len;
     const char* fpath=fdata->cache_key;
 
     if (nxweb_mkpath((char*)fpath, 0755)<0
-     || gzip_file(resp->sendfile_path, fpath)<0) {
+     || gzip_file(resp->sendfile_path, fpath, &resp->sendfile_info)<0) {
       nxweb_log_error("nxweb_mkpath() or gzip_file() failed for %s", resp->sendfile_path);
       return NXWEB_ERROR;
     }
@@ -218,7 +222,11 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
 
     resp->sendfile_path=fpath;
     resp->sendfile_path_root_len=rlen;
-    if (stat(fpath, &resp->sendfile_info)==-1) return NXWEB_ERROR;
+    if (stat(fpath, &resp->sendfile_info)==-1) {
+      nxweb_log_error("can't stat gzipped %s", fpath);
+      return NXWEB_ERROR;
+    }
+    resp->sendfile_end=
     resp->content_length=resp->sendfile_info.st_size;
     resp->last_modified=resp->sendfile_info.st_mtime;
     resp->gzip_encoded=1;

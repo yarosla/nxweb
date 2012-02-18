@@ -22,7 +22,8 @@ License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
 EOT
 
 $COPYRIGHT =~ s/^/ * /gm;
-$COPYRIGHT="/*\n".$COPYRIGHT." */\n\n";
+$COPYRIGHT =~ s/\s+$//gm;
+$COPYRIGHT="/*\n".$COPYRIGHT."\n */\n\n";
 
 @FILELIST = qw#
 ./src/bin/modules/hello.c
@@ -63,10 +64,10 @@ $COPYRIGHT="/*\n".$COPYRIGHT." */\n\n";
 ./src/include/nxweb/http_server.h
 #;
 
-undef $/;
-
-for $fname (@FILELIST) {
+sub upd_cprt {
+  my ($fname)=@_;
   print "Updating $fname...";
+  local($/);
   open(F, '+<:encoding(UTF-8)', $fname) or die " can't open the file\n";
   $text=<F>;
   $text =~ s/^(\s*\/\*[*\s]*Copyright.*?\*\/\s*)//si;
@@ -81,4 +82,12 @@ for $fname (@FILELIST) {
     print " skipped\n";
   }
   close(F);
+}
+
+if (@ARGV) {
+  @FILELIST=@ARGV;
+}
+
+for $fname (@FILELIST) {
+  upd_cprt($fname);
 }

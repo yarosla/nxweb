@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -203,7 +203,7 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
     rec->content_length=resp->content_length;
     rec->gzip_encoded=resp->gzip_encoded;
     char* ptr=((char*)rec)+offsetof(nxweb_cache_rec, content);
-    int fd=open(fpath, O_RDONLY);
+    int fd;
     if ((fd=open(fpath, O_RDONLY))<0 || read(fd, ptr, resp->content_length)!=resp->content_length) {
       if (fd>0) close(fd);
       nx_free(rec);
