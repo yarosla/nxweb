@@ -489,8 +489,9 @@ static nxweb_result img_serve_from_cache(struct nxweb_http_server_connection* co
 
 static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
-  assert(resp->sendfile_path);
   assert(fdata->cache_key);
+  assert(resp->sendfile_path);
+  assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
   int rlen=fdata->cache_key_root_len;
   const char* fpath=fdata->cache_key;
   img_filter_data* ifdata=(img_filter_data*)fdata;
@@ -563,7 +564,11 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
 
   resp->sendfile_path=fpath;
   resp->sendfile_path_root_len=rlen;
-  if (stat(fpath, &resp->sendfile_info)==-1) return NXWEB_ERROR;
+  if (stat(fpath, &resp->sendfile_info)==-1) {
+    nxweb_log_error("can't stat processed image %s", fpath);
+    return NXWEB_ERROR;
+  }
+  resp->sendfile_end=
   resp->content_length=resp->sendfile_info.st_size;
   resp->last_modified=resp->sendfile_info.st_mtime;
   return NXWEB_OK;

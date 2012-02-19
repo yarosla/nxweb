@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -462,12 +462,14 @@ void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nx
     nxe_connect_streams(loop, &hsp->ob.data_out, &hsp->resp_body_in);
   }
   else if (resp->sendfile_fd && resp->content_length>0) {
+    assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
     nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
     nxe_connect_streams(loop, &hsp->fb.data_out, &hsp->resp_body_in);
   }
   else if (resp->sendfile_path && resp->content_length>0) {
     resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
     if (resp->sendfile_fd!=-1) {
+      assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
       nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
       nxe_connect_streams(loop, &hsp->fb.data_out, &hsp->resp_body_in);
     }
