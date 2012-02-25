@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -88,6 +88,8 @@ typedef struct nxweb_handler {
   const char* index_file;
   const char* gzip_dir;
   const char* img_dir;
+  const char* key;
+  const struct nxweb_image_filter_cmd* allowed_cmds;
   _Bool cache:1;
   int idx;
   struct nxweb_handler* next;
@@ -177,6 +179,21 @@ struct nxweb_server_config {
   nxweb_handler* handler_list;
   nxweb_module* module_list;
 };
+
+typedef struct nxweb_image_filter_cmd {
+  char cmd;
+  _Bool dont_watermark:1;
+  _Bool gravity_top:1;
+  _Bool gravity_right:1;
+  _Bool gravity_bottom:1;
+  _Bool gravity_left:1;
+  int width;
+  int height;
+  char color[8]; // "#FF00AA\0"
+  char* cmd_string;
+  const char* query_string;
+  const nxweb_mime_type* mtype;
+} nxweb_image_filter_cmd;
 
 extern struct nxweb_server_config nxweb_server_config;
 extern __thread struct nxweb_net_thread_data* _nxweb_net_thread_data;

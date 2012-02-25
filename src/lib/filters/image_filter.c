@@ -89,21 +89,6 @@
      _a < _b ? _a : _b; })
 #endif
 
-typedef struct isrv_cmd {
-  char cmd;
-  _Bool dont_watermark:1;
-  _Bool gravity_top:1;
-  _Bool gravity_right:1;
-  _Bool gravity_bottom:1;
-  _Bool gravity_left:1;
-  int width;
-  int height;
-  char color[8]; // "#FF00AA\0"
-  char* cmd_string;
-  const char* query_string;
-  const nxweb_mime_type* mtype;
-} isrv_cmd;
-
 /**
  * Only commands listed below will be allowed (to protect from DoS).
  * Arbitrary command can also be executed if signed by QUERY_STRING.
@@ -111,7 +96,7 @@ typedef struct isrv_cmd {
  * Signature calculated as SHA1(uri_path+CMD_SIGN_SECRET_KEY)
  */
 
-static isrv_cmd allowed_cmds[]={
+static nxweb_image_filter_cmd allowed_cmds[]={
   {.cmd='s', .width=50, .height=50},
   {.cmd='s', .width=100, .height=100},
   {.cmd='s', .width=100, .height=0},
@@ -153,7 +138,7 @@ static int locate_watermark(const char* fpath, const char* path_info, char* wpat
   return 0; // not found
 }
 
-static int process_cmd(const char* fpath, const char* path_info, MagickWand* image, isrv_cmd* cmd) {
+static int process_cmd(const char* fpath, const char* path_info, MagickWand* image, nxweb_image_filter_cmd* cmd) {
   int width=MagickGetImageWidth(image);
   int height=MagickGetImageHeight(image);
   if (width<=0 || height<=0) {
@@ -256,7 +241,7 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
   return dirty;
 }
 
-static int decode_cmd(char* uri, isrv_cmd* cmd, nxb_buffer* nxb) { // modifies uri; extracts cmd string allocating it in nxb
+static int decode_cmd(char* uri, nxweb_image_filter_cmd* cmd, nxb_buffer* nxb) { // modifies uri; extracts cmd string allocating it in nxb
   memset(cmd, 0, sizeof(*cmd));
   char* q=strchr(uri, '?');
   if (q) *q='\0'; // cut query
@@ -395,12 +380,12 @@ static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
 #ifdef WITH_NETTLE
 
-static void sha1sign(const char* str, unsigned str_len, char* result) {
+static void sha1sign(const char* str, unsigned str_len, const char* key, char* result) {
   struct sha1_ctx sha;
   uint8_t res[SHA1_DIGEST_SIZE];
   sha1_init(&sha);
   sha1_update(&sha, str_len, (uint8_t*)str);
-  sha1_update(&sha, sizeof(CMD_SIGN_SECRET_KEY)-1, (uint8_t*)CMD_SIGN_SECRET_KEY);
+  sha1_update(&sha, strlen(key), (uint8_t*)key);
   sha1_digest(&sha, SHA1_DIGEST_SIZE, res);
   int i;
   char* p=result;
@@ -414,11 +399,11 @@ static void sha1sign(const char* str, unsigned str_len, char* result) {
 
 #else
 
-static void sha1sign(const char* str, unsigned str_len, char* result) {
+static void sha1sign(const char* str, unsigned str_len, const char* key, char* result) {
   SHA1Context sha;
   SHA1Reset(&sha);
   SHA1Input(&sha, (const unsigned char*)str, str_len);
-  SHA1Input(&sha, (const unsigned char*)CMD_SIGN_SECRET_KEY, sizeof(CMD_SIGN_SECRET_KEY)-1);
+  SHA1Input(&sha, (const unsigned char*)key, strlen(key));
   SHA1Result(&sha);
   int i;
   char* p=result;
@@ -440,7 +425,7 @@ static void sha1sign(const char* str, unsigned str_len, char* result) {
 
 typedef struct img_filter_data {
   nxweb_filter_data fdata;
-  isrv_cmd cmd;
+  nxweb_image_filter_cmd cmd;
 } img_filter_data;
 
 static nxweb_filter_data* img_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
@@ -498,7 +483,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
 
   if (ifdata->cmd.cmd) {
     // check if cmd is allowed
-    isrv_cmd* ac=allowed_cmds;
+    const nxweb_image_filter_cmd* ac=conn->handler->allowed_cmds? conn->handler->allowed_cmds : allowed_cmds;
     _Bool allowed=0;
     while (ac->cmd) {
       if (ifdata->cmd.cmd==ac->cmd && ifdata->cmd.width==ac->width && ifdata->cmd.height==ac->height
@@ -512,7 +497,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
     }
     if (!allowed && ifdata->cmd.query_string) {
       char signature[41];
-      sha1sign(fpath+rlen, strlen(fpath+rlen), signature);
+      sha1sign(fpath+rlen, strlen(fpath+rlen), conn->handler->key? conn->handler->key : CMD_SIGN_SECRET_KEY, signature);
       nxweb_log_error("path=%s sha1sign=%s query_string=%s", fpath+rlen, signature, ifdata->cmd.query_string);
       if (!strcmp(ifdata->cmd.query_string, signature)) allowed=1;
     }
