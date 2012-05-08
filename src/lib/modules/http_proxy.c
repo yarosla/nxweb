@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -125,11 +125,11 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
 
     if (req->content_length) { // receive body
       nxd_rbuffer_init(&rdata->rb_req, rdata->rbuf, NXWEB_RBUF_SIZE); // use same buffer area for request and response bodies, as they do not overlap in time
-      nxe_connect_streams(loop, &conn->hsp.req_body_out, &rdata->rb_req.data_in);
+      conn->hsp.cls->connect_request_body_out(&conn->hsp, &rdata->rb_req.data_in);
       nxe_connect_streams(loop, &rdata->rb_req.data_out, &hpx->hcp.req_body_in);
       req->cdstate.monitor_only=1;
 
-      nxe_ostream_set_ready(loop, &conn->hsp.data_in);
+      conn->hsp.cls->start_receiving_request_body(&conn->hsp);
     }
     return NXWEB_OK;
   }

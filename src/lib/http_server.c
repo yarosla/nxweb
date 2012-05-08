@@ -367,7 +367,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     if (req->content_length) {
       if (h->on_post_data) h->on_post_data(conn, req, resp);
       else {
-        if (!conn->hsp.req_body_out.pair) { // stream not connected
+        if (!conn->hsp.cls->get_request_body_out_pair(&conn->hsp)) { // stream not connected
           if (req->content_length>NXWEB_MAX_REQUEST_BODY_SIZE) {
             nxweb_send_http_error(resp, 413, "Request Entity Too Large");
             resp->keep_alive=0; // close connection
@@ -375,9 +375,9 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
             return;
           }
           nxe_loop* loop=conn->tdata->loop;
-          nxd_ibuffer_init(&conn->hsp.ib, conn->hsp.nxb, req->content_length>0? req->content_length+1 : NXWEB_MAX_REQUEST_BODY_SIZE);
-          nxe_connect_streams(loop, &conn->hsp.req_body_out, &conn->hsp.ib.data_in);
-          nxe_ostream_set_ready(loop, &conn->hsp.data_in);
+          nxd_ibuffer_init(&conn->ib, conn->hsp.nxb, req->content_length>0? req->content_length+1 : NXWEB_MAX_REQUEST_BODY_SIZE);
+          conn->hsp.cls->connect_request_body_out(&conn->hsp, &conn->ib.data_in);
+          conn->hsp.cls->start_receiving_request_body(&conn->hsp);
         }
       }
     }
@@ -391,8 +391,8 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_handler_flags flags=h->flags;
     if (h->on_post_data_complete) h->on_post_data_complete(conn, req, resp);
     else {
-      if (conn->hsp.req_body_out.pair==&conn->hsp.ib.data_in) {
-        req->content=nxd_ibuffer_get_result(&conn->hsp.ib, 0);
+      if (conn->hsp.cls->get_request_body_out_pair(&conn->hsp)==&conn->ib.data_in) {
+        req->content=nxd_ibuffer_get_result(&conn->ib, 0);
       }
     }
     invoke_request_handler(conn, req, resp, h, flags);

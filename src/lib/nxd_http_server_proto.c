@@ -398,24 +398,6 @@ static const nxe_timer_class timer_keep_alive_class={.on_timeout=timer_keep_aliv
 static const nxe_timer_class timer_read_class={.on_timeout=timer_read_on_timeout};
 static const nxe_timer_class timer_write_class={.on_timeout=timer_write_on_timeout};
 
-void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool) {
-  memset(hsp, 0, sizeof(nxd_http_server_proto));
-  hsp->nxb_pool=nxb_pool;
-  hsp->data_in.super.cls.os_cls=&data_in_class;
-  hsp->data_out.super.cls.is_cls=&data_out_class;
-  hsp->data_out.evt.cls=NXE_EV_STREAM;
-  hsp->data_error.super.cls.sub_cls=&data_error_class;
-  hsp->req_body_out.super.cls.is_cls=&req_body_out_class;
-  hsp->req_body_out.evt.cls=NXE_EV_STREAM;
-  hsp->resp_body_in.super.cls.os_cls=&resp_body_in_class;
-  hsp->events_pub.super.cls.pub_cls=NXE_PUB_DEFAULT;
-  hsp->timer_keep_alive.super.cls.timer_cls=&timer_keep_alive_class;
-  hsp->timer_read.super.cls.timer_cls=&timer_read_class;
-  hsp->timer_write.super.cls.timer_cls=&timer_write_class;
-  hsp->data_in.ready=1;
-  hsp->resp_body_in.ready=1;
-}
-
 void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp) {
   if (hsp->req_finalize) hsp->req_finalize(hsp, hsp->req_data);
   nxe_loop* loop=hsp->data_in.super.loop;
@@ -489,4 +471,43 @@ void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nx
   }
   hsp->state=HSP_SENDING_HEADERS;
   nxe_set_timer(loop, NXWEB_TIMER_WRITE, &hsp->timer_write);
+}
+
+static void connect_request_body_out(nxd_http_server_proto* hsp, nxe_ostream* is) {
+  nxe_connect_streams(hsp->data_in.super.loop, &hsp->req_body_out, is);
+}
+
+static nxe_ostream* get_request_body_out_pair(nxd_http_server_proto* hsp) {
+  return hsp->req_body_out.pair;
+}
+
+static void start_receiving_request_body(nxd_http_server_proto* hsp) {
+  nxe_ostream_set_ready(hsp->data_in.super.loop, &hsp->data_in);
+}
+
+static const nxd_http_server_proto_class http_server_proto_class={
+  .finalize=nxd_http_server_proto_finalize,
+  .start_sending_response=nxd_http_server_proto_start_sending_response,
+  .start_receiving_request_body=start_receiving_request_body,
+  .connect_request_body_out=connect_request_body_out,
+  .get_request_body_out_pair=get_request_body_out_pair
+};
+
+void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool) {
+  memset(hsp, 0, sizeof(nxd_http_server_proto));
+  hsp->cls=&http_server_proto_class;
+  hsp->nxb_pool=nxb_pool;
+  hsp->data_in.super.cls.os_cls=&data_in_class;
+  hsp->data_out.super.cls.is_cls=&data_out_class;
+  hsp->data_out.evt.cls=NXE_EV_STREAM;
+  hsp->data_error.super.cls.sub_cls=&data_error_class;
+  hsp->req_body_out.super.cls.is_cls=&req_body_out_class;
+  hsp->req_body_out.evt.cls=NXE_EV_STREAM;
+  hsp->resp_body_in.super.cls.os_cls=&resp_body_in_class;
+  hsp->events_pub.super.cls.pub_cls=NXE_PUB_DEFAULT;
+  hsp->timer_keep_alive.super.cls.timer_cls=&timer_keep_alive_class;
+  hsp->timer_read.super.cls.timer_cls=&timer_read_class;
+  hsp->timer_write.super.cls.timer_cls=&timer_write_class;
+  hsp->data_in.ready=1;
+  hsp->resp_body_in.ready=1;
 }

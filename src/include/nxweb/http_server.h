@@ -153,6 +153,7 @@ typedef struct nxweb_http_server_connection {
   nxweb_net_thread_data* tdata;
   int lconf_idx;
   _Bool secure:1;
+  nxd_ibuffer ib;
 } nxweb_http_server_connection;
 
 typedef struct nxweb_http_proxy_pool_config {

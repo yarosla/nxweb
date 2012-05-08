@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -25,6 +25,8 @@ extern "C" {
 #endif
 
 #include <assert.h>
+
+#include "nx_event.h"
 
 struct nxd_socket;
 
@@ -150,6 +152,16 @@ void nxd_fbuffer_init(nxd_fbuffer* fb, int fd, off_t offset, off_t end);
 void nxd_fbuffer_finalize(nxd_fbuffer* fb);
 
 
+struct nxd_http_server_proto;
+
+typedef struct nxd_http_server_proto_class {
+  void (*finalize)(struct nxd_http_server_proto* hsp);
+  void (*start_sending_response)(struct nxd_http_server_proto* hsp, struct nxweb_http_response* resp);
+  void (*start_receiving_request_body)(struct nxd_http_server_proto* hsp);
+  void (*connect_request_body_out)(struct nxd_http_server_proto* hsp, nxe_ostream* is);
+  nxe_ostream* (*get_request_body_out_pair)(struct nxd_http_server_proto* hsp);
+} nxd_http_server_proto_class;
+
 enum nxd_http_server_proto_state {
   HSP_WAITING_FOR_REQUEST=0,
   HSP_RECEIVING_HEADERS,
@@ -160,6 +172,7 @@ enum nxd_http_server_proto_state {
 };
 
 typedef struct nxd_http_server_proto {
+  const nxd_http_server_proto_class* cls;
   nxe_ostream data_in;
   nxe_istream data_out;
   nxe_subscriber data_error;
@@ -185,7 +198,6 @@ typedef struct nxd_http_server_proto {
   const char* resp_headers_ptr;
   nxd_obuffer ob;
   nxd_fbuffer fb;
-  nxd_ibuffer ib;
   void* req_data;
   void (*req_finalize)(struct nxd_http_server_proto* hsp, void* req_data);
 } nxd_http_server_proto;
