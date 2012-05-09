@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -40,7 +40,7 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
            "cookie=%H<br/>\n"
            "user_agent=%H<br/>\n"
            "content_type=%H<br/>\n"
-           "content_length=%d<br/>\n"
+           "content_length=%ld<br/>\n"
            "transfer_encoding=%H<br/>\n"
            "accept_encoding=%H<br/>\n"
            "request_body=%H</blockquote>\n",

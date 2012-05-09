@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -277,6 +277,11 @@ static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* pt
     if (bytes_received<0) {
       nxe_istream_unset_ready(is);
       if (bytes_received!=GNUTLS_E_AGAIN) nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
+      return 0;
+    }
+    if (bytes_received==0) {
+      nxe_istream_unset_ready(is);
+      nxe_publish(&fs->data_error, (nxe_data)NXE_RDCLOSED);
       return 0;
     }
 /*

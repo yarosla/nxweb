@@ -500,6 +500,9 @@ static void on_net_thread_shutdown(nxe_subscriber* sub, nxe_publisher* pub, nxe_
   int i;
   nxweb_net_thread_data* tdata=(nxweb_net_thread_data*)((char*)sub-offsetof(nxweb_net_thread_data, shutdown_sub));
   //nxe_loop* loop=sub->super.loop;
+
+  nxweb_log_error("shutting down net thread");
+
   nxe_unsubscribe(pub, sub);
 
   nxweb_server_listen_config* lconf;

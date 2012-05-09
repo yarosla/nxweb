@@ -43,6 +43,7 @@ extern nxweb_handler benchmark_handler;
 extern nxweb_handler benchmark_handler_inworker;
 extern nxweb_handler test_handler;
 extern nxweb_handler sendfile_handler;
+extern nxweb_handler upload_handler;
 
 #ifdef WITH_ZLIB
 extern nxweb_filter gzip_filter;
@@ -62,6 +63,9 @@ NXWEB_SET_HANDLER(hello, "/hello", &hello_handler, .priority=1000, .filters={
   &gzip_filter
 #endif
 });
+
+// This is sample handler (see modules/upload.c):
+NXWEB_SET_HANDLER(upload, "/upload", &upload_handler, .priority=1000);
 
 // This proxies requests to backend number 0 (see proxy setup further below):
 NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=10000, .idx=0, .uri="/java-test");

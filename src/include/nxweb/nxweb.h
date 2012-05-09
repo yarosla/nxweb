@@ -115,6 +115,8 @@ typedef struct nxweb_http_request {
 
   nxweb_chunked_decoder_state cdstate;
 
+  nxe_data module_data;
+
 } nxweb_http_request;
 
 typedef struct nxweb_http_response {

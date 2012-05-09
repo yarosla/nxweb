@@ -152,6 +152,18 @@ void nxd_fbuffer_init(nxd_fbuffer* fb, int fd, off_t offset, off_t end);
 void nxd_fbuffer_finalize(nxd_fbuffer* fb);
 
 
+typedef struct nxd_fwbuffer {
+  nxe_ostream data_in;
+  int fd;
+  int error;            // errno
+  nxe_size_t size;      // total bytes received via data_in
+  nxe_size_t max_size;  // max bytes to store in file
+} nxd_fwbuffer;
+
+void nxd_fwbuffer_init(nxd_fwbuffer* fwb, int fd, nxe_size_t max_size);
+void nxd_fwbuffer_finalize(nxd_fwbuffer* fwb);
+
+
 struct nxd_http_server_proto;
 
 typedef struct nxd_http_server_proto_class {
