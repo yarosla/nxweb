@@ -433,7 +433,7 @@ void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http
     }
   }
 
-  if (conn->handler->num_filters) {
+  if (conn->handler && conn->handler->num_filters) {
     // run filters
     int i;
     nxweb_http_request* req=&conn->hsp.req;
@@ -448,7 +448,7 @@ void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http
     }
   }
 
-  if (conn->handler->cache) {
+  if (conn->handler && conn->handler->cache) {
     nxweb_cache_store_response(conn, resp);
   }
   nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
