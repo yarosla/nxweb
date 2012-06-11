@@ -202,6 +202,8 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     nxd_http_proxy* hpx=rdata->hpx;
     nxweb_http_response* presp=&hpx->hcp.resp;
     nxweb_http_response* resp=&conn->hsp._resp;
+    resp->status=presp->status;
+    resp->status_code=presp->status_code;
     resp->content_type=presp->content_type;
     resp->content_length=presp->content_length;
     resp->chunked_encoding=presp->chunked_encoding;
