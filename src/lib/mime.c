@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -149,7 +149,7 @@ const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext) {
   int ext_len=strlen(ext);
   char _ext[32];
   if (ext_len>sizeof(_ext)-1) return &mime_types[0];
-  nx_tolower_str(_ext, ext);
+  nx_strtolower(_ext, ext);
   ah_iter_t ci;
   if ((ci=alignhash_get(mime_cache, _mime_cache_by_ext, _ext))!=alignhash_end(_mime_cache_by_ext)) {
     return alignhash_value(_mime_cache_by_ext, ci);

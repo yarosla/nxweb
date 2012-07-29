@@ -85,7 +85,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
       uri=filter->decode_uri(conn, req, resp, req->filter_data[i], uri);
     }
     req->uri=uri;
-    assert(nxweb_url_prefix_match(req->uri, handler->prefix, handler->prefix_len)); // ensure it still matches
+    assert(!handler->prefix_len || nxweb_url_prefix_match(req->uri, handler->prefix, handler->prefix_len)); // ensure it still matches
   }
   req->path_info=req->uri+handler->prefix_len;
 
@@ -184,21 +184,33 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
 nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_handler* h=nxweb_server_config.handler_list;
   const char* uri=req->uri;
+  const char* host=req->host;
+  // NOTE: host is always lowercase; ensured by _nxweb_parse_http_request()
+  int host_len;
+  if (host) {
+    const char* p=strchr(host, ':');
+    host_len=p? p-host : strlen(host);
+  }
+  else {
+    host_len=0;
+  }
   while (h) {
-    if (!h->prefix || nxweb_url_prefix_match(uri, h->prefix, h->prefix_len)) {
-      nxweb_result res=nxweb_select_handler(conn, req, resp, h, h->param);
-      if (res!=NXWEB_NEXT) {
-        if (res==NXWEB_ERROR) {
-          // request processing terminated by http error response
-          if (req->content_length) resp->keep_alive=0; // close connection if there is body pending
-          nxweb_start_sending_response(conn, resp);
-          return NXWEB_ERROR;
+    if (!h->vhost_len || (host_len && nxweb_vhost_match(host, host_len, h->vhost, h->vhost_len))) {
+      if (!h->prefix_len || nxweb_url_prefix_match(uri, h->prefix, h->prefix_len)) {
+        nxweb_result res=nxweb_select_handler(conn, req, resp, h, h->param);
+        if (res!=NXWEB_NEXT) {
+          if (res==NXWEB_ERROR) {
+            // request processing terminated by http error response
+            if (req->content_length) resp->keep_alive=0; // close connection if there is body pending
+            nxweb_start_sending_response(conn, resp);
+            return NXWEB_ERROR;
+          }
+          if (res!=NXWEB_OK) {
+            nxweb_log_error("handler %s on_select() returned error %d", h->name, res);
+            break;
+          }
+          return NXWEB_OK;
         }
-        if (res!=NXWEB_OK) {
-          nxweb_log_error("handler %s on_select() returned error %d", h->name, res);
-          break;
-        }
-        return NXWEB_OK;
       }
     }
     h=h->next;
@@ -233,6 +245,7 @@ void _nxweb_register_module(nxweb_module* module) {
 
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
   handler->prefix_len=handler->prefix? strlen(handler->prefix) : 0;
+  handler->vhost_len=handler->vhost? strlen(handler->vhost) : 0;
   if (base) {
     if (!handler->on_generate_cache_key) handler->on_generate_cache_key=base->on_generate_cache_key;
     if (!handler->on_serve_from_cache) handler->on_serve_from_cache=base->on_serve_from_cache;

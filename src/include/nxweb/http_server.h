@@ -79,6 +79,8 @@ typedef struct nxweb_handler {
   const char* name;
   const char* prefix;
   int prefix_len;
+  const char* vhost;
+  int vhost_len;
   int priority;
   nxweb_handler_flags flags;
   nxe_data param;

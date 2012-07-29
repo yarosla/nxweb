@@ -178,9 +178,12 @@ static inline char nx_tolower(char c) {
   return c>='A' && c<='Z' ? c+('a'-'A') : c;
 }
 
-static inline char* nx_tolower_str(char* dst, const char* src) {
+static inline void nx_strtolower(char* dst, const char* src) { // dst==src is OK for inplace tolower
   while ((*dst++=nx_tolower(*src++))) ;
-  return dst;
+}
+
+static inline void nx_strntolower(char* dst, const char* src, int len) { // dst==src is OK for inplace tolower
+  while (len-- && (*dst++=nx_tolower(*src++))) ;
 }
 
 static inline int nx_strcasecmp(const char* s1, const char* s2) {
@@ -192,6 +195,19 @@ static inline int nx_strcasecmp(const char* s1, const char* s2) {
 
   while ((result=nx_tolower(*p1)-nx_tolower(*p2++))==0)
     if (*p1++=='\0') break;
+
+  return result;
+}
+
+static inline int nx_strncasecmp(const char* s1, const char* s2, int len) {
+  const unsigned char* p1=(const unsigned char*)s1;
+  const unsigned char* p2=(const unsigned char*)s2;
+  int result;
+
+  if (p1==p2 || len<=0) return 0;
+
+  while ((result=nx_tolower(*p1)-nx_tolower(*p2++))==0)
+    if (!len-- || *p1++=='\0') break;
 
   return result;
 }
@@ -249,6 +265,17 @@ static inline const char* nxweb_get_request_cookie(nxweb_http_request *req, cons
 
 static inline int nxweb_url_prefix_match(const char* url, const char* prefix, int prefix_len) {
   return !strncmp(url, prefix, prefix_len) && (!url[prefix_len] || url[prefix_len]=='/' || url[prefix_len]=='?' || url[prefix_len]==';');
+}
+
+static inline int nxweb_vhost_match(const char* host, int host_len, const char* vhost_suffix, int vhost_suffix_len) {
+  if (*vhost_suffix=='.') {
+    if (vhost_suffix_len==host_len+1) return !strncmp(host, vhost_suffix+1, host_len);
+    if (vhost_suffix_len<=host_len) return !strncmp(host+(host_len-vhost_suffix_len), vhost_suffix, vhost_suffix_len);
+    return 0;
+  }
+  else {
+    return vhost_suffix_len==host_len && !strncmp(host, vhost_suffix, host_len);
+  }
 }
 
 const nxweb_mime_type* nxweb_get_mime_type(const char* type_name);

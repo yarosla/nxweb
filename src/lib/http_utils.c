@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -362,7 +362,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
     char* uri=strchr(req->uri+7, '/');
     if (!uri) return -1;
     int host_len=(uri-host)-7;
-    memmove(host, host+7, host_len);
+    nx_strntolower(host, host+7, host_len); // memmove(host, host+7, host_len);
     host[host_len]='\0';
     req->host=host;
     req->uri=uri;
@@ -403,7 +403,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
 
     header_name_id=identify_http_header(name, name_len);
     switch (header_name_id) {
-      case NXWEB_HTTP_HOST: req->host=value; break;
+      case NXWEB_HTTP_HOST: nx_strtolower(value, value); req->host=value; break;
       case NXWEB_HTTP_EXPECT: expect=value; break;
       case NXWEB_HTTP_COOKIE: req->cookie=value; break;
       case NXWEB_HTTP_USER_AGENT: req->user_agent=value; break;
@@ -682,7 +682,7 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     }
     nxb_append_fast(nxb, "\r\n", 2);
   }
-  nxb_append(nxb, "\r\n", 3);
+  nxb_append(nxb, "\r\n", 3); // add null-terminator
 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
 }
@@ -729,7 +729,7 @@ void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* locat
     nxb_append_str(nxb, location);
   }
   if (location_path_info) nxb_append_str(nxb, location_path_info);
-  nxb_append_str(nxb, "\r\n\r\n");
+  nxb_append(nxb, "\r\n\r\n", 5); // add null-terminator
 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
 }
@@ -901,7 +901,7 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
     }
     nxb_append_str(nxb, "\r\n");
   }
-  nxb_append_fast(nxb, "\r\n", 3);
+  nxb_append_fast(nxb, "\r\n", 3); // add null-terminator
 
   return nxb_finish_stream(nxb, 0);
 }
