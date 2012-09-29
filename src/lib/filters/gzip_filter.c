@@ -236,7 +236,7 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
     if (!resp->mtype) {
       resp->mtype=nxweb_get_mime_type(resp->content_type);
     }
-    if (!resp->mtype->gzippable) {
+    if (!resp->mtype || !resp->mtype->gzippable) {
       fdata->bypass=1;
       return NXWEB_NEXT;
     }

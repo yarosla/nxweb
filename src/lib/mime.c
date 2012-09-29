@@ -52,18 +52,20 @@ static const nxweb_mime_type const mime_types[] = {
   {"wbmp", "image/vnd.wap.wbmp", 0},
   {"ico", "image/x-icon", 0, .gzippable=1},
   {"js", "application/x-javascript", 1, .gzippable=1},
+  {"json", "application/json", 1, .gzippable=1},
   {"css", "text/css", 1, 1},
   {"xhtml", "application/xhtml+xml", 1, .gzippable=1},
   {"xht", "application/xhtml+xml", 1, .gzippable=1},
   {"xml", "application/xml", 1, .gzippable=1},
+  {"xml", "text/xml", 1, .gzippable=1},
   {"xsl", "application/xml", 1, .gzippable=1},
   {"xslt", "application/xml", 1, .gzippable=1},
   {"atom", "application/atom+xml", 1, .gzippable=1},
   {"dtd", "application/xml-dtd", 1, .gzippable=1},
   {"doc", "application/msword", 0, .gzippable=1},
   {"pdf", "application/pdf", 0},
-  {"eps", "application/postscript", 0},
   {"ps", "application/postscript", 0},
+  {"eps", "application/postscript", 0},
   {"ai", "application/postscript", 0},
   {"rdf", "application/rdf+xml", 1},
   {"smil", "application/smil", 0},
@@ -74,7 +76,6 @@ static const nxweb_mime_type const mime_types[] = {
   {"sit", "application/x-stuffit", 0},
   {"tar", "application/x-tar", 0},
   {"zip", "application/zip", 0},
-  {"rar", "application/rar", 0},
   {"rar", "application/rar", 0},
   {"gz", "application/x-gunzip", 0},
   {"tgz", "application/x-tar-gz", 0},
@@ -117,11 +118,11 @@ void nxweb_add_mime_type(const nxweb_mime_type* type) {
   ah_iter_t ci;
   int ret=0;
   ci=alignhash_set(mime_cache, _mime_cache_by_ext, type->ext, &ret);
-  if (ci!=alignhash_end(_mime_cache_by_ext)) {
+  if (ret!=AH_INS_ERR && ci!=alignhash_end(_mime_cache_by_ext)) {
     alignhash_value(_mime_cache_by_ext, ci)=type;
   }
   ci=alignhash_set(mime_cache, _mime_cache_by_type, type->mime, &ret);
-  if (ci!=alignhash_end(_mime_cache_by_type)) {
+  if (ret!=AH_INS_ERR && ci!=alignhash_end(_mime_cache_by_type)) {
     alignhash_value(_mime_cache_by_type, ci)=type;
   }
 }

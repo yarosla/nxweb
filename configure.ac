@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
 
-AC_INIT([nxweb], [3.0.1-dev])
+AC_INIT([nxweb], [3.1.0-dev])
 AC_CONFIG_HEADER(src/include/nxweb/config.h)
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
