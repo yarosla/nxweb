@@ -200,7 +200,10 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   if (hsp->state==HSP_SENDING_BODY) {
     nxe_istream* prev_is=hsp->resp_body_in.pair;
     if (prev_is) {
-      if (prev_is->ready) ISTREAM_CLASS(prev_is)->do_write(prev_is, &hsp->resp_body_in);
+      if (prev_is->ready) {
+        hsp->resp_body_in.ready=1;
+        ISTREAM_CLASS(prev_is)->do_write(prev_is, &hsp->resp_body_in);
+      }
       if (!prev_is->ready) {
         nxe_istream_unset_ready(is);
         nxe_ostream_set_ready(loop, &hsp->resp_body_in); // get notified when prev_is becomes ready again
@@ -439,7 +442,10 @@ void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nx
     }
   }
 
-  if (resp->content && resp->content_length>0) {
+  if (resp->content_out) {
+    nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
+  }
+  else if (resp->content && resp->content_length>0) {
     nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
     nxe_connect_streams(loop, &hsp->ob.data_out, &hsp->resp_body_in);
   }
@@ -458,9 +464,6 @@ void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nx
     else {
       nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
     }
-  }
-  else if (resp->content_out) {
-    nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
   }
 
   if (!resp->raw_headers) _nxweb_prepare_response_headers(loop, resp);

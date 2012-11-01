@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -208,7 +208,10 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
     hcp->req_body_sending_started=1;
     nxe_istream* prev_is=hcp->req_body_in.pair;
     if (prev_is) {
-      if (prev_is->ready) ISTREAM_CLASS(prev_is)->do_write(prev_is, &hcp->req_body_in);
+      if (prev_is->ready) {
+        hcp->req_body_in.ready=1;
+        ISTREAM_CLASS(prev_is)->do_write(prev_is, &hcp->req_body_in);
+      }
       if (!prev_is->ready) {
         nxe_istream_unset_ready(is);
         nxe_ostream_set_ready(loop, &hcp->req_body_in); // get notified when prev_is becomes ready again

@@ -164,6 +164,29 @@ void nxd_fwbuffer_init(nxd_fwbuffer* fwb, int fd, nxe_size_t max_size);
 void nxd_fwbuffer_finalize(nxd_fwbuffer* fwb);
 
 
+typedef struct nxd_streamer_node {
+  unsigned final:1;
+  unsigned complete:1;
+  struct nxd_streamer* strm;
+  nxe_ostream data_in;
+  struct nxd_streamer_node* next;
+} nxd_streamer_node;
+
+typedef struct nxd_streamer {
+  nxe_istream data_out;
+  nxd_streamer_node* head;
+  nxd_streamer_node* current;
+} nxd_streamer;
+
+void nxd_streamer_init(nxd_streamer* strm);
+void nxd_streamer_add_node(nxd_streamer* strm, nxd_streamer_node* snode, int final);
+void nxd_streamer_start(nxd_streamer* strm);
+void nxd_streamer_finalize(nxd_streamer* strm);
+void nxd_streamer_node_init(nxd_streamer_node* snode);
+void nxd_streamer_node_finalize(nxd_streamer_node* snode);
+void nxd_streamer_node_start(nxd_streamer_node* snode);
+
+
 struct nxd_http_server_proto;
 
 typedef struct nxd_http_server_proto_class {
@@ -222,6 +245,7 @@ enum nxd_http_server_proto_error_code {
   NXD_HSP_SHUTDOWN_CONNECTION=-27109,
   NXD_HSP_REQUEST_RECEIVED=27101,
   NXD_HSP_REQUEST_BODY_RECEIVED=27102,
+  NXD_HSP_RESPONSE_READY=27103,
   NXD_HSP_REQUEST_COMPLETE=27109
 };
 

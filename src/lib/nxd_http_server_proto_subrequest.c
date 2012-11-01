@@ -79,6 +79,8 @@ static void subrequest_start_sending_response(nxd_http_server_proto* hsp, nxweb_
     }
   }
 
+  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_RESPONSE_READY);
+
   if (resp->content && resp->content_length>0) {
     nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
     nxe_connect_streams(loop, &hsp->ob.data_out, &hsp->resp_body_in);
@@ -142,4 +144,6 @@ void nxweb_subrequest_execute(nxweb_http_server_connection* conn) {
   nxb_init(hsp->nxb, NXWEB_CONN_NXB_SIZE);
   hsp->state=HSP_RECEIVING_HEADERS;
   hsp->headers_bytes_received=1;
+  hsp->resp=_nxweb_http_response_init(&hsp->_resp, hsp->nxb, &hsp->req);
+  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_RECEIVED);
 }
