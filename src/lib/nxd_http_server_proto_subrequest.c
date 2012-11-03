@@ -23,12 +23,10 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 
+void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp);
+
 static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
-  if (hsp->req_finalize) {
-    hsp->req_finalize(hsp, hsp->req_data);
-    hsp->req_finalize=0;
-    hsp->req_data=0;
-  }
+  _nxweb_call_request_finalizers(hsp);
   //nxd_fbuffer_finalize(&hsp->fb);
   if (hsp->resp && hsp->resp->sendfile_fd) {
     close(hsp->resp->sendfile_fd);
@@ -41,14 +39,14 @@ static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
   hsp->request_count++;
   hsp->state=HSP_WAITING_FOR_REQUEST;
   hsp->headers_bytes_received=0;
-  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_COMPLETE);
+  //nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_COMPLETE);
   memset(&hsp->req, 0, sizeof(nxweb_http_request));
   memset(&hsp->_resp, 0, sizeof(nxweb_http_response));
   hsp->resp=0;
 }
 
 static void subrequest_finalize(nxd_http_server_proto* hsp) {
-  if (hsp->req_finalize) hsp->req_finalize(hsp, hsp->req_data);
+  _nxweb_call_request_finalizers(hsp);
   nxe_loop* loop=hsp->events_pub.super.loop;
   while (hsp->events_pub.sub) nxe_unsubscribe(&hsp->events_pub, hsp->events_pub.sub);
   nxd_fbuffer_finalize(&hsp->fb);

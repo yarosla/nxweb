@@ -25,12 +25,30 @@
 
 static const char* response_100_continue = "HTTP/1.1 100 Continue\r\n\r\n";
 
-static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
+void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
   if (hsp->req_finalize) {
     hsp->req_finalize(hsp, hsp->req_data);
-    hsp->req_finalize=0;
+    hsp->req_finalize=0; // call no more
     hsp->req_data=0;
   }
+  nxweb_http_request_data* rdata=hsp->req.data_chain;
+  nxweb_http_request* req=&hsp->req;
+  nxweb_http_response* resp=hsp->resp;
+  // it is not very good that we access higher level (connection) object here but...
+  nxweb_http_server_connection* conn=(nxweb_http_server_connection*)((char*)hsp-offsetof(nxweb_http_server_connection, hsp));
+  while (rdata) {
+    if (rdata->finalize) {
+      rdata->finalize(conn, req, resp, rdata);
+      rdata->finalize=0; // call no more
+    }
+    rdata=rdata->next;
+  }
+  if (conn->handler && conn->handler->on_complete) conn->handler->on_complete(conn, req, resp);
+  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_COMPLETE);
+}
+
+static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
+  _nxweb_call_request_finalizers(hsp);
   nxe_istream_unset_ready(&hsp->data_out);
   nxd_fbuffer_finalize(&hsp->fb);
   if (hsp->resp && hsp->resp->sendfile_fd) {
@@ -45,7 +63,6 @@ static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
   hsp->request_count++;
   hsp->state=HSP_WAITING_FOR_REQUEST;
   hsp->headers_bytes_received=0;
-  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_COMPLETE);
   if (hsp->resp && hsp->resp->keep_alive) {
     nxe_ostream_set_ready(loop, &hsp->data_in);
     nxe_set_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hsp->timer_keep_alive);
@@ -402,7 +419,7 @@ static const nxe_timer_class timer_read_class={.on_timeout=timer_read_on_timeout
 static const nxe_timer_class timer_write_class={.on_timeout=timer_write_on_timeout};
 
 void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp) {
-  if (hsp->req_finalize) hsp->req_finalize(hsp, hsp->req_data);
+  _nxweb_call_request_finalizers(hsp);
   nxe_loop* loop=hsp->data_in.super.loop;
   nxe_unset_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hsp->timer_keep_alive);
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hsp->timer_read);

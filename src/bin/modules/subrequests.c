@@ -23,48 +23,63 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 
+struct subreq_data {
+  nxd_streamer strm;
+  nxd_streamer_node sn1;
+  nxd_streamer_node sn2;
+  nxd_streamer_node sn3;
+  nxd_obuffer ob1;
+  nxd_obuffer ob2;
+  nxd_fbuffer fb;
+  int fd;
+};
+
+static const char subreq_handler_key; // variable's address matters
+
+static void subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_http_request_data* req_data) {
+  struct subreq_data* srdata=req_data->value.ptr;
+
+  if (srdata->fd>0) close(srdata->fd);
+  nxd_streamer_finalize(&srdata->strm);
+  nxd_fbuffer_finalize(&srdata->fb);
+}
+
 static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
 
-  nxd_streamer* strm=nxb_alloc_obj(req->nxb, sizeof(nxd_streamer));
-  nxd_streamer_init(strm);
-  nxd_streamer_node* sn1=nxb_alloc_obj(req->nxb, sizeof(nxd_streamer_node));
-  nxd_streamer_node_init(sn1);
-  nxd_streamer_node* sn2=nxb_alloc_obj(req->nxb, sizeof(nxd_streamer_node));
-  nxd_streamer_node_init(sn2);
-  nxd_streamer_node* sn3=nxb_alloc_obj(req->nxb, sizeof(nxd_streamer_node));
-  nxd_streamer_node_init(sn3);
-  nxd_streamer_add_node(strm, sn1, 0);
-  nxd_streamer_add_node(strm, sn2, 0);
-  nxd_streamer_add_node(strm, sn3, 1);
+  struct subreq_data* srdata=nxb_alloc_obj(req->nxb, sizeof(struct subreq_data));
+  nxd_streamer_init(&srdata->strm);
+  nxd_streamer_node_init(&srdata->sn1);
+  nxd_streamer_node_init(&srdata->sn2);
+  nxd_streamer_node_init(&srdata->sn3);
+  nxd_streamer_add_node(&srdata->strm, &srdata->sn1, 0);
+  nxd_streamer_add_node(&srdata->strm, &srdata->sn3, 0);
+  nxd_streamer_add_node(&srdata->strm, &srdata->sn2, 1);
 
-  nxd_obuffer* ob1=nxb_alloc_obj(req->nxb, sizeof(nxd_obuffer));
-  nxd_obuffer_init(ob1, "[test1]", sizeof("[test1]")-1);
-  nxe_connect_streams(conn->tdata->loop, &ob1->data_out, &sn1->data_in);
+  nxd_obuffer_init(&srdata->ob1, "[test1]", sizeof("[test1]")-1);
+  nxe_connect_streams(conn->tdata->loop, &srdata->ob1.data_out, &srdata->sn1.data_in);
 
-  nxd_obuffer* ob2=nxb_alloc_obj(req->nxb, sizeof(nxd_obuffer));
-  nxd_obuffer_init(ob2, "[test2]", sizeof("[test2]")-1);
-  nxe_connect_streams(conn->tdata->loop, &ob2->data_out, &sn2->data_in);
+  nxd_obuffer_init(&srdata->ob2, "[test2]", sizeof("[test2]")-1);
+  nxe_connect_streams(conn->tdata->loop, &srdata->ob2.data_out, &srdata->sn2.data_in);
 
-  resp->sendfile_fd=open("www/root/index.htm", O_RDONLY|O_NONBLOCK);
-  if (resp->sendfile_fd!=-1) {
-    nxd_fbuffer* fb=nxb_alloc_obj(req->nxb, sizeof(nxd_fbuffer));
-    nxd_fbuffer_init(fb, resp->sendfile_fd, 0, 15);
-    nxe_connect_streams(conn->tdata->loop, &fb->data_out, &sn3->data_in);
+  srdata->fd=open("www/root/index.htm", O_RDONLY|O_NONBLOCK);
+  if (srdata->fd!=-1) {
+    nxd_fbuffer_init(&srdata->fb, srdata->fd, 0, 15);
+    nxe_connect_streams(conn->tdata->loop, &srdata->fb.data_out, &srdata->sn3.data_in);
   }
   else {
     nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
   }
 
-  nxd_streamer_start(strm);
+  nxd_streamer_start(&srdata->strm);
 
-  resp->content_out=&strm->data_out;
+  resp->content_out=&srdata->strm.data_out;
   resp->content_length=sizeof("[test1]")-1+sizeof("[test2]")-1+15;
+
+  nxweb_set_request_data(req, (nxe_data)&subreq_handler_key, (nxe_data)(void*)srdata, subreq_finalize);
 
   return NXWEB_OK;
 }
 
-nxweb_handler subreq_handler={.on_request=subreq_on_request,
-        .flags=NXWEB_HANDLE_ANY};
-
-NXWEB_SET_HANDLER(subreq, "/subreq", &subreq_handler, .priority=100);
+NXWEB_HANDLER(subreq, "/subreq", .on_request=subreq_on_request,
+        .flags=NXWEB_HANDLE_ANY, .priority=100);

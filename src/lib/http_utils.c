@@ -574,6 +574,31 @@ nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_bu
   return resp;
 }
 
+nxweb_http_request_data* nxweb_find_request_data(nxweb_http_request* req, nxe_data key) {
+  nxweb_http_request_data* rdata=req->data_chain;
+  while (rdata) {
+    if (rdata->key.cptr==key.cptr) break;
+    rdata=rdata->next;
+  }
+  return rdata;
+}
+
+void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data value, nxweb_http_request_data_finalizer finalize) {
+  nxweb_http_request_data* rdata=nxweb_find_request_data(req, key);
+  if (!rdata) {
+    rdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_http_request_data));
+    rdata->next=req->data_chain;
+    req->data_chain=rdata;
+  }
+  rdata->value=value;
+  rdata->finalize=finalize;
+}
+
+nxe_data nxweb_get_request_data(nxweb_http_request* req, nxe_data key) {
+  nxweb_http_request_data* rdata=nxweb_find_request_data(req, key);
+  return rdata? rdata->value : (nxe_data)0;
+}
+
 void nxweb_set_response_status(nxweb_http_response* resp, int code, const char* message) {
   resp->status_code=code;
   resp->status=message;

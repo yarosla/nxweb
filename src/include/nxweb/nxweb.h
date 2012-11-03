@@ -67,9 +67,23 @@ typedef struct nxweb_chunked_decoder_state {
   nxe_ssize_t chunk_bytes_left;
 } nxweb_chunked_decoder_state;
 
+struct nxweb_http_server_connection;
+struct nxweb_http_request;
+struct nxweb_http_response;
+struct nxweb_http_request_data;
+
+typedef void (*nxweb_http_request_data_finalizer)(struct nxweb_http_server_connection* conn, struct nxweb_http_request* req, struct nxweb_http_response* resp, struct nxweb_http_request_data* req_data);
+
+typedef struct nxweb_http_request_data {
+  nxe_data key;
+  nxe_data value;
+  nxweb_http_request_data_finalizer finalize;
+  struct nxweb_http_request_data* next;
+} nxweb_http_request_data;
+
 typedef struct nxweb_http_request {
 
-  nxb_buffer* nxb;
+  nxb_buffer* nxb; // use this for per-request memory allocation
 
   // booleans
   unsigned http11:1;
@@ -116,6 +130,7 @@ typedef struct nxweb_http_request {
   nxweb_chunked_decoder_state cdstate;
 
   nxe_data module_data;
+  nxweb_http_request_data* data_chain;
 
 } nxweb_http_request;
 
@@ -320,6 +335,10 @@ void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, c
 int nxweb_format_http_time(char* buf, struct tm* tm);
 time_t nxweb_parse_http_time(const char* str);
 int nxweb_remove_dots_from_uri_path(char* path);
+
+void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data value, nxweb_http_request_data_finalizer finalize);
+nxweb_http_request_data* nxweb_find_request_data(nxweb_http_request* req, nxe_data key);
+nxe_data nxweb_get_request_data(nxweb_http_request* req, nxe_data key);
 
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);

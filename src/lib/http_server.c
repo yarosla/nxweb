@@ -411,7 +411,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     invoke_request_handler(conn, req, resp, h, flags);
   }
   else if (data.i==NXD_HSP_REQUEST_COMPLETE) {
-    if (conn->handler && conn->handler->on_complete) conn->handler->on_complete(conn, req, resp);
+    //if (conn->handler && conn->handler->on_complete) conn->handler->on_complete(conn, req, resp);
     conn->handler=0;
     conn->handler_param=(nxe_data)0;
   }
