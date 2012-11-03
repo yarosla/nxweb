@@ -111,7 +111,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
     if (handler->cache) {
       nxweb_result res=nxweb_cache_try(conn, resp, cache_key, req->if_modified_since, 0);
       if (res==NXWEB_OK) {
-        nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
+        conn->hsp.cls->start_sending_response(&conn->hsp, resp);
         return NXWEB_OK;
       }
       else if (res==NXWEB_REVALIDATE) {
@@ -124,7 +124,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         if (req->if_modified_since && resp->sendfile_info.st_mtime<=req->if_modified_since) {
           resp->status_code=304;
           resp->status="Not Modified";
-          nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
+          conn->hsp.cls->start_sending_response(&conn->hsp, resp);
           return NXWEB_OK;
         }
         if (handler->num_filters && !S_ISDIR(resp->sendfile_info.st_mode)) {
@@ -147,7 +147,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
                   if (handler->cache) {
                     nxweb_cache_store_response(conn, resp);
                   }
-                  nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
+                  conn->hsp.cls->start_sending_response(&conn->hsp, resp);
                   return NXWEB_OK;
                 }
               }
@@ -170,7 +170,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           if (handler->cache) {
             nxweb_cache_store_response(conn, resp);
           }
-          nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
+          conn->hsp.cls->start_sending_response(&conn->hsp, resp);
           return NXWEB_OK;
         }
       }
@@ -415,6 +415,12 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     conn->handler=0;
     conn->handler_param=(nxe_data)0;
   }
+  else if (data.i==NXD_HSP_RESPONSE_READY) {
+    // this must be subrequest
+    nxweb_http_server_connection* parent_conn=conn->parent;
+    conn->response_ready=1;
+    nxe_schedule_callback(conn->tdata->loop, conn->on_response_ready, (nxe_data)(void*)conn);
+  }
   else if (data.i<0) {
     if (conn->handler && conn->handler->on_error) conn->handler->on_error(conn, req, resp);
     conn->handler=0;
@@ -464,7 +470,7 @@ void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http
   if (conn->handler && conn->handler->cache) {
     nxweb_cache_store_response(conn, resp);
   }
-  nxd_http_server_proto_start_sending_response(&conn->hsp, resp);
+  conn->hsp.cls->start_sending_response(&conn->hsp, resp);
 }
 
 static void nxweb_http_server_connection_init(nxweb_http_server_connection* conn, nxweb_net_thread_data* tdata, int lconf_idx) {
@@ -500,13 +506,44 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
 }
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good) {
+  if (conn->parent) {
+    conn->subrequest_failed=1;
+    nxe_schedule_callback(conn->tdata->loop, conn->on_response_ready, (nxe_data)(void*)conn);
+    // to be finalized with parent connection
+    return;
+  }
   //nxe_loop* loop=conn->sock.fs.data_is.super.loop;
+  nxweb_http_server_connection* sub=conn->subrequests;
+  while (sub) {
+    sub->parent=0;
+    nxweb_http_server_connection_finalize(sub, good);
+    sub=sub->next;
+  }
   if (conn->worker_complete.pub) nxe_unsubscribe(conn->worker_complete.pub, &conn->worker_complete);
-  nxd_http_server_proto_finalize(&conn->hsp);
-  conn->sock.cls->finalize((nxd_socket*)&conn->sock, good);
+  conn->hsp.cls->finalize(&conn->hsp);
+  if (conn->sock.cls) conn->sock.cls->finalize((nxd_socket*)&conn->sock, good);
   nxp_free(conn->tdata->free_conn_pool, conn);
-
   //if (!__sync_sub_and_fetch(&num_connections, 1)) nxweb_log_error("all connections closed");
+}
+
+void nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri) {
+  nxweb_net_thread_data* tdata=_nxweb_net_thread_data;
+  nxe_loop* loop=parent_conn->tdata->loop;
+  nxweb_http_server_connection* conn=nxp_alloc(tdata->free_conn_pool);
+  //nxweb_http_server_connection_init(conn, tdata, lconf_idx);
+  memset(conn, 0, sizeof(nxweb_http_server_connection));
+  conn->tdata=tdata;
+  conn->parent=parent_conn;
+  conn->next=parent_conn->subrequests;
+  parent_conn->subrequests=conn;
+  conn->on_response_ready=on_response_ready;
+  nxd_http_server_proto_subrequest_init(&conn->hsp, tdata->free_conn_nxb_pool);
+  conn->events_sub.super.cls.sub_cls=&nxweb_http_server_connection_events_sub_class;
+  conn->worker_complete.super.cls.sub_cls=&nxweb_http_server_connection_worker_complete_class;
+  memcpy(conn->remote_addr, parent_conn->remote_addr, sizeof(conn->remote_addr));
+  //nxweb_http_server_connection_connect(conn, loop, client_fd);
+  nxe_subscribe(loop, &conn->hsp.events_pub, &conn->events_sub);
+  nxweb_http_server_proto_subrequest_execute(&conn->hsp, host, uri);
 }
 
 static void on_net_thread_shutdown(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {

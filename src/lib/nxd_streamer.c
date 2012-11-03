@@ -83,11 +83,16 @@ static nxe_ssize_t streamer_data_in_write_or_sendfile(nxe_ostream* os, nxe_istre
     // end of node's stream => switch to next
     snode->complete=1;
     if (snode->final) { // real EOF
-      //
+      // EOF just written
     }
     else {
       if (snode->next) {
         nxd_streamer_node_start(snode->next);
+      }
+      else {
+        // new node shall autostart upon add
+        nxe_istream_unset_ready(&strm->data_out);
+        nxe_ostream_unset_ready(os);
       }
     }
     return bytes_sent;
@@ -120,6 +125,9 @@ void nxd_streamer_add_node(nxd_streamer* strm, nxd_streamer_node* snode, int fin
   }
   snode->strm=strm;
   snode->final=!!final;
+  if (strm->running && (!strm->current || strm->current->complete)) {
+    nxd_streamer_node_start(snode);
+  }
 }
 
 void nxd_streamer_node_finalize(nxd_streamer_node* snode) {
@@ -140,5 +148,6 @@ void nxd_streamer_node_start(nxd_streamer_node* snode) {
 
 void nxd_streamer_start(nxd_streamer* strm) {
   assert(strm->head);
-  nxd_streamer_node_start(strm->head);
+  strm->running=1;
+  if (strm->head) nxd_streamer_node_start(strm->head);
 }

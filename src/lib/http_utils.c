@@ -589,6 +589,7 @@ void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data valu
     rdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_http_request_data));
     rdata->next=req->data_chain;
     req->data_chain=rdata;
+    rdata->key=key;
   }
   rdata->value=value;
   rdata->finalize=finalize;

@@ -28,6 +28,7 @@ struct subreq_data {
   nxd_streamer_node sn1;
   nxd_streamer_node sn2;
   nxd_streamer_node sn3;
+  nxd_streamer_node sn4;
   nxd_obuffer ob1;
   nxd_obuffer ob2;
   nxd_fbuffer fb;
@@ -35,6 +36,7 @@ struct subreq_data {
 };
 
 static const char subreq_handler_key; // variable's address matters
+#define SUBREQ_HANDLER_KEY ((nxe_data)&subreq_handler_key)
 
 static void subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_http_request_data* req_data) {
   struct subreq_data* srdata=req_data->value.ptr;
@@ -42,6 +44,21 @@ static void subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_reque
   if (srdata->fd>0) close(srdata->fd);
   nxd_streamer_finalize(&srdata->strm);
   nxd_fbuffer_finalize(&srdata->fb);
+}
+
+static void subreq_on_response_ready(nxe_data data) {
+  nxweb_http_server_connection* subconn=(nxweb_http_server_connection*)data.ptr;
+  nxweb_http_server_connection* conn=subconn->parent;
+  if (subconn->subrequest_failed) {
+    nxweb_log_error("subreq failed");
+    return;
+  }
+  nxweb_log_error("subreq response ready");
+  nxweb_http_request* req=&conn->hsp.req;
+  struct subreq_data* srdata=nxweb_get_request_data(req, SUBREQ_HANDLER_KEY).ptr;
+  assert(srdata);
+  nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &srdata->sn4.data_in);
+  nxd_streamer_add_node(&srdata->strm, &srdata->sn4, 1);
 }
 
 static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
@@ -52,9 +69,10 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
   nxd_streamer_node_init(&srdata->sn1);
   nxd_streamer_node_init(&srdata->sn2);
   nxd_streamer_node_init(&srdata->sn3);
+  nxd_streamer_node_init(&srdata->sn4);
   nxd_streamer_add_node(&srdata->strm, &srdata->sn1, 0);
   nxd_streamer_add_node(&srdata->strm, &srdata->sn3, 0);
-  nxd_streamer_add_node(&srdata->strm, &srdata->sn2, 1);
+  nxd_streamer_add_node(&srdata->strm, &srdata->sn2, 0);
 
   nxd_obuffer_init(&srdata->ob1, "[test1]", sizeof("[test1]")-1);
   nxe_connect_streams(conn->tdata->loop, &srdata->ob1.data_out, &srdata->sn1.data_in);
@@ -74,9 +92,11 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
   nxd_streamer_start(&srdata->strm);
 
   resp->content_out=&srdata->strm.data_out;
-  resp->content_length=sizeof("[test1]")-1+sizeof("[test2]")-1+15;
+  resp->content_length=sizeof("[test1]")-1+sizeof("[test2]")-1+15+20;
 
-  nxweb_set_request_data(req, (nxe_data)&subreq_handler_key, (nxe_data)(void*)srdata, subreq_finalize);
+  nxweb_set_request_data(req, SUBREQ_HANDLER_KEY, (nxe_data)(void*)srdata, subreq_finalize);
+
+  nxweb_http_server_subrequest_start(conn, subreq_on_response_ready, 0, "/benchmark-inprocess");
 
   return NXWEB_OK;
 }

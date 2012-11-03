@@ -25,6 +25,8 @@
 
 static const char* response_100_continue = "HTTP/1.1 100 Continue\r\n\r\n";
 
+static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp);
+
 void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
   if (hsp->req_finalize) {
     hsp->req_finalize(hsp, hsp->req_data);
@@ -112,7 +114,7 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
           nxweb_http_response* resp=_nxweb_http_response_init(&hsp->_resp, hsp->nxb, 0);
           nxweb_send_http_error(resp, 400, "Bad Request");
           resp->keep_alive=0; // close connection
-          nxd_http_server_proto_start_sending_response(hsp, resp);
+          hsp->cls->start_sending_response(hsp, resp);
           return;
         }
         char* read_buf_end=read_buf+read_buf_size;
@@ -149,7 +151,7 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
           nxweb_http_response* resp=_nxweb_http_response_init(&hsp->_resp, hsp->nxb, 0);
           nxweb_send_http_error(resp, 400, "Bad Request");
           resp->keep_alive=0; // close connection
-          nxd_http_server_proto_start_sending_response(hsp, resp);
+          hsp->cls->start_sending_response(hsp, resp);
         }
       }
     }
@@ -438,7 +440,7 @@ void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp) {
   }
 }
 
-void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
+static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
   if (hsp->state!=HSP_RECEIVING_HEADERS && hsp->state!=HSP_RECEIVING_BODY && hsp->state!=HSP_HANDLING) {
     nxweb_log_error("illegal state for start_sending_response()");
     return;
@@ -459,28 +461,33 @@ void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nx
     }
   }
 
+  if (!resp->content_out) {
+    if (resp->content && resp->content_length>0) {
+      nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
+      resp->content_out=&hsp->ob.data_out;
+    }
+    else if (resp->sendfile_fd && resp->content_length>0) {
+      assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
+      nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+      resp->content_out=&hsp->fb.data_out;
+    }
+    else if (resp->sendfile_path && resp->content_length>0) {
+      resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
+      if (resp->sendfile_fd!=-1) {
+        assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
+        nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+        resp->content_out=&hsp->fb.data_out;
+      }
+      else {
+        nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
+      }
+    }
+  }
   if (resp->content_out) {
     nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
   }
-  else if (resp->content && resp->content_length>0) {
-    nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
-    nxe_connect_streams(loop, &hsp->ob.data_out, &hsp->resp_body_in);
-  }
-  else if (resp->sendfile_fd && resp->content_length>0) {
-    assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
-    nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
-    nxe_connect_streams(loop, &hsp->fb.data_out, &hsp->resp_body_in);
-  }
-  else if (resp->sendfile_path && resp->content_length>0) {
-    resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
-    if (resp->sendfile_fd!=-1) {
-      assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
-      nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
-      nxe_connect_streams(loop, &hsp->fb.data_out, &hsp->resp_body_in);
-    }
-    else {
-      nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
-    }
+  else {
+    nxweb_log_error("nxd_http_server_proto_start_sending_response(): no content_out stream");
   }
 
   if (!resp->raw_headers) _nxweb_prepare_response_headers(loop, resp);

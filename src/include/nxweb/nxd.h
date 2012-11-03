@@ -176,6 +176,7 @@ typedef struct nxd_streamer {
   nxe_istream data_out;
   nxd_streamer_node* head;
   nxd_streamer_node* current;
+  unsigned running:1;
 } nxd_streamer;
 
 void nxd_streamer_init(nxd_streamer* strm);
@@ -246,13 +247,13 @@ enum nxd_http_server_proto_error_code {
   NXD_HSP_REQUEST_RECEIVED=27101,
   NXD_HSP_REQUEST_BODY_RECEIVED=27102,
   NXD_HSP_RESPONSE_READY=27103,
+  NXD_HSP_SUBREQUEST_READY=27104,
   NXD_HSP_REQUEST_COMPLETE=27109
 };
 
 void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
-void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp);
-void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp);
-
+void nxd_http_server_proto_subrequest_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
+void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri);
 
 enum nxd_http_client_proto_state {
   HCP_CONNECTING=0,

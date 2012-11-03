@@ -155,6 +155,12 @@ typedef struct nxweb_http_server_connection {
   nxweb_net_thread_data* tdata;
   int lconf_idx;
   _Bool secure:1;
+  _Bool response_ready:1;
+  _Bool subrequest_failed:1;
+  struct nxweb_http_server_connection* parent;
+  struct nxweb_http_server_connection* subrequests;
+  struct nxweb_http_server_connection* next;
+  void (*on_response_ready)(nxe_data data);
   nxd_ibuffer ib;
 } nxweb_http_server_connection;
 
@@ -231,6 +237,8 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
 void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http_response* resp);
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good);
+
+void nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri);
 
 static inline nxe_time_t nxweb_get_loop_time(nxweb_http_server_connection* conn) {
   return conn->tdata->loop->current_time;
