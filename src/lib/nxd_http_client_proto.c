@@ -111,6 +111,7 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
           nxe_size_t first_body_chunk_size=hcp->first_body_chunk_end-hcp->first_body_chunk;
           if (hcp->resp.chunked_encoding) {
             int r=_nxweb_decode_chunked_stream(&hcp->resp.cdstate, hcp->first_body_chunk, &first_body_chunk_size);
+            hcp->first_body_chunk_end=hcp->first_body_chunk+first_body_chunk_size;
             if (r<0) nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_RESPONSE_CHUNKED_ENCODING_ERROR);
             else if (r>0) hcp->response_body_complete=1;
           }

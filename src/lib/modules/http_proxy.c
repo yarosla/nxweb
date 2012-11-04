@@ -120,8 +120,6 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     nxe_subscribe(loop, &hpx->hcp.events_pub, &rdata->proxy_events_sub);
     nxd_rbuffer_init(&rdata->rb_resp, rdata->rbuf, NXWEB_RBUF_SIZE);
     nxe_connect_streams(loop, &hpx->hcp.resp_body_out, &rdata->rb_resp.data_in);
-    //nxe_connect_streams(loop, &rdata->rb_resp.data_out, &conn->hsp.resp_body_in);
-    hpx->hcp.chunked_do_not_decode=1;
 
     if (req->content_length) { // receive body
       nxd_rbuffer_init(&rdata->rb_req, rdata->rbuf, NXWEB_RBUF_SIZE); // use same buffer area for request and response bodies, as they do not overlap in time
@@ -206,7 +204,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->status_code=presp->status_code;
     resp->content_type=presp->content_type;
     resp->content_length=presp->content_length;
-    resp->chunked_encoding=presp->chunked_encoding;
+    if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked content
     resp->headers=presp->headers;
     resp->content_out=&rdata->rb_resp.data_out;
     nxweb_start_sending_response(conn, resp);

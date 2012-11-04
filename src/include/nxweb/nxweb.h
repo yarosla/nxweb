@@ -347,6 +347,30 @@ void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data valu
 nxweb_http_request_data* nxweb_find_request_data(nxweb_http_request* req, nxe_data key);
 nxe_data nxweb_get_request_data(nxweb_http_request* req, nxe_data key);
 
+typedef struct nxweb_composite_stream_node {
+  nxd_streamer_node snode;
+  struct nxweb_composite_stream_node* next;
+  int fd;
+  nxweb_http_server_connection* subconn;
+  union {
+    nxd_obuffer ob;
+    nxd_fbuffer fb;
+  } buffer;
+} nxweb_composite_stream_node;
+
+typedef struct nxweb_composite_stream {
+  nxd_streamer strm;
+  nxweb_http_server_connection* conn;
+  nxweb_http_request* req;
+  nxweb_composite_stream_node* first_node;
+} nxweb_composite_stream;
+
+nxweb_composite_stream* nxweb_composite_stream_init(nxweb_http_server_connection* conn, nxweb_http_request* req);
+void nxweb_composite_stream_append_bytes(nxweb_composite_stream* cs, const char* bytes, int length);
+void nxweb_composite_stream_append_fd(nxweb_composite_stream* cs, int fd, off_t offset, off_t end);
+void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const char* host, const char* url);
+void nxweb_composite_stream_start(nxweb_composite_stream* cs, nxweb_http_response* resp);
+
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);
 int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_of_headers);

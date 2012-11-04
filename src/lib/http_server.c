@@ -526,7 +526,7 @@ void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, i
   //if (!__sync_sub_and_fetch(&num_connections, 1)) nxweb_log_error("all connections closed");
 }
 
-void nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri) {
+nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri) {
   nxweb_net_thread_data* tdata=_nxweb_net_thread_data;
   nxe_loop* loop=parent_conn->tdata->loop;
   nxweb_http_server_connection* conn=nxp_alloc(tdata->free_conn_pool);
@@ -544,6 +544,7 @@ void nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_con
   //nxweb_http_server_connection_connect(conn, loop, client_fd);
   nxe_subscribe(loop, &conn->hsp.events_pub, &conn->events_sub);
   nxweb_http_server_proto_subrequest_execute(&conn->hsp, host, uri);
+  return conn;
 }
 
 static void on_net_thread_shutdown(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {

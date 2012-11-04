@@ -41,7 +41,7 @@ static void streamer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
     }
   }
   else {
-    nxweb_log_error("no connected device for snode->data_in");
+    // nxweb_log_error("no connected device for snode->data_in"); -- this is OK for streamer
     nxe_istream_unset_ready(is);
   }
 }

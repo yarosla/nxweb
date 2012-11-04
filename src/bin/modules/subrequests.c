@@ -23,81 +23,17 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 
-struct subreq_data {
-  nxd_streamer strm;
-  nxd_streamer_node sn1;
-  nxd_streamer_node sn2;
-  nxd_streamer_node sn3;
-  nxd_streamer_node sn4;
-  nxd_obuffer ob1;
-  nxd_obuffer ob2;
-  nxd_fbuffer fb;
-  int fd;
-};
-
-static const char subreq_handler_key; // variable's address only matters
-#define SUBREQ_HANDLER_KEY ((nxe_data)&subreq_handler_key)
-
-static void subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxe_data req_data) {
-  struct subreq_data* srdata=req_data.ptr;
-
-  if (srdata->fd>0) close(srdata->fd);
-  nxd_streamer_finalize(&srdata->strm);
-  nxd_fbuffer_finalize(&srdata->fb);
-}
-
-static void subreq_on_response_ready(nxe_data data) {
-  nxweb_http_server_connection* subconn=(nxweb_http_server_connection*)data.ptr;
-  nxweb_http_server_connection* conn=subconn->parent;
-  if (subconn->subrequest_failed) {
-    nxweb_log_error("subreq failed");
-    return;
-  }
-  //nxweb_log_error("subreq response ready");
-  nxweb_http_request* req=&conn->hsp.req;
-  struct subreq_data* srdata=nxweb_get_request_data(req, SUBREQ_HANDLER_KEY).ptr;
-  assert(srdata);
-  nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &srdata->sn4.data_in);
-  nxd_streamer_add_node(&srdata->strm, &srdata->sn4, 1);
-}
-
 static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
 
-  struct subreq_data* srdata=nxb_alloc_obj(req->nxb, sizeof(struct subreq_data));
-  nxd_streamer_init(&srdata->strm);
-  nxd_streamer_node_init(&srdata->sn1);
-  nxd_streamer_node_init(&srdata->sn2);
-  nxd_streamer_node_init(&srdata->sn3);
-  nxd_streamer_node_init(&srdata->sn4);
-  nxd_streamer_add_node(&srdata->strm, &srdata->sn1, 0);
-  nxd_streamer_add_node(&srdata->strm, &srdata->sn3, 0);
-  nxd_streamer_add_node(&srdata->strm, &srdata->sn2, 0);
+  nxweb_composite_stream* cs=nxweb_composite_stream_init(conn, req);
+  nxweb_composite_stream_append_bytes(cs, "[test1]", sizeof("[test1]")-1);
+  int fd=open("www/root/index.htm", O_RDONLY|O_NONBLOCK);
+  nxweb_composite_stream_append_fd(cs, fd, 0, 15); // fd will be auto-closed
+  nxweb_composite_stream_append_subrequest(cs, 0, "/8777/");
+  nxweb_composite_stream_append_bytes(cs, "[test2]", sizeof("[test2]")-1);
 
-  nxd_obuffer_init(&srdata->ob1, "[test1]", sizeof("[test1]")-1);
-  nxe_connect_streams(conn->tdata->loop, &srdata->ob1.data_out, &srdata->sn1.data_in);
-
-  nxd_obuffer_init(&srdata->ob2, "[test2]", sizeof("[test2]")-1);
-  nxe_connect_streams(conn->tdata->loop, &srdata->ob2.data_out, &srdata->sn2.data_in);
-
-  srdata->fd=open("www/root/index.htm", O_RDONLY|O_NONBLOCK);
-  if (srdata->fd!=-1) {
-    nxd_fbuffer_init(&srdata->fb, srdata->fd, 0, 15);
-    nxe_connect_streams(conn->tdata->loop, &srdata->fb.data_out, &srdata->sn3.data_in);
-  }
-  else {
-    nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
-  }
-
-  nxd_streamer_start(&srdata->strm);
-
-  resp->content_out=&srdata->strm.data_out;
-  resp->content_length=-1; // sizeof("[test1]")-1+sizeof("[test2]")-1+15+20;
-  resp->chunked_autoencode=1;
-
-  nxweb_set_request_data(req, SUBREQ_HANDLER_KEY, (nxe_data)(void*)srdata, subreq_finalize);
-
-  nxweb_http_server_subrequest_start(conn, subreq_on_response_ready, 0, "/");
+  nxweb_composite_stream_start(cs, resp);
 
   return NXWEB_OK;
 }

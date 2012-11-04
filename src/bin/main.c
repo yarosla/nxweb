@@ -70,8 +70,8 @@ NXWEB_SET_HANDLER(upload, "/upload", &upload_handler, .priority=1000);
 // This proxies requests to backend number 0 (see proxy setup further below):
 NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=10000, .idx=0, .uri="/java-test");
 
-// This proxies requests to backend number 1 (I have another nxweb listening at port 8777):
-NXWEB_SET_HANDLER(nxweb_8777, "/8777", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="");
+// This proxies requests to backend number 1 (I have another nxweb listening at port 8000):
+NXWEB_SET_HANDLER(nxweb_8777, "/8000", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="");
 
 // This serves static files from $(work_dir)/www/root directory:
 NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
@@ -113,7 +113,7 @@ static void server_main() {
 
   // Setup proxies:
   nxweb_setup_http_proxy_pool(0, "localhost:8080");
-  nxweb_setup_http_proxy_pool(1, "localhost:8777");
+  nxweb_setup_http_proxy_pool(1, "localhost:8000");
 
   // Override default timers (if needed):
   //nxweb_set_timeout(NXWEB_TIMER_KEEP_ALIVE, 120);
