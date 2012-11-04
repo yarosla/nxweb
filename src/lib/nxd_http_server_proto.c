@@ -40,7 +40,7 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
   nxweb_http_server_connection* conn=(nxweb_http_server_connection*)((char*)hsp-offsetof(nxweb_http_server_connection, hsp));
   while (rdata) {
     if (rdata->finalize) {
-      rdata->finalize(conn, req, resp, rdata);
+      rdata->finalize(conn, req, resp, rdata->value);
       rdata->finalize=0; // call no more
     }
     rdata=rdata->next;
@@ -341,17 +341,52 @@ static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* 
   }
   nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hsp->timer_write);
   nxe_ssize_t bytes_sent=0;
-  if (size>0) {
+  if (size || hsp->resp->chunked_autoencode) {
     nxe_ostream* next_os=hsp->data_out.pair;
     if (next_os) {
       nxe_flags_t wflags=*flags;
       if (next_os->ready) {
-        if (fd) { // invoked as sendfile
-          assert(OSTREAM_CLASS(next_os)->sendfile);
-          bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, size, &wflags);
+        if (hsp->resp->chunked_autoencode) {
+          _Bool skip=0;
+          void* send_ptr;
+          nxe_size_t send_size;
+          nxe_flags_t cwf=*flags;
+          if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &size, &send_ptr, &send_size, &cwf)) {
+            nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, (nxe_data)send_ptr, send_size, &cwf);
+            _nxweb_encode_chunked_advance(&hsp->resp->cestate, cbs);
+            if (cbs!=send_size) skip=1;
+          }
+          if (!skip && size) {
+            if (fd) { // invoked as sendfile
+              assert(OSTREAM_CLASS(next_os)->sendfile);
+              bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, size, &cwf);
+            }
+            else {
+              bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, size, &cwf);
+            }
+            _nxweb_encode_chunked_advance(&hsp->resp->cestate, bytes_sent);
+            if (bytes_sent!=size) skip=1;
+          }
+          if (!skip) {
+            // if we are here that means we either had zero-length write (with or without eof)
+            // or we have successfully written out whole chunk
+            cwf=*flags; // if it is EOF then send final chunk
+            nxe_size_t zero_size=0; // otherwise just send out chunk trailer "\r\n"
+            if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &zero_size, &send_ptr, &send_size, &cwf)) {
+              nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, (nxe_data)send_ptr, send_size, &cwf);
+              _nxweb_encode_chunked_advance(&hsp->resp->cestate, cbs);
+              if (cbs!=send_size) skip=1;
+            }
+          }
         }
         else {
-          bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, size, &wflags);
+          if (fd) { // invoked as sendfile
+            assert(OSTREAM_CLASS(next_os)->sendfile);
+            bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, size, &wflags);
+          }
+          else {
+            bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, size, &wflags);
+          }
         }
       }
       if (!next_os->ready) {
@@ -364,7 +399,7 @@ static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* 
       nxe_ostream_unset_ready(os);
     }
   }
-  if (*flags&NXEF_EOF && bytes_sent==size) {
+  if (*flags&NXEF_EOF && bytes_sent==size && (!hsp->resp->chunked_autoencode || _nxweb_encode_chunked_is_complete(&hsp->resp->cestate))) {
     // end of response => rearm connection
     request_complete(loop, hsp);
     return bytes_sent;
@@ -451,6 +486,8 @@ static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* 
   nxe_loop* loop=hsp->data_in.super.loop;
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hsp->timer_read);
   if (!resp->nxb) resp->nxb=hsp->nxb;
+
+  if (resp->chunked_autoencode) _nxweb_encode_chunked_init(&resp->cestate);
 
   if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd && !resp->content_out) {
     int size;

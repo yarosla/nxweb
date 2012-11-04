@@ -35,11 +35,11 @@ struct subreq_data {
   int fd;
 };
 
-static const char subreq_handler_key; // variable's address matters
+static const char subreq_handler_key; // variable's address only matters
 #define SUBREQ_HANDLER_KEY ((nxe_data)&subreq_handler_key)
 
-static void subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_http_request_data* req_data) {
-  struct subreq_data* srdata=req_data->value.ptr;
+static void subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxe_data req_data) {
+  struct subreq_data* srdata=req_data.ptr;
 
   if (srdata->fd>0) close(srdata->fd);
   nxd_streamer_finalize(&srdata->strm);
@@ -53,7 +53,7 @@ static void subreq_on_response_ready(nxe_data data) {
     nxweb_log_error("subreq failed");
     return;
   }
-  nxweb_log_error("subreq response ready");
+  //nxweb_log_error("subreq response ready");
   nxweb_http_request* req=&conn->hsp.req;
   struct subreq_data* srdata=nxweb_get_request_data(req, SUBREQ_HANDLER_KEY).ptr;
   assert(srdata);
@@ -92,11 +92,12 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
   nxd_streamer_start(&srdata->strm);
 
   resp->content_out=&srdata->strm.data_out;
-  resp->content_length=sizeof("[test1]")-1+sizeof("[test2]")-1+15+20;
+  resp->content_length=-1; // sizeof("[test1]")-1+sizeof("[test2]")-1+15+20;
+  resp->chunked_autoencode=1;
 
   nxweb_set_request_data(req, SUBREQ_HANDLER_KEY, (nxe_data)(void*)srdata, subreq_finalize);
 
-  nxweb_http_server_subrequest_start(conn, subreq_on_response_ready, 0, "/benchmark-inprocess");
+  nxweb_http_server_subrequest_start(conn, subreq_on_response_ready, 0, "/");
 
   return NXWEB_OK;
 }

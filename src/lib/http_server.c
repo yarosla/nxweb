@@ -419,7 +419,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     // this must be subrequest
     nxweb_http_server_connection* parent_conn=conn->parent;
     conn->response_ready=1;
-    nxe_schedule_callback(conn->tdata->loop, conn->on_response_ready, (nxe_data)(void*)conn);
+    if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
   }
   else if (data.i<0) {
     if (conn->handler && conn->handler->on_error) conn->handler->on_error(conn, req, resp);
@@ -508,7 +508,7 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good) {
   if (conn->parent) {
     conn->subrequest_failed=1;
-    nxe_schedule_callback(conn->tdata->loop, conn->on_response_ready, (nxe_data)(void*)conn);
+    if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
     // to be finalized with parent connection
     return;
   }

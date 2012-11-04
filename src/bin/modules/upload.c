@@ -24,12 +24,24 @@
 
 #define MAX_UPLOAD_SIZE 16000
 
+static const char upload_handler_key; // variable's address only matters
+#define UPLOAD_HANDLER_KEY ((nxe_data)&upload_handler_key)
+
+static void upload_request_data_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxe_data data) {
+  nxd_fwbuffer* fwb=data.ptr;
+  if (fwb && fwb->fd) {
+    close(fwb->fd);
+    fwb->fd=0;
+  }
+}
+
 static nxweb_result upload_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
 
   nxweb_response_append_str(resp, "<html><head><title>Upload Module</title></head><body>\n");
 
-  nxd_fwbuffer* fwb=req->module_data.ptr;
+  nxd_fwbuffer* fwb=nxweb_get_request_data(req, UPLOAD_HANDLER_KEY).ptr;
+
   if (fwb) {
     nxe_size_t stored_size;
     if (fwb->size > fwb->max_size) {
@@ -106,7 +118,7 @@ static nxweb_result upload_on_post_data(nxweb_http_server_connection* conn, nxwe
     return NXWEB_OK;
   }
   nxd_fwbuffer* fwb=nxb_alloc_obj(req->nxb, sizeof(nxd_fwbuffer));
-  req->module_data.ptr=fwb;
+  nxweb_set_request_data(req, UPLOAD_HANDLER_KEY, (nxe_data)(void*)fwb, upload_request_data_finalize);
   int fd=open("upload.tmp", O_WRONLY|O_CREAT|O_TRUNC, 0664);
   nxd_fwbuffer_init(fwb, fd, MAX_UPLOAD_SIZE);
   conn->hsp.cls->connect_request_body_out(&conn->hsp, &fwb->data_in);
@@ -115,18 +127,13 @@ static nxweb_result upload_on_post_data(nxweb_http_server_connection* conn, nxwe
 }
 
 static nxweb_result upload_on_post_data_complete(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
-  nxd_fwbuffer* fwb=req->module_data.ptr;
+  // It is not strictly necessary to close the file here
+  // as we are closing it anyway in request data finalizer.
+  // Releasing resources in finalizer is the proper way of doing this
+  // as any other callbacks might not be invoked under error conditions.
+  nxd_fwbuffer* fwb=nxweb_get_request_data(req, UPLOAD_HANDLER_KEY).ptr;
   close(fwb->fd);
   fwb->fd=0;
-  return NXWEB_OK;
-}
-
-static nxweb_result upload_cleanup(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
-  nxd_fwbuffer* fwb=req->module_data.ptr;
-  if (fwb && fwb->fd) {
-    close(fwb->fd);
-    fwb->fd=0;
-  }
   return NXWEB_OK;
 }
 
@@ -134,6 +141,4 @@ nxweb_handler upload_handler={
         .on_request=upload_on_request,
         .on_post_data=upload_on_post_data,
         .on_post_data_complete=upload_on_post_data_complete,
-        .on_complete=upload_cleanup,
-        .on_error=upload_cleanup,
         .flags=NXWEB_HANDLE_ANY};

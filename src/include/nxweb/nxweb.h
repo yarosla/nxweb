@@ -67,12 +67,19 @@ typedef struct nxweb_chunked_decoder_state {
   nxe_ssize_t chunk_bytes_left;
 } nxweb_chunked_decoder_state;
 
+typedef struct nxweb_chunked_encoder_state {
+  unsigned short final_chunk:1;
+  nxe_ssize_t chunk_size;
+  nxe_ssize_t pos;
+  char buf[8]; // "\r\n0000\r\n"
+} nxweb_chunked_encoder_state;
+
 struct nxweb_http_server_connection;
 struct nxweb_http_request;
 struct nxweb_http_response;
 struct nxweb_http_request_data;
 
-typedef void (*nxweb_http_request_data_finalizer)(struct nxweb_http_server_connection* conn, struct nxweb_http_request* req, struct nxweb_http_response* resp, struct nxweb_http_request_data* req_data);
+typedef void (*nxweb_http_request_data_finalizer)(struct nxweb_http_server_connection* conn, struct nxweb_http_request* req, struct nxweb_http_response* resp, nxe_data data);
 
 typedef struct nxweb_http_request_data {
   nxe_data key;
@@ -129,7 +136,6 @@ typedef struct nxweb_http_request {
 
   nxweb_chunked_decoder_state cdstate;
 
-  nxe_data module_data;
   nxweb_http_request_data* data_chain;
 
 } nxweb_http_request;
@@ -146,8 +152,8 @@ typedef struct nxweb_http_response {
   unsigned keep_alive:1;
   unsigned http11:1;
   unsigned chunked_encoding:1;
+  unsigned chunked_autoencode:1;
   unsigned gzip_encoded:1;
-  //unsigned chunked_content_complete:1;
 
   // Building response:
   const char* status;
@@ -159,6 +165,7 @@ typedef struct nxweb_http_response {
   int status_code;
 
   nxweb_chunked_decoder_state cdstate;
+  nxweb_chunked_encoder_state cestate;
 
   const char* cache_key;
   int cache_key_root_len;
@@ -347,6 +354,10 @@ void _nxweb_decode_chunked_request(nxweb_http_request* req);
 nxe_ssize_t _nxweb_decode_chunked(char* buf, nxe_size_t buf_len);
 nxe_ssize_t _nxweb_verify_chunked(const char* buf, nxe_size_t buf_len);
 int _nxweb_decode_chunked_stream(nxweb_chunked_decoder_state* decoder_state, char* buf, nxe_size_t* buf_len);
+void _nxweb_encode_chunked_init(nxweb_chunked_encoder_state* encoder_state);
+int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe_size_t* offered_size, void** send_ptr, nxe_size_t* send_size, nxe_flags_t* flags);
+void _nxweb_encode_chunked_advance(nxweb_chunked_encoder_state* encoder_state, nxe_ssize_t pos_delta);
+int _nxweb_encode_chunked_is_complete(nxweb_chunked_encoder_state* encoder_state);
 void _nxweb_register_printf_extensions();
 nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_buffer* nxb, nxweb_http_request* req);
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response* resp);

@@ -409,8 +409,6 @@ static int copy_file(const char* src, const char* dst) {
   return 0;
 }
 
-static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
-
 #ifdef WITH_NETTLE
 
 static void sha1sign(const char* str, unsigned str_len, const char* key, char* result) {
