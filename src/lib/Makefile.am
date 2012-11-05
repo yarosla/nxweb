@@ -16,6 +16,8 @@ libnxweb_la_SOURCES = \
 	\
 	modules/http_proxy.c modules/sendfile.c \
 	\
+	filters/ssi_filter.c \
+	\
 	deps/ulib/hash.c \
 	deps/sha1-c/sha1.c
 

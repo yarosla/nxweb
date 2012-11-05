@@ -28,6 +28,7 @@ static const char* response_100_continue = "HTTP/1.1 100 Continue\r\n\r\n";
 static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp);
 
 void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
+  // this could be called more than once, be ready for it
   if (hsp->req_finalize) {
     hsp->req_finalize(hsp, hsp->req_data);
     hsp->req_finalize=0; // call no more
@@ -45,23 +46,25 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
     }
     rdata=rdata->next;
   }
-  if (conn->handler && conn->handler->on_complete) conn->handler->on_complete(conn, req, resp);
-  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_COMPLETE);
+  if (conn->handler && conn->handler->on_complete) {
+    conn->handler->on_complete(conn, req, resp);
+    conn->handler->on_complete=0; // call no more
+  }
 }
 
-static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
+static void request_cleanup(nxe_loop* loop, nxd_http_server_proto* hsp) {
+  // get ready for new request:
+  //  - release per-request resources
+  //  - initialize variables
   _nxweb_call_request_finalizers(hsp);
-  nxe_istream_unset_ready(&hsp->data_out);
   nxd_fbuffer_finalize(&hsp->fb);
   if (hsp->resp && hsp->resp->sendfile_fd) {
     close(hsp->resp->sendfile_fd);
   }
-  nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hsp->timer_write);
   nxb_empty(hsp->nxb);
   nxp_free(hsp->nxb_pool, hsp->nxb);
   hsp->nxb=0;
-  if (hsp->resp_body_in.pair) nxe_disconnect_streams(hsp->resp_body_in.pair, &hsp->resp_body_in);
-  if (hsp->req_body_out.pair) nxe_disconnect_streams(&hsp->req_body_out, hsp->req_body_out.pair);
+
   hsp->request_count++;
   hsp->state=HSP_WAITING_FOR_REQUEST;
   hsp->headers_bytes_received=0;
@@ -72,12 +75,18 @@ static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
   else {
     nxe_ostream* os=hsp->data_out.pair;
     if (os && OSTREAM_CLASS(os)->shutdown) OSTREAM_CLASS(os)->shutdown(os);
-    else nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_SHUTDOWN_CONNECTION);
-    //shutdown(hsp->sock_fd, SHUT_RDWR);
   }
   memset(&hsp->req, 0, sizeof(nxweb_http_request));
   memset(&hsp->_resp, 0, sizeof(nxweb_http_response));
   hsp->resp=0;
+}
+
+static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
+  nxe_istream_unset_ready(&hsp->data_out);
+  nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hsp->timer_write);
+  if (hsp->resp_body_in.pair) nxe_disconnect_streams(hsp->resp_body_in.pair, &hsp->resp_body_in);
+  if (hsp->req_body_out.pair) nxe_disconnect_streams(&hsp->req_body_out, hsp->req_body_out.pair);
+  nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_REQUEST_COMPLETE);
 }
 
 static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
@@ -349,28 +358,29 @@ static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* 
         if (hsp->resp->chunked_autoencode) {
           _Bool skip=0;
           void* send_ptr;
+          nxe_size_t chunk_size=size;
           nxe_size_t send_size;
           nxe_flags_t cwf=*flags;
-          if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &size, &send_ptr, &send_size, &cwf)) {
+          if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &chunk_size, &send_ptr, &send_size, &cwf)) {
             nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, (nxe_data)send_ptr, send_size, &cwf);
             _nxweb_encode_chunked_advance(&hsp->resp->cestate, cbs);
             if (cbs!=send_size) skip=1;
           }
-          if (!skip && size) {
+          if (!skip && chunk_size) {
             if (fd) { // invoked as sendfile
               assert(OSTREAM_CLASS(next_os)->sendfile);
-              bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, size, &cwf);
+              bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, chunk_size, &cwf);
             }
             else {
-              bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, size, &cwf);
+              bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, chunk_size, &cwf);
             }
             _nxweb_encode_chunked_advance(&hsp->resp->cestate, bytes_sent);
-            if (bytes_sent!=size) skip=1;
+            if (bytes_sent!=chunk_size) skip=1;
           }
           if (!skip) {
             // if we are here that means we either had zero-length write (with or without eof)
             // or we have successfully written out whole chunk
-            cwf=*flags; // if it is EOF then send final chunk
+            cwf=chunk_size==size? *flags : 0; // if it is EOF and whole size made into chunk then send final chunk
             nxe_size_t zero_size=0; // otherwise just send out chunk trailer "\r\n"
             if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &zero_size, &send_ptr, &send_size, &cwf)) {
               nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, (nxe_data)send_ptr, send_size, &cwf);
@@ -475,6 +485,40 @@ void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp) {
   }
 }
 
+void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
+  if (resp->content_out) return; // already setup
+
+  if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd) {
+    int size;
+    nxb_get_unfinished(resp->nxb, &size);
+    if (size) {
+      resp->content=nxb_finish_stream(resp->nxb, &size);
+      resp->content_length=size;
+    }
+  }
+
+  if (resp->content && resp->content_length>0) {
+    nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
+    resp->content_out=&hsp->ob.data_out;
+  }
+  else if (resp->sendfile_fd && resp->content_length>0) {
+    assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
+    nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+    resp->content_out=&hsp->fb.data_out;
+  }
+  else if (resp->sendfile_path && resp->content_length>0) {
+    resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
+    if (resp->sendfile_fd!=-1) {
+      assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
+      nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+      resp->content_out=&hsp->fb.data_out;
+    }
+    else {
+      nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
+    }
+  }
+}
+
 static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
   if (hsp->state!=HSP_RECEIVING_HEADERS && hsp->state!=HSP_RECEIVING_BODY && hsp->state!=HSP_HANDLING) {
     nxweb_log_error("illegal state for start_sending_response()");
@@ -489,37 +533,8 @@ static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* 
 
   if (resp->chunked_autoencode) _nxweb_encode_chunked_init(&resp->cestate);
 
-  if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd && !resp->content_out) {
-    int size;
-    nxb_get_unfinished(resp->nxb, &size);
-    if (size) {
-      resp->content=nxb_finish_stream(resp->nxb, &size);
-      resp->content_length=size;
-    }
-  }
+  nxd_http_server_proto_setup_content_out(hsp, resp);
 
-  if (!resp->content_out) {
-    if (resp->content && resp->content_length>0) {
-      nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);
-      resp->content_out=&hsp->ob.data_out;
-    }
-    else if (resp->sendfile_fd && resp->content_length>0) {
-      assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
-      nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
-      resp->content_out=&hsp->fb.data_out;
-    }
-    else if (resp->sendfile_path && resp->content_length>0) {
-      resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
-      if (resp->sendfile_fd!=-1) {
-        assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
-        nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
-        resp->content_out=&hsp->fb.data_out;
-      }
-      else {
-        nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
-      }
-    }
-  }
   if (resp->content_out) {
     nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
   }
@@ -554,7 +569,8 @@ static const nxd_http_server_proto_class http_server_proto_class={
   .start_sending_response=nxd_http_server_proto_start_sending_response,
   .start_receiving_request_body=start_receiving_request_body,
   .connect_request_body_out=connect_request_body_out,
-  .get_request_body_out_pair=get_request_body_out_pair
+  .get_request_body_out_pair=get_request_body_out_pair,
+  .request_cleanup=request_cleanup
 };
 
 void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool) {

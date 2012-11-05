@@ -50,7 +50,7 @@ static nxweb_composite_stream_node* nxweb_composite_stream_append_node(nxweb_com
     csn=cs->first_node;
   }
   nxd_streamer_node_init(&csn->snode);
-  nxd_streamer_add_node(&cs->strm, &csn->snode, 1);
+  nxd_streamer_add_node(&cs->strm, &csn->snode, 0);
   return csn;
 }
 
@@ -75,24 +75,36 @@ void nxweb_composite_stream_append_fd(nxweb_composite_stream* cs, int fd, off_t 
 static void nxweb_composite_stream_subrequest_on_response_ready(nxe_data data) {
   nxweb_http_server_connection* subconn=(nxweb_http_server_connection*)data.ptr;
   nxweb_http_server_connection* conn=subconn->parent;
-  if (subconn->subrequest_failed) {
-    nxweb_log_error("subreq failed");
-    return;
-  }
-  //nxweb_log_error("subreq response ready");
   nxweb_http_request* req=&conn->hsp.req;
   nxweb_composite_stream* cs=nxweb_get_request_data(req, NXWEB_COMPOSITE_STREAM_KEY).ptr;
   assert(cs);
   nxweb_composite_stream_node* csn=cs->first_node;
   while (csn && csn->subconn!=subconn) csn=csn->next; // find corresponding node
   assert(csn);
-  nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &csn->snode.data_in);
+  int status=subconn->hsp.resp->status_code;
+  if (!subconn->subrequest_failed && (!status || status==200)) {
+    nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &csn->snode.data_in);
+  }
+  else {
+    nxd_obuffer_init(&csn->buffer.ob, "<!--[ssi error]-->", sizeof("<!--[ssi error]-->")-1);
+    nxe_connect_streams(conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
+    nxweb_log_error("subrequest failed: %s%s", subconn->hsp.req.host, subconn->hsp.req.uri);
+    return;
+  }
 }
 
 void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const char* host, const char* url) {
   nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
 
   csn->subconn=nxweb_http_server_subrequest_start(cs->conn, nxweb_composite_stream_subrequest_on_response_ready, host, url);
+}
+
+void nxweb_composite_stream_close(nxweb_composite_stream* cs) { // call this right after appending last node
+  nxweb_composite_stream_node* csn=cs->first_node;
+  if (csn) {
+    while (csn->next) csn=csn->next;
+    csn->snode.final=1;
+  }
 }
 
 void nxweb_composite_stream_start(nxweb_composite_stream* cs, nxweb_http_response* resp) {

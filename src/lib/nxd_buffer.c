@@ -43,7 +43,7 @@ static void ibuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
   if (bytes_received>0) {
     nxb_blank_fast(ib->nxb, bytes_received);
     ib->data_size+=bytes_received;
-    if (ib->data_size >= ib->max_data_size) {
+    if (ib->data_size >= ib->max_data_size-1) {
       nxb_append_char_fast(ib->nxb, '\0');
       ib->data_ptr=nxb_finish_stream(ib->nxb, 0);
       nxe_publish(&ib->data_complete, (nxe_data)-1);
@@ -229,9 +229,11 @@ static void fbuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
       nxfr_size_t fr_size=size;
       const void* ptr=nx_file_reader_get_mbuf_ptr(&fb->fr, fb->fd, fb->end, fb->offset, &fr_size);
       if (fr_size!=size) flags=0; // no EOF yet
-      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
-      if (bytes_sent>0) {
-        fb->offset+=bytes_sent;
+      if (ptr) {
+        nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
+        if (bytes_sent>0) {
+          fb->offset+=bytes_sent;
+        }
       }
     }
   }
@@ -241,6 +243,7 @@ static const nxe_istream_class fbuffer_data_out_class={.do_write=fbuffer_data_ou
 
 void nxd_fbuffer_init(nxd_fbuffer* fb, int fd, off_t offset, off_t end) {
   memset(fb, 0, sizeof(nxd_fbuffer));
+  assert(fd>0);
   fb->fd=fd;
   fb->offset=offset;
   fb->end=end;

@@ -154,6 +154,7 @@ typedef struct nxweb_http_response {
   unsigned chunked_encoding:1;
   unsigned chunked_autoencode:1;
   unsigned gzip_encoded:1;
+  unsigned ssi_on:1;
 
   // Building response:
   const char* status;
@@ -188,6 +189,7 @@ typedef struct nxweb_mime_type {
   unsigned charset_required:1;
   unsigned gzippable:1;
   unsigned image:1;
+  unsigned ssi_on:1;
 } nxweb_mime_type;
 
 #include "nxd.h"
@@ -370,6 +372,7 @@ void nxweb_composite_stream_append_bytes(nxweb_composite_stream* cs, const char*
 void nxweb_composite_stream_append_fd(nxweb_composite_stream* cs, int fd, off_t offset, off_t end);
 void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const char* host, const char* url);
 void nxweb_composite_stream_start(nxweb_composite_stream* cs, nxweb_http_response* resp);
+void nxweb_composite_stream_close(nxweb_composite_stream* cs); // call this right after appending last node
 
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);
@@ -387,6 +390,14 @@ nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_bu
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response* resp);
 const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req);
 int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* end_of_headers);
+
+#ifdef WITH_ZLIB
+extern nxweb_filter gzip_filter;
+#endif
+#ifdef WITH_IMAGEMAGICK
+extern nxweb_filter image_filter;
+#endif
+extern nxweb_filter ssi_filter;
 
 #ifdef	__cplusplus
 }

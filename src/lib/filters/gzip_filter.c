@@ -230,6 +230,7 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
     resp->content_length=resp->sendfile_info.st_size;
     resp->last_modified=resp->sendfile_info.st_mtime;
     resp->gzip_encoded=1;
+    resp->content_out=0; // reset content_out
     return NXWEB_OK;
   }
   else if (resp->content && resp->content_length>0) { // gzip in memory
@@ -246,6 +247,7 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
     resp->content=zbuf;
     resp->content_length=zsize;
     resp->gzip_encoded=1;
+    resp->content_out=0; // reset content_out
     return NXWEB_OK;
   }
   // TODO gzip istream

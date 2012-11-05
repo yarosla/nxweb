@@ -196,6 +196,7 @@ typedef struct nxd_http_server_proto_class {
   void (*start_receiving_request_body)(struct nxd_http_server_proto* hsp);
   void (*connect_request_body_out)(struct nxd_http_server_proto* hsp, nxe_ostream* is);
   nxe_ostream* (*get_request_body_out_pair)(struct nxd_http_server_proto* hsp);
+  void (*request_cleanup)(nxe_loop* loop, struct nxd_http_server_proto* hsp);
 } nxd_http_server_proto_class;
 
 enum nxd_http_server_proto_state {
@@ -254,6 +255,7 @@ enum nxd_http_server_proto_error_code {
 void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
 void nxd_http_server_proto_subrequest_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
 void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri);
+void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp);
 
 enum nxd_http_client_proto_state {
   HCP_CONNECTING=0,

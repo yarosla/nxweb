@@ -55,7 +55,7 @@ static nxe_ssize_t streamer_data_in_write_or_sendfile(nxe_ostream* os, nxe_istre
     return 0;
   }
   nxe_ssize_t bytes_sent=0;
-  if (size>0) {
+  if (size>0 || *flags&NXEF_EOF) {
     nxe_ostream* next_os=strm->data_out.pair;
     if (next_os) {
       nxe_flags_t wflags=*flags;
@@ -75,7 +75,7 @@ static nxe_ssize_t streamer_data_in_write_or_sendfile(nxe_ostream* os, nxe_istre
       }
     }
     else {
-      nxweb_log_error("no connected device for strm->data_out");
+      // nxweb_log_error("no connected device for strm->data_out"); -- this is OK
       nxe_ostream_unset_ready(os);
     }
   }
@@ -147,7 +147,6 @@ void nxd_streamer_node_start(nxd_streamer_node* snode) {
 }
 
 void nxd_streamer_start(nxd_streamer* strm) {
-  assert(strm->head);
   strm->running=1;
   if (strm->head) nxd_streamer_node_start(strm->head);
 }

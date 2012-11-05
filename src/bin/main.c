@@ -45,13 +45,6 @@ extern nxweb_handler test_handler;
 extern nxweb_handler sendfile_handler;
 extern nxweb_handler upload_handler;
 
-#ifdef WITH_ZLIB
-extern nxweb_filter gzip_filter;
-#endif
-#ifdef WITH_IMAGEMAGICK
-extern nxweb_filter image_filter;
-#endif
-
 // These are benchmarking handlers (see modules/benchmark.c):
 NXWEB_SET_HANDLER(benchmark, "/benchmark-inprocess", &benchmark_handler, .priority=100);
 NXWEB_SET_HANDLER(benchmark_inworker, "/benchmark-inworker", &benchmark_handler_inworker, .priority=100);
@@ -71,11 +64,13 @@ NXWEB_SET_HANDLER(upload, "/upload", &upload_handler, .priority=1000);
 NXWEB_SET_HANDLER(java_test, "/java-test", &nxweb_http_proxy_handler, .priority=10000, .idx=0, .uri="/java-test");
 
 // This proxies requests to backend number 1 (I have another nxweb listening at port 8000):
-NXWEB_SET_HANDLER(nxweb_8777, "/8000", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="");
+NXWEB_SET_HANDLER(nxweb_8777, "/8000", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="",
+                  .filters={ &ssi_filter });
 
 // This serves static files from $(work_dir)/www/root directory:
 NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
         .filters={
+          &ssi_filter,
 #ifdef WITH_IMAGEMAGICK
           &image_filter,
 #endif

@@ -587,6 +587,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
   resp->sendfile_end=
   resp->content_length=resp->sendfile_info.st_size;
   resp->last_modified=resp->sendfile_info.st_mtime;
+  resp->content_out=0; // reset content_out
   return NXWEB_OK;
 }
 

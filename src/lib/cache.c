@@ -190,7 +190,7 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
   if (!resp->status_code) resp->status_code=200;
   const char* fpath=resp->sendfile_path;
 
-  if (resp->status_code==200 && fpath && resp->content_length<=NXWEB_MAX_CACHED_ITEM_SIZE && alignhash_size(_nxweb_cache)<NXWEB_MAX_CACHED_ITEMS+16) {
+  if (resp->status_code==200 && fpath && resp->content_length>=0 && resp->content_length<=NXWEB_MAX_CACHED_ITEM_SIZE && alignhash_size(_nxweb_cache)<NXWEB_MAX_CACHED_ITEMS+16) {
 
     if (nxweb_cache_try(conn, resp, fpath, 0, resp->last_modified)!=NXWEB_MISS) return NXWEB_OK;
 

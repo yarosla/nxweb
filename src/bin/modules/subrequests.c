@@ -32,6 +32,7 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
   nxweb_composite_stream_append_fd(cs, fd, 0, 15); // fd will be auto-closed
   nxweb_composite_stream_append_subrequest(cs, 0, "/8777/");
   nxweb_composite_stream_append_bytes(cs, "[test2]", sizeof("[test2]")-1);
+  nxweb_composite_stream_close(cs);
 
   nxweb_composite_stream_start(cs, resp);
 

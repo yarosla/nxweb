@@ -411,7 +411,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     invoke_request_handler(conn, req, resp, h, flags);
   }
   else if (data.i==NXD_HSP_REQUEST_COMPLETE) {
-    //if (conn->handler && conn->handler->on_complete) conn->handler->on_complete(conn, req, resp);
+    conn->hsp.cls->request_cleanup(sub->super.loop, &conn->hsp);
     conn->handler=0;
     conn->handler_param=(nxe_data)0;
   }
@@ -443,14 +443,7 @@ static const nxe_subscriber_class nxweb_http_server_connection_worker_complete_c
 
 void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http_response* resp) {
 
-  if (!resp->content_out && !resp->content && !resp->sendfile_path && !resp->sendfile_fd) {
-    int size;
-    nxb_get_unfinished(resp->nxb, &size);
-    if (size) {
-      resp->content=nxb_finish_stream(resp->nxb, &size);
-      resp->content_length=size;
-    }
-  }
+  nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
   if (conn->handler && conn->handler->num_filters) {
     // run filters
@@ -507,8 +500,14 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good) {
   if (conn->parent) {
-    conn->subrequest_failed=1;
-    if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
+    // this can be called more than once
+    // since we are not finalizing subrequest connection
+    // waiting for parent connection to finalize
+    if (!conn->subrequest_failed) { // therefore protect by boolean flag
+      // this will only execute once per connection failure
+      conn->subrequest_failed=1;
+      if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
+    }
     // to be finalized with parent connection
     return;
   }

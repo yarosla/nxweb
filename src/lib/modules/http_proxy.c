@@ -129,6 +129,7 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
 
       conn->hsp.cls->start_receiving_request_body(&conn->hsp);
     }
+    nxe_set_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
     return NXWEB_OK;
   }
   else {
@@ -184,7 +185,6 @@ static nxweb_result nxweb_http_proxy_handler_on_headers(nxweb_http_server_connec
   conn->hsp.req_finalize=nxweb_http_proxy_request_finalize;
   rdata->rbuf=nxp_alloc(conn->tdata->free_rbuf_pool);
   rdata->timer_backend.super.cls.timer_cls=&timer_backend_class;
-  nxe_set_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
   return start_proxy_request(conn, req, rdata);
 }
 
