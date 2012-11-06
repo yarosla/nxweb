@@ -74,11 +74,8 @@ static void subrequest_start_sending_response(nxd_http_server_proto* hsp, nxweb_
 
   nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_RESPONSE_READY);
 
-  if (resp->content_out) {
-    nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
-  }
-  else {
-    nxweb_log_error("nxd_http_server_proto_start_sending_response(): no content_out stream");
+  if (!resp->content_out) {
+    nxweb_log_error("nxd_http_server_proto_subrequest_start_sending_response(): no content_out stream");
   }
 
   if (!resp->raw_headers) _nxweb_prepare_response_headers(loop, resp);

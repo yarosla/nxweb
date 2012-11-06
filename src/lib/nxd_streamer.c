@@ -106,6 +106,7 @@ static const nxe_ostream_class streamer_data_in_class={.write=streamer_data_in_w
 void nxd_streamer_init(nxd_streamer* strm) {
   memset(strm, 0, sizeof(nxd_streamer));
   strm->data_out.super.cls.is_cls=&streamer_data_out_class;
+  strm->data_out.evt.cls=NXE_EV_STREAM;
 }
 
 void nxd_streamer_node_init(nxd_streamer_node* snode) {
