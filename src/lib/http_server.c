@@ -757,6 +757,7 @@ int nxweb_listen_ssl(const char* host_and_port, int backlog, _Bool secure, const
 
 int nxweb_setup_http_proxy_pool(int idx, const char* host_and_port) {
   assert(idx>=0 && idx<NXWEB_MAX_PROXY_POOLS);
+  nxweb_log_error("proxy backend #%d: %s", idx, host_and_port);
   nxweb_server_config.http_proxy_pool_config[idx].host=host_and_port;
   nxweb_server_config.http_proxy_pool_config[idx].saddr=_nxweb_resolve_host(host_and_port, 0);
   return !!nxweb_server_config.http_proxy_pool_config[idx].saddr;

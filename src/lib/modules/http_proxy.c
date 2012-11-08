@@ -205,6 +205,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->content_type=presp->content_type;
     resp->content_length=presp->content_length;
     if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked content
+    resp->ssi_on=presp->ssi_on;
     resp->headers=presp->headers;
     resp->content_out=&rdata->rb_resp.data_out;
     nxweb_start_sending_response(conn, resp);

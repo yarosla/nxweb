@@ -43,14 +43,14 @@ static inline void wait_for_100_continue(nxd_http_client_proto* hcp, nxe_loop* l
 }
 
 static inline void request_complete(nxd_http_client_proto* hcp, nxe_loop* loop) {
-  hcp->request_complete=1;
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_REQUEST_COMPLETE);
   if (hcp->queued_error_message.i) nxe_publish(&hcp->events_pub, hcp->queued_error_message);
-  hcp->state=HCP_IDLE;
   nxe_ostream_unset_ready(&hcp->data_in);
   nxe_istream_unset_ready(&hcp->data_out);
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hcp->timer_read);
   nxe_set_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hcp->timer_keep_alive);
+  hcp->request_complete=1;
+  hcp->state=HCP_IDLE;
   hcp->request_count++;
 }
 
@@ -357,7 +357,9 @@ static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, n
 static void data_error_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)sub-offsetof(nxd_http_client_proto, data_error));
   nxe_loop* loop=sub->super.loop;
-  if ((data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED) && (hcp->resp.content_length<0 && !hcp->resp.chunked_encoding)) {
+  if ((data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED)
+       && (hcp->resp.content_length<0 && !hcp->resp.chunked_encoding)
+       && (hcp->state!=HCP_IDLE)) {
     // content-length = until-close
     request_complete(hcp, loop);
   }

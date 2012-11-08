@@ -282,7 +282,8 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_CONTENT_LENGTH,
   NXWEB_HTTP_ACCEPT_ENCODING,
   NXWEB_HTTP_IF_MODIFIED_SINCE,
-  NXWEB_HTTP_TRANSFER_ENCODING
+  NXWEB_HTTP_TRANSFER_ENCODING,
+  NXWEB_X_SSI
 };
 
 static int identify_http_header(const char* name, int name_len) {
@@ -308,6 +309,9 @@ static int identify_http_header(const char* name, int name_len) {
       if (first_char=='c') return nx_strcasecmp(name, "Connection")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONNECTION;
       if (first_char=='k') return nx_strcasecmp(name, "Keep-Alive")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_KEEP_ALIVE;
       if (first_char=='u') return nx_strcasecmp(name, "User-Agent")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_USER_AGENT;
+      return NXWEB_HTTP_UNKNOWN;
+    case 11:
+      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-SSI")? NXWEB_HTTP_UNKNOWN : NXWEB_X_SSI;
       return NXWEB_HTTP_UNKNOWN;
     case 12:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Type")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_TYPE;
@@ -1065,6 +1069,7 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       case NXWEB_HTTP_TRANSFER_ENCODING: transfer_encoding=value; break;
       case NXWEB_HTTP_CONNECTION: resp->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_KEEP_ALIVE: /* skip */ break;
+      case NXWEB_X_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
       default:
         header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=name;

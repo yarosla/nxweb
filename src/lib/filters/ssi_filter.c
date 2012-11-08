@@ -121,7 +121,10 @@ static int parse_text(ssi_buffer* ssib) {
         nxweb_composite_stream_append_bytes(ssib->cs, t, p-t);
       }
       *(p2-2)='\0';
-      parse_directive(ssib, p+5, (p2-p)-5-2);
+      if (parse_directive(ssib, p+5, (p2-p)-5-2)==-1) {
+        // ssi syntax error
+        nxweb_composite_stream_append_bytes(ssib->cs, "<!--[ssi syntax error]-->", sizeof("<!--[ssi syntax error]-->")-1);
+      }
       return 1;
     }
     else {
