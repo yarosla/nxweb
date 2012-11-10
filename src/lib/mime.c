@@ -34,6 +34,9 @@ static alignhash_t(mime_cache) *_mime_cache_by_ext;
 static alignhash_t(mime_cache) *_mime_cache_by_type;
 
 static const nxweb_mime_type const mime_types[] = {
+  // BEWARE that the first entry here is the default type (unless overriden with nxweb_set_default_mime_type),
+  // which is gonna be used for all static files with unrecognized file extensions
+  // enabling gzip or ssi filter on it might significantly affect your server's performance
   {"htm", "text/html", 1, .gzippable=1, .ssi_on=0}, // default mime type
   {"html", "text/html", 1, .gzippable=1},
   {"shtml", "text/html", 1, .gzippable=0, .ssi_on=1},
@@ -110,8 +113,11 @@ static const nxweb_mime_type const mime_types[] = {
   {"qt", "video/quicktime", 0},
   {"asf", "video/x-ms-asf", 0},
   {"asx", "video/x-ms-asf", 0},
+  {"dat", "application/octet-stream", 0},
   {0}
 };
+
+static const nxweb_mime_type* default_mime_type=&mime_types[0];
 
 void nxweb_add_mime_type(const nxweb_mime_type* type) {
   assert(!_nxweb_net_thread_data); // mime cache is not thread safe
@@ -146,22 +152,31 @@ static void finalize_mime_cache() {
   alignhash_destroy(mime_cache, _mime_cache_by_type);
 }
 
+const nxweb_mime_type* nxweb_get_default_mime_type() {
+  return default_mime_type;
+}
+
+void nxweb_set_default_mime_type(const nxweb_mime_type* mtype) {
+  assert(mtype && mtype->mime && mtype->ext);
+  default_mime_type=mtype;
+}
+
 const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext) {
   const char* ext=strrchr(fpath_or_ext, '.');
   ext=ext? ext+1 : fpath_or_ext;
   int ext_len=strlen(ext);
   char _ext[32];
-  if (ext_len>sizeof(_ext)-1) return &mime_types[0];
+  if (ext_len>sizeof(_ext)-1) return default_mime_type;
   nx_strtolower(_ext, ext);
   ah_iter_t ci;
   if ((ci=alignhash_get(mime_cache, _mime_cache_by_ext, _ext))!=alignhash_end(_mime_cache_by_ext)) {
     return alignhash_value(_mime_cache_by_ext, ci);
   }
-  return &mime_types[0];
+  return default_mime_type;
 }
 
 const nxweb_mime_type* nxweb_get_mime_type(const char* type_name) {
-  if (!type_name) return mime_types; // first one is default
+  if (!type_name) return default_mime_type;
   const char* e=strchr(type_name, ';');
   char buf[512];
   if (e) {

@@ -201,7 +201,7 @@ void nxweb_parse_request_parameters(nxweb_http_request *req, int preserve_uri) {
       }
     }
   }
-  if (req->content && nx_strcasecmp(req->content_type, "application/x-www-form-urlencoded")==0) {
+  if (req->content && req->content_type && nx_strcasecmp(req->content_type, "application/x-www-form-urlencoded")==0) {
     for (name=(char*)req->content; name; name=next) {
       next=strchr(name, '&');
       if (next) *next++='\0';
@@ -784,11 +784,11 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
 }
 
-void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* location) {
-  nxweb_send_redirect2(resp, code, location, 0);
+void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* location, int secure) {
+  nxweb_send_redirect2(resp, code, location, 0, secure);
 }
 
-void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info) {
+void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info, int secure) {
   char buf[32];
 
   nxb_buffer* nxb=resp->nxb;
@@ -817,11 +817,13 @@ void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* locat
                       "Connection: ");
   nxb_append_str_fast(nxb, resp->keep_alive?"keep-alive":"close");
   nxb_append_str_fast(nxb, "\r\nContent-Length: 0\r\nLocation: ");
-  if (!strncmp(location, "http", 4)) { // absolute uri
+  if (!strncmp(location, "http://", 7) || !strncmp(location, "https://", 7)) { // absolute uri
     nxb_append_str(nxb, location);
   }
   else {
-    nxb_append_str(nxb, "http://");
+    nxb_append_str(nxb, "http");
+    if (secure) nxb_append_char(nxb, 's');
+    nxb_append_str(nxb, "://");
     nxb_append_str(nxb, resp->host);
     nxb_append_str(nxb, location);
   }

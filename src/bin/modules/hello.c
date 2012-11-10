@@ -41,6 +41,7 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
            "user_agent=%H<br/>\n"
            "content_type=%H<br/>\n"
            "content_length=%ld<br/>\n"
+           "content_received=%ld<br/>\n"
            "transfer_encoding=%H<br/>\n"
            "accept_encoding=%H<br/>\n"
            "request_body=%H</blockquote>\n",
@@ -57,6 +58,7 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
            req->user_agent,
            req->content_type,
            req->content_length,
+           req->content_received,
            req->transfer_encoding,
            req->accept_encoding,
            req->content

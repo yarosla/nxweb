@@ -302,6 +302,8 @@ static inline int nxweb_vhost_match(const char* host, int host_len, const char* 
   }
 }
 
+const nxweb_mime_type* nxweb_get_default_mime_type();
+void nxweb_set_default_mime_type(const nxweb_mime_type* mtype);
 const nxweb_mime_type* nxweb_get_mime_type(const char* type_name);
 const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext);
 
@@ -334,8 +336,8 @@ static inline void nxweb_response_append_uint(nxweb_http_response* resp, unsigne
   nxb_append_uint(resp->nxb, n);
 }
 
-void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location);
-void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info);
+void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location, int secure);
+void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info, int secure);
 void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* message);
 int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, const struct stat* finfo, int gzip_encoded,
         off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect

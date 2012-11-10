@@ -538,7 +538,7 @@ static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* 
   if (resp->content_out) {
     nxe_connect_streams(loop, resp->content_out, &hsp->resp_body_in);
   }
-  else {
+  else if (resp->content_length) {
     nxweb_log_error("nxd_http_server_proto_start_sending_response(): no content_out stream");
   }
 

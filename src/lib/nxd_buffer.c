@@ -51,9 +51,11 @@ static void ibuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
     }
   }
   if (flags&NXEF_EOF) {
-    nxb_append_char_fast(ib->nxb, '\0');
-    ib->data_ptr=nxb_finish_stream(ib->nxb, 0);
-    nxe_publish(&ib->data_complete, (nxe_data)0);
+    if (!ib->data_ptr) {
+      nxb_append_char_fast(ib->nxb, '\0');
+      ib->data_ptr=nxb_finish_stream(ib->nxb, 0);
+      nxe_publish(&ib->data_complete, (nxe_data)0);
+    }
     nxe_ostream_unset_ready(os);
   }
 }
