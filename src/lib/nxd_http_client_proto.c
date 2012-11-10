@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -43,14 +43,14 @@ static inline void wait_for_100_continue(nxd_http_client_proto* hcp, nxe_loop* l
 }
 
 static inline void request_complete(nxd_http_client_proto* hcp, nxe_loop* loop) {
-  hcp->request_complete=1;
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_REQUEST_COMPLETE);
   if (hcp->queued_error_message.i) nxe_publish(&hcp->events_pub, hcp->queued_error_message);
-  hcp->state=HCP_IDLE;
   nxe_ostream_unset_ready(&hcp->data_in);
   nxe_istream_unset_ready(&hcp->data_out);
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hcp->timer_read);
   nxe_set_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hcp->timer_keep_alive);
+  hcp->request_complete=1;
+  hcp->state=HCP_IDLE;
   hcp->request_count++;
 }
 
@@ -111,6 +111,7 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
           nxe_size_t first_body_chunk_size=hcp->first_body_chunk_end-hcp->first_body_chunk;
           if (hcp->resp.chunked_encoding) {
             int r=_nxweb_decode_chunked_stream(&hcp->resp.cdstate, hcp->first_body_chunk, &first_body_chunk_size);
+            hcp->first_body_chunk_end=hcp->first_body_chunk+first_body_chunk_size;
             if (r<0) nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_RESPONSE_CHUNKED_ENCODING_ERROR);
             else if (r>0) hcp->response_body_complete=1;
           }
@@ -208,7 +209,10 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
     hcp->req_body_sending_started=1;
     nxe_istream* prev_is=hcp->req_body_in.pair;
     if (prev_is) {
-      if (prev_is->ready) ISTREAM_CLASS(prev_is)->do_write(prev_is, &hcp->req_body_in);
+      if (prev_is->ready) {
+        hcp->req_body_in.ready=1;
+        ISTREAM_CLASS(prev_is)->do_write(prev_is, &hcp->req_body_in);
+      }
       if (!prev_is->ready) {
         nxe_istream_unset_ready(is);
         nxe_ostream_set_ready(loop, &hcp->req_body_in); // get notified when prev_is becomes ready again
@@ -353,7 +357,9 @@ static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, n
 static void data_error_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)sub-offsetof(nxd_http_client_proto, data_error));
   nxe_loop* loop=sub->super.loop;
-  if ((data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED) && (hcp->resp.content_length<0 && !hcp->resp.chunked_encoding)) {
+  if ((data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED)
+       && (hcp->resp.content_length<0 && !hcp->resp.chunked_encoding)
+       && (hcp->state!=HCP_IDLE)) {
     // content-length = until-close
     request_complete(hcp, loop);
   }

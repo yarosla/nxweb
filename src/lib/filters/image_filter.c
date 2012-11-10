@@ -230,7 +230,40 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
       MagickReadImage(watermark, wpath);
       int wwidth=MagickGetImageWidth(watermark);
       int wheight=MagickGetImageHeight(watermark);
-      if (width>=2*wwidth && height>=2*wheight) { // don't watermark images smaller than 2 x watermark
+
+      /*
+       * Now use image page definition to scale down and position watermark.
+       * Use ImageMagick command line tool to setup:
+       *   convert watermark.png -page '800x800-20-20' watermark.png
+       * This means for nxweb that watermark image is for 800x800 images and above.
+       * For images smaller than 800x800 the watermark should be scaled down proportionally.
+       * Offset -20-20 means that watermark should be put in the lower-right corner 20px from the edge.
+       * When watermark gets scaled down offsets should be scaled down too.
+       */
+      size_t wpage_width=0, wpage_height=0;
+      ssize_t woffset_x=0, woffset_y=0;
+      MagickGetImagePage(watermark, &wpage_width, &wpage_height, &woffset_x, &woffset_y);
+      woffset_x=(int32_t)woffset_x;
+      woffset_y=(int32_t)woffset_y;
+      nxweb_log_error("watermark found: %s size %dx%d page %ldx%ld offs %ldx%ld", wpath, wwidth, wheight, wpage_width, wpage_height, woffset_x, woffset_y);
+      if (wpage_width>wwidth && wpage_height>wheight) { // page defined => watermark file has layout
+        if (width<wpage_width || height<wpage_height) { // scale watermark down
+          double scale_x=(double)width/(double)wpage_width;
+          double scale_y=(double)height/(double)wpage_height;
+          double scale=scale_x<scale_y? scale_x : scale_y;
+          wwidth=round(scale*wwidth);
+          wheight=round(scale*wheight);
+          woffset_x=round(scale*woffset_x);
+          woffset_y=round(scale*woffset_y);
+          MagickResizeImage(watermark, wwidth, wheight, LanczosFilter, 1);
+        }
+        MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
+        ssize_t x=woffset_x<=0? width-wwidth+woffset_x : woffset_x;
+        ssize_t y=woffset_y<=0? height-wheight+woffset_y : woffset_y;
+        MagickCompositeImage(image, watermark, OverCompositeOp, x, y);
+        dirty=1;
+      }
+      else if (width>=2*wwidth && height>=2*wheight) { // don't watermark images smaller than 2 x watermark
         MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
         MagickCompositeImage(image, watermark, OverCompositeOp, width-wwidth-10, height-wheight-10);
         dirty=1;
@@ -375,8 +408,6 @@ static int copy_file(const char* src, const char* dst) {
   close(dfd);
   return 0;
 }
-
-static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
 #ifdef WITH_NETTLE
 
@@ -556,6 +587,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
   resp->sendfile_end=
   resp->content_length=resp->sendfile_info.st_size;
   resp->last_modified=resp->sendfile_info.st_mtime;
+  resp->content_out=0; // reset content_out
   return NXWEB_OK;
 }
 

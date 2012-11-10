@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -34,8 +34,13 @@ static alignhash_t(mime_cache) *_mime_cache_by_ext;
 static alignhash_t(mime_cache) *_mime_cache_by_type;
 
 static const nxweb_mime_type const mime_types[] = {
-  {"htm", "text/html", 1, .gzippable=1}, // default mime type
+  // BEWARE that the first entry here is the default type (unless overriden with nxweb_set_default_mime_type),
+  // which is gonna be used for all static files with unrecognized file extensions
+  // enabling gzip or ssi filter on it might significantly affect your server's performance
+  {"htm", "text/html", 1, .gzippable=1, .ssi_on=0}, // default mime type
   {"html", "text/html", 1, .gzippable=1},
+  {"shtml", "text/html", 1, .gzippable=0, .ssi_on=1},
+  {"shtm", "text/html", 1, .gzippable=0, .ssi_on=1},
   {"txt", "text/plain", 1, .gzippable=1},
   {"c", "text/plain", 1, .gzippable=1},
   {"h", "text/plain", 1, .gzippable=1},
@@ -52,18 +57,20 @@ static const nxweb_mime_type const mime_types[] = {
   {"wbmp", "image/vnd.wap.wbmp", 0},
   {"ico", "image/x-icon", 0, .gzippable=1},
   {"js", "application/x-javascript", 1, .gzippable=1},
+  {"json", "application/json", 1, .gzippable=1},
   {"css", "text/css", 1, 1},
   {"xhtml", "application/xhtml+xml", 1, .gzippable=1},
   {"xht", "application/xhtml+xml", 1, .gzippable=1},
   {"xml", "application/xml", 1, .gzippable=1},
+  {"xml", "text/xml", 1, .gzippable=1},
   {"xsl", "application/xml", 1, .gzippable=1},
   {"xslt", "application/xml", 1, .gzippable=1},
   {"atom", "application/atom+xml", 1, .gzippable=1},
   {"dtd", "application/xml-dtd", 1, .gzippable=1},
   {"doc", "application/msword", 0, .gzippable=1},
   {"pdf", "application/pdf", 0},
-  {"eps", "application/postscript", 0},
   {"ps", "application/postscript", 0},
+  {"eps", "application/postscript", 0},
   {"ai", "application/postscript", 0},
   {"rdf", "application/rdf+xml", 1},
   {"smil", "application/smil", 0},
@@ -74,7 +81,6 @@ static const nxweb_mime_type const mime_types[] = {
   {"sit", "application/x-stuffit", 0},
   {"tar", "application/x-tar", 0},
   {"zip", "application/zip", 0},
-  {"rar", "application/rar", 0},
   {"rar", "application/rar", 0},
   {"gz", "application/x-gunzip", 0},
   {"tgz", "application/x-tar-gz", 0},
@@ -107,8 +113,11 @@ static const nxweb_mime_type const mime_types[] = {
   {"qt", "video/quicktime", 0},
   {"asf", "video/x-ms-asf", 0},
   {"asx", "video/x-ms-asf", 0},
+  {"dat", "application/octet-stream", 0},
   {0}
 };
+
+static const nxweb_mime_type* default_mime_type=&mime_types[0];
 
 void nxweb_add_mime_type(const nxweb_mime_type* type) {
   assert(!_nxweb_net_thread_data); // mime cache is not thread safe
@@ -117,11 +126,11 @@ void nxweb_add_mime_type(const nxweb_mime_type* type) {
   ah_iter_t ci;
   int ret=0;
   ci=alignhash_set(mime_cache, _mime_cache_by_ext, type->ext, &ret);
-  if (ci!=alignhash_end(_mime_cache_by_ext)) {
+  if (ret!=AH_INS_ERR && ci!=alignhash_end(_mime_cache_by_ext)) {
     alignhash_value(_mime_cache_by_ext, ci)=type;
   }
   ci=alignhash_set(mime_cache, _mime_cache_by_type, type->mime, &ret);
-  if (ci!=alignhash_end(_mime_cache_by_type)) {
+  if (ret!=AH_INS_ERR && ci!=alignhash_end(_mime_cache_by_type)) {
     alignhash_value(_mime_cache_by_type, ci)=type;
   }
 }
@@ -143,22 +152,31 @@ static void finalize_mime_cache() {
   alignhash_destroy(mime_cache, _mime_cache_by_type);
 }
 
+const nxweb_mime_type* nxweb_get_default_mime_type() {
+  return default_mime_type;
+}
+
+void nxweb_set_default_mime_type(const nxweb_mime_type* mtype) {
+  assert(mtype && mtype->mime && mtype->ext);
+  default_mime_type=mtype;
+}
+
 const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext) {
   const char* ext=strrchr(fpath_or_ext, '.');
   ext=ext? ext+1 : fpath_or_ext;
   int ext_len=strlen(ext);
   char _ext[32];
-  if (ext_len>sizeof(_ext)-1) return &mime_types[0];
-  nx_tolower_str(_ext, ext);
+  if (ext_len>sizeof(_ext)-1) return default_mime_type;
+  nx_strtolower(_ext, ext);
   ah_iter_t ci;
   if ((ci=alignhash_get(mime_cache, _mime_cache_by_ext, _ext))!=alignhash_end(_mime_cache_by_ext)) {
     return alignhash_value(_mime_cache_by_ext, ci);
   }
-  return &mime_types[0];
+  return default_mime_type;
 }
 
 const nxweb_mime_type* nxweb_get_mime_type(const char* type_name) {
-  if (!type_name) return mime_types; // first one is default
+  if (!type_name) return default_mime_type;
   const char* e=strchr(type_name, ';');
   char buf[512];
   if (e) {

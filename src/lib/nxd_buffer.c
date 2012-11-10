@@ -1,39 +1,49 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "nxweb.h"
 
+#include <errno.h>
+
 static void ibuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
   nxd_ibuffer* ib=(nxd_ibuffer*)((char*)os-offsetof(nxd_ibuffer, data_in));
   //nxe_loop* loop=os->super.loop;
-  if (ib->data_ptr) return; // already closed; perhaps reached max_data_size
+  nxe_flags_t flags=0;
+  if (ib->data_ptr) { // already closed; perhaps reached max_data_size
+    // swallow input data
+    char buf[16384];
+    is->super.cls.is_cls->read(is, os, buf, sizeof(buf), &flags);
+    if (flags&NXEF_EOF) {
+      nxe_ostream_unset_ready(os);
+    }
+    return;
+  }
   int size;
   nxb_make_room(ib->nxb, 32);
   char* ptr=nxb_get_room(ib->nxb, &size);
   size--; // for null-terminator
   if (ib->data_size+size > ib->max_data_size) size=ib->max_data_size-ib->data_size-1;
-  nxe_flags_t flags=0;
   int bytes_received=is->super.cls.is_cls->read(is, os, ptr, size, &flags);
   if (bytes_received>0) {
     nxb_blank_fast(ib->nxb, bytes_received);
     ib->data_size+=bytes_received;
-    if (ib->data_size >= ib->max_data_size) {
+    if (ib->data_size >= ib->max_data_size-1) {
       nxb_append_char_fast(ib->nxb, '\0');
       ib->data_ptr=nxb_finish_stream(ib->nxb, 0);
       nxe_publish(&ib->data_complete, (nxe_data)-1);
@@ -41,9 +51,11 @@ static void ibuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
     }
   }
   if (flags&NXEF_EOF) {
-    nxb_append_char_fast(ib->nxb, '\0');
-    ib->data_ptr=nxb_finish_stream(ib->nxb, 0);
-    nxe_publish(&ib->data_complete, (nxe_data)0);
+    if (!ib->data_ptr) {
+      nxb_append_char_fast(ib->nxb, '\0');
+      ib->data_ptr=nxb_finish_stream(ib->nxb, 0);
+      nxe_publish(&ib->data_complete, (nxe_data)0);
+    }
     nxe_ostream_unset_ready(os);
   }
 }
@@ -219,9 +231,11 @@ static void fbuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
       nxfr_size_t fr_size=size;
       const void* ptr=nx_file_reader_get_mbuf_ptr(&fb->fr, fb->fd, fb->end, fb->offset, &fr_size);
       if (fr_size!=size) flags=0; // no EOF yet
-      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
-      if (bytes_sent>0) {
-        fb->offset+=bytes_sent;
+      if (ptr) {
+        nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
+        if (bytes_sent>0) {
+          fb->offset+=bytes_sent;
+        }
       }
     }
   }
@@ -231,6 +245,7 @@ static const nxe_istream_class fbuffer_data_out_class={.do_write=fbuffer_data_ou
 
 void nxd_fbuffer_init(nxd_fbuffer* fb, int fd, off_t offset, off_t end) {
   memset(fb, 0, sizeof(nxd_fbuffer));
+  assert(fd>0);
   fb->fd=fd;
   fb->offset=offset;
   fb->end=end;
@@ -242,4 +257,51 @@ void nxd_fbuffer_init(nxd_fbuffer* fb, int fd, off_t offset, off_t end) {
 void nxd_fbuffer_finalize(nxd_fbuffer* fb) {
   nx_file_reader_finalize(&fb->fr);
   fb->fd=0;
+}
+
+
+static void fwbuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
+  nxd_fwbuffer* fwb=OBJ_PTR_FROM_FLD_PTR(nxd_fwbuffer, data_in, os);
+  char buf[16384];
+  nxe_size_t max_bytes_to_store=fwb->max_size > fwb->size ? fwb->max_size-fwb->size : 0;
+  if (max_bytes_to_store>sizeof(buf)) max_bytes_to_store=sizeof(buf);
+  // NB: continue reading even after reaching max_size; just swallow the input
+  nxe_flags_t flags=0;
+  nxe_ssize_t bytes_received=ISTREAM_CLASS(is)->read(is, os, buf, sizeof(buf), &flags);
+  if (bytes_received>0) {
+    fwb->size+=bytes_received;
+    size_t bytes_to_store;
+    if (fwb->error) {
+      bytes_to_store=0;
+    }
+    else if (bytes_received>max_bytes_to_store) { // max_size reached
+      fwb->error=EFBIG;
+      bytes_to_store=max_bytes_to_store;
+    }
+    else {
+      bytes_to_store=bytes_received;
+    }
+    if (bytes_to_store) {
+      if (write(fwb->fd, buf, bytes_to_store)!=bytes_to_store) {
+        fwb->error=errno;
+      }
+    }
+  }
+  if (flags&NXEF_EOF) {
+    nxe_ostream_unset_ready(os);
+  }
+}
+
+static const nxe_ostream_class fwbuffer_data_in_class={.do_read=fwbuffer_data_in_do_read};
+
+void nxd_fwbuffer_init(nxd_fwbuffer* fwb, int fd, nxe_size_t max_size) {
+  memset(fwb, 0, sizeof(nxd_fwbuffer));
+  fwb->fd=fd;
+  fwb->max_size=max_size;
+  fwb->data_in.super.cls.os_cls=&fwbuffer_data_in_class;
+  fwb->data_in.ready=1;
+}
+
+void nxd_fwbuffer_finalize(nxd_fwbuffer* fwb) {
+  fwb->fd=0;
 }

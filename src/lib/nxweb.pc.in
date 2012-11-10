@@ -16,4 +16,4 @@ URL: https://bitbucket.org/yarosla/nxweb/
 Version: @VERSION@
 Libs: -L${libdir} -lnxweb @NXWEB_EXT_LIBS@
 # Libs.private: @NXWEB_EXT_LIBS@
-Cflags: -I${includedir}
+Cflags: -I${includedir} @NXWEB_EXT_CFLAGS@

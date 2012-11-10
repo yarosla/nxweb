@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -42,7 +42,7 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   }
 
   if (S_ISDIR(resp->sendfile_info.st_mode)) {
-    nxweb_send_redirect2(resp, 302, path_info, "/");
+    nxweb_send_redirect2(resp, 302, path_info, "/", conn->secure);
     nxweb_start_sending_response(conn, resp);
     return NXWEB_OK;
   }
@@ -113,7 +113,7 @@ static nxweb_result sendfile_on_serve_from_cache(nxweb_http_server_connection* c
   struct stat* finfo=&resp->sendfile_info;
 
   if (S_ISDIR(finfo->st_mode)) {
-    nxweb_send_redirect2(resp, 302, resp->cache_key+resp->cache_key_root_len, "/");
+    nxweb_send_redirect2(resp, 302, resp->cache_key+resp->cache_key_root_len, "/", conn->secure);
     return NXWEB_OK;
   }
 /*

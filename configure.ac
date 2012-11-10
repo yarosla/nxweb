@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
 
-AC_INIT([nxweb], [3.0.1-dev])
+AC_INIT([nxweb], [3.1.0-dev])
 AC_CONFIG_HEADER(src/include/nxweb/config.h)
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
@@ -80,6 +80,7 @@ AM_CONDITIONAL([WITH_ZLIB], [test $with_zlib = "yes"])
 AC_CHECK_FUNC(register_printf_specifier, AC_DEFINE([USE_REGISTER_PRINTF_SPECIFIER], [1], [Use register_printf_specifier() instead of register_printf_function()]))
 
 AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread")
+AC_SUBST(NXWEB_EXT_CFLAGS, "$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS")
 
 AC_SUBST(NXWEB_LIB_VERSION_INFO, "0:0:0")
 

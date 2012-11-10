@@ -65,12 +65,24 @@ static inline char* uint_to_decimal_string(unsigned long n, char* buf, int buf_s
   return p;
 }
 
-static inline char* uint_to_decimal_string_zeropad(unsigned long n, char* buf, int num_digits) {
+static inline char* uint_to_decimal_string_zeropad(unsigned long n, char* buf, int num_digits, int null_terminate) {
   char* p=buf+num_digits;
-  *p='\0';
+  if (null_terminate) *p='\0';
   while (num_digits--) {
     *--p=n%10+'0';
     n=n/10;
+  }
+  return buf;
+}
+
+static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
+
+static inline char* uint_to_hex_string_zeropad(unsigned long n, char* buf, int num_digits, int null_terminate) {
+  char* p=buf+num_digits;
+  if (null_terminate) *p='\0';
+  while (num_digits--) {
+    *--p=HEX_DIGIT(n);
+    n>>=4;
   }
   return buf;
 }

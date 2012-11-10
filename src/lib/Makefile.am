@@ -9,10 +9,14 @@ libnxweb_la_SOURCES = \
 	cache.c daemon.c http_server.c \
 	http_utils.c mime.c misc.c nx_buffer.c \
 	nxd_buffer.c nxd_http_client_proto.c nxd_http_proxy.c \
-	nxd_http_server_proto.c nxd_socket.c nxd_ssl_socket.c \
+	nxd_http_server_proto.c nxd_http_server_proto_subrequest.c \
+	nxd_socket.c nxd_ssl_socket.c nxd_streamer.c \
 	nx_event.c nx_file_reader.c nx_pool.c nx_workers.c \
+	http_subrequest.c \
 	\
 	modules/http_proxy.c modules/sendfile.c \
+	\
+	filters/ssi_filter.c \
 	\
 	deps/ulib/hash.c \
 	deps/sha1-c/sha1.c

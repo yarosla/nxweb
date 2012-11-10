@@ -67,9 +67,30 @@ typedef struct nxweb_chunked_decoder_state {
   nxe_ssize_t chunk_bytes_left;
 } nxweb_chunked_decoder_state;
 
+typedef struct nxweb_chunked_encoder_state {
+  unsigned short final_chunk:1;
+  nxe_ssize_t chunk_size;
+  nxe_ssize_t pos;
+  char buf[8]; // "\r\n0000\r\n"
+} nxweb_chunked_encoder_state;
+
+struct nxweb_http_server_connection;
+struct nxweb_http_request;
+struct nxweb_http_response;
+struct nxweb_http_request_data;
+
+typedef void (*nxweb_http_request_data_finalizer)(struct nxweb_http_server_connection* conn, struct nxweb_http_request* req, struct nxweb_http_response* resp, nxe_data data);
+
+typedef struct nxweb_http_request_data {
+  nxe_data key;
+  nxe_data value;
+  nxweb_http_request_data_finalizer finalize;
+  struct nxweb_http_request_data* next;
+} nxweb_http_request_data;
+
 typedef struct nxweb_http_request {
 
-  nxb_buffer* nxb;
+  nxb_buffer* nxb; // use this for per-request memory allocation
 
   // booleans
   unsigned http11:1;
@@ -115,6 +136,8 @@ typedef struct nxweb_http_request {
 
   nxweb_chunked_decoder_state cdstate;
 
+  nxweb_http_request_data* data_chain;
+
 } nxweb_http_request;
 
 typedef struct nxweb_http_response {
@@ -129,8 +152,9 @@ typedef struct nxweb_http_response {
   unsigned keep_alive:1;
   unsigned http11:1;
   unsigned chunked_encoding:1;
+  unsigned chunked_autoencode:1;
   unsigned gzip_encoded:1;
-  //unsigned chunked_content_complete:1;
+  unsigned ssi_on:1;
 
   // Building response:
   const char* status;
@@ -142,6 +166,7 @@ typedef struct nxweb_http_response {
   int status_code;
 
   nxweb_chunked_decoder_state cdstate;
+  nxweb_chunked_encoder_state cestate;
 
   const char* cache_key;
   int cache_key_root_len;
@@ -164,6 +189,7 @@ typedef struct nxweb_mime_type {
   unsigned charset_required:1;
   unsigned gzippable:1;
   unsigned image:1;
+  unsigned ssi_on:1;
 } nxweb_mime_type;
 
 #include "nxd.h"
@@ -176,9 +202,12 @@ static inline char nx_tolower(char c) {
   return c>='A' && c<='Z' ? c+('a'-'A') : c;
 }
 
-static inline char* nx_tolower_str(char* dst, const char* src) {
+static inline void nx_strtolower(char* dst, const char* src) { // dst==src is OK for inplace tolower
   while ((*dst++=nx_tolower(*src++))) ;
-  return dst;
+}
+
+static inline void nx_strntolower(char* dst, const char* src, int len) { // dst==src is OK for inplace tolower
+  while (len-- && (*dst++=nx_tolower(*src++))) ;
 }
 
 static inline int nx_strcasecmp(const char* s1, const char* s2) {
@@ -190,6 +219,19 @@ static inline int nx_strcasecmp(const char* s1, const char* s2) {
 
   while ((result=nx_tolower(*p1)-nx_tolower(*p2++))==0)
     if (*p1++=='\0') break;
+
+  return result;
+}
+
+static inline int nx_strncasecmp(const char* s1, const char* s2, int len) {
+  const unsigned char* p1=(const unsigned char*)s1;
+  const unsigned char* p2=(const unsigned char*)s2;
+  int result;
+
+  if (p1==p2 || len<=0) return 0;
+
+  while ((result=nx_tolower(*p1)-nx_tolower(*p2++))==0)
+    if (!len-- || *p1++=='\0') break;
 
   return result;
 }
@@ -249,6 +291,19 @@ static inline int nxweb_url_prefix_match(const char* url, const char* prefix, in
   return !strncmp(url, prefix, prefix_len) && (!url[prefix_len] || url[prefix_len]=='/' || url[prefix_len]=='?' || url[prefix_len]==';');
 }
 
+static inline int nxweb_vhost_match(const char* host, int host_len, const char* vhost_suffix, int vhost_suffix_len) {
+  if (*vhost_suffix=='.') {
+    if (vhost_suffix_len==host_len+1) return !strncmp(host, vhost_suffix+1, host_len);
+    if (vhost_suffix_len<=host_len) return !strncmp(host+(host_len-vhost_suffix_len), vhost_suffix, vhost_suffix_len);
+    return 0;
+  }
+  else {
+    return vhost_suffix_len==host_len && !strncmp(host, vhost_suffix, host_len);
+  }
+}
+
+const nxweb_mime_type* nxweb_get_default_mime_type();
+void nxweb_set_default_mime_type(const nxweb_mime_type* mtype);
 const nxweb_mime_type* nxweb_get_mime_type(const char* type_name);
 const nxweb_mime_type* nxweb_get_mime_type_by_ext(const char* fpath_or_ext);
 
@@ -281,8 +336,8 @@ static inline void nxweb_response_append_uint(nxweb_http_response* resp, unsigne
   nxb_append_uint(resp->nxb, n);
 }
 
-void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location);
-void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info);
+void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location, int secure);
+void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info, int secure);
 void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* message);
 int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, const struct stat* finfo, int gzip_encoded,
         off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect
@@ -292,6 +347,35 @@ int nxweb_format_http_time(char* buf, struct tm* tm);
 time_t nxweb_parse_http_time(const char* str);
 int nxweb_remove_dots_from_uri_path(char* path);
 
+void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data value, nxweb_http_request_data_finalizer finalize);
+nxweb_http_request_data* nxweb_find_request_data(nxweb_http_request* req, nxe_data key);
+nxe_data nxweb_get_request_data(nxweb_http_request* req, nxe_data key);
+
+typedef struct nxweb_composite_stream_node {
+  nxd_streamer_node snode;
+  struct nxweb_composite_stream_node* next;
+  int fd;
+  nxweb_http_server_connection* subconn;
+  union {
+    nxd_obuffer ob;
+    nxd_fbuffer fb;
+  } buffer;
+} nxweb_composite_stream_node;
+
+typedef struct nxweb_composite_stream {
+  nxd_streamer strm;
+  nxweb_http_server_connection* conn;
+  nxweb_http_request* req;
+  nxweb_composite_stream_node* first_node;
+} nxweb_composite_stream;
+
+nxweb_composite_stream* nxweb_composite_stream_init(nxweb_http_server_connection* conn, nxweb_http_request* req);
+void nxweb_composite_stream_append_bytes(nxweb_composite_stream* cs, const char* bytes, int length);
+void nxweb_composite_stream_append_fd(nxweb_composite_stream* cs, int fd, off_t offset, off_t end);
+void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const char* host, const char* url);
+void nxweb_composite_stream_start(nxweb_composite_stream* cs, nxweb_http_response* resp);
+void nxweb_composite_stream_close(nxweb_composite_stream* cs); // call this right after appending last node
+
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);
 int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_of_headers);
@@ -299,11 +383,23 @@ void _nxweb_decode_chunked_request(nxweb_http_request* req);
 nxe_ssize_t _nxweb_decode_chunked(char* buf, nxe_size_t buf_len);
 nxe_ssize_t _nxweb_verify_chunked(const char* buf, nxe_size_t buf_len);
 int _nxweb_decode_chunked_stream(nxweb_chunked_decoder_state* decoder_state, char* buf, nxe_size_t* buf_len);
+void _nxweb_encode_chunked_init(nxweb_chunked_encoder_state* encoder_state);
+int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe_size_t* offered_size, void** send_ptr, nxe_size_t* send_size, nxe_flags_t* flags);
+void _nxweb_encode_chunked_advance(nxweb_chunked_encoder_state* encoder_state, nxe_ssize_t pos_delta);
+int _nxweb_encode_chunked_is_complete(nxweb_chunked_encoder_state* encoder_state);
 void _nxweb_register_printf_extensions();
 nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_buffer* nxb, nxweb_http_request* req);
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response* resp);
 const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req);
 int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* end_of_headers);
+
+#ifdef WITH_ZLIB
+extern nxweb_filter gzip_filter;
+#endif
+#ifdef WITH_IMAGEMAGICK
+extern nxweb_filter image_filter;
+#endif
+extern nxweb_filter ssi_filter;
 
 #ifdef	__cplusplus
 }

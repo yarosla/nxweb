@@ -22,6 +22,7 @@
 
 #include <string.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #include "nx_alloc.h"
 #include "misc.h"
@@ -66,6 +67,14 @@ static inline char* nxb_finish_stream(nxb_buffer* nxb, int* size) {
   if (size) *size=nxb->ptr - nxb->base;
   char* obj=nxb->base;
   nxb->base=nxb->ptr;
+  nxb->chunk->dirty=1;
+  return obj;
+}
+
+static inline char* nxb_finish_partial(nxb_buffer* nxb, int size) {
+  //assert(size>=0 && nxb->ptr - nxb->base >= size);
+  char* obj=nxb->base;
+  nxb->base+=size;
   nxb->chunk->dirty=1;
   return obj;
 }

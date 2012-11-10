@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -53,13 +53,13 @@ int nxweb_format_http_time(char* buf, struct tm* tm) {
   strcpy(p, uint_to_decimal_string(tm->tm_year+1900, num, sizeof(num)));
   p+=4;
   *p++=' ';
-  uint_to_decimal_string_zeropad(tm->tm_hour, p, 2);
+  uint_to_decimal_string_zeropad(tm->tm_hour, p, 2, 0);
   p+=2;
   *p++=':';
-  uint_to_decimal_string_zeropad(tm->tm_min, p, 2);
+  uint_to_decimal_string_zeropad(tm->tm_min, p, 2, 0);
   p+=2;
   *p++=':';
-  uint_to_decimal_string_zeropad(tm->tm_sec, p, 2);
+  uint_to_decimal_string_zeropad(tm->tm_sec, p, 2, 0);
   p+=2;
   *p++=' ';
   *p++='G';
@@ -201,7 +201,7 @@ void nxweb_parse_request_parameters(nxweb_http_request *req, int preserve_uri) {
       }
     }
   }
-  if (req->content && nx_strcasecmp(req->content_type, "application/x-www-form-urlencoded")==0) {
+  if (req->content && req->content_type && nx_strcasecmp(req->content_type, "application/x-www-form-urlencoded")==0) {
     for (name=(char*)req->content; name; name=next) {
       next=strchr(name, '&');
       if (next) *next++='\0';
@@ -282,7 +282,8 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_CONTENT_LENGTH,
   NXWEB_HTTP_ACCEPT_ENCODING,
   NXWEB_HTTP_IF_MODIFIED_SINCE,
-  NXWEB_HTTP_TRANSFER_ENCODING
+  NXWEB_HTTP_TRANSFER_ENCODING,
+  NXWEB_X_SSI
 };
 
 static int identify_http_header(const char* name, int name_len) {
@@ -308,6 +309,9 @@ static int identify_http_header(const char* name, int name_len) {
       if (first_char=='c') return nx_strcasecmp(name, "Connection")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONNECTION;
       if (first_char=='k') return nx_strcasecmp(name, "Keep-Alive")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_KEEP_ALIVE;
       if (first_char=='u') return nx_strcasecmp(name, "User-Agent")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_USER_AGENT;
+      return NXWEB_HTTP_UNKNOWN;
+    case 11:
+      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-SSI")? NXWEB_HTTP_UNKNOWN : NXWEB_X_SSI;
       return NXWEB_HTTP_UNKNOWN;
     case 12:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Type")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_TYPE;
@@ -362,7 +366,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
     char* uri=strchr(req->uri+7, '/');
     if (!uri) return -1;
     int host_len=(uri-host)-7;
-    memmove(host, host+7, host_len);
+    nx_strntolower(host, host+7, host_len); // memmove(host, host+7, host_len);
     host[host_len]='\0';
     req->host=host;
     req->uri=uri;
@@ -403,7 +407,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
 
     header_name_id=identify_http_header(name, name_len);
     switch (header_name_id) {
-      case NXWEB_HTTP_HOST: req->host=value; break;
+      case NXWEB_HTTP_HOST: nx_strtolower(value, value); req->host=value; break;
       case NXWEB_HTTP_EXPECT: expect=value; break;
       case NXWEB_HTTP_COOKIE: req->cookie=value; break;
       case NXWEB_HTTP_USER_AGENT: req->user_agent=value; break;
@@ -564,6 +568,73 @@ nxe_ssize_t _nxweb_verify_chunked(const char* buf, nxe_size_t buf_len) {
   return -1;
 }
 
+void _nxweb_encode_chunked_init(nxweb_chunked_encoder_state* encoder_state) {
+  encoder_state->chunk_size=0;
+  assert(sizeof(encoder_state->buf)==8);
+  memcpy(encoder_state->buf, "\r\n0000\r\n", sizeof(encoder_state->buf));
+  encoder_state->pos=2;
+}
+
+int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe_size_t* offered_size, void** send_ptr, nxe_size_t* send_size, nxe_flags_t* flags) {
+  if (encoder_state->final_chunk) {
+    assert(*flags&NXEF_EOF);
+    *send_size=7-encoder_state->pos;
+    *send_ptr=encoder_state->buf+encoder_state->pos;
+    return 1;
+  }
+  else if (encoder_state->pos<=2) { // can start new chunk
+    if (!*offered_size) {
+      if (*flags&NXEF_EOF) {
+        encoder_state->final_chunk=1;
+        memcpy(encoder_state->buf+2, "0\r\n\r\n", 5);
+        *send_size=7-encoder_state->pos;
+        *send_ptr=encoder_state->buf+encoder_state->pos;
+        return 1;
+      }
+      else {
+        // do not send final chunk until eof is set
+        *send_size=2-encoder_state->pos;
+        *send_ptr=encoder_state->buf+encoder_state->pos;
+        return !!*send_size;
+      }
+    }
+    else {
+      if (*offered_size>0xffff) *offered_size=0xffff; // max chunk size
+      encoder_state->chunk_size=*offered_size;
+      uint_to_hex_string_zeropad(*offered_size, encoder_state->buf+2, 4, 0);
+      *send_size=sizeof(encoder_state->buf)-encoder_state->pos;
+      *send_ptr=encoder_state->buf+encoder_state->pos;
+      *flags&=~NXEF_EOF;
+      return 1;
+    }
+  }
+  else if (encoder_state->pos<sizeof(encoder_state->buf)) { // still inside header
+    if (*offered_size>encoder_state->chunk_size) *offered_size=encoder_state->chunk_size; // stick to previously defined chunk size
+    *send_size=sizeof(encoder_state->buf)-encoder_state->pos;
+    *send_ptr=encoder_state->buf+encoder_state->pos;
+    *flags&=~NXEF_EOF;
+    return 1;
+  }
+  else { // sending chunk data
+    nxe_ssize_t chunk_bytes_left=encoder_state->chunk_size-(encoder_state->pos-sizeof(encoder_state->buf));
+    if (*offered_size>chunk_bytes_left) *offered_size=chunk_bytes_left;
+    *send_size=0;
+    *send_ptr=0;
+    *flags&=~NXEF_EOF;
+    return 0;
+  }
+}
+
+void _nxweb_encode_chunked_advance(nxweb_chunked_encoder_state* encoder_state, nxe_ssize_t pos_delta) {
+  if (!pos_delta) return;
+  encoder_state->pos+=pos_delta;
+  if (encoder_state->pos==sizeof(encoder_state->buf)+encoder_state->chunk_size) encoder_state->pos=0;
+}
+
+int _nxweb_encode_chunked_is_complete(nxweb_chunked_encoder_state* encoder_state) {
+  return encoder_state->final_chunk && encoder_state->pos==7;
+}
+
 nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_buffer* nxb, nxweb_http_request* req) {
   resp->nxb=nxb;
   if (req) {
@@ -572,6 +643,32 @@ nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_bu
     resp->keep_alive=req->keep_alive;
   }
   return resp;
+}
+
+nxweb_http_request_data* nxweb_find_request_data(nxweb_http_request* req, nxe_data key) {
+  nxweb_http_request_data* rdata=req->data_chain;
+  while (rdata) {
+    if (rdata->key.cptr==key.cptr) break;
+    rdata=rdata->next;
+  }
+  return rdata;
+}
+
+void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data value, nxweb_http_request_data_finalizer finalize) {
+  nxweb_http_request_data* rdata=nxweb_find_request_data(req, key);
+  if (!rdata) {
+    rdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_http_request_data));
+    rdata->next=req->data_chain;
+    req->data_chain=rdata;
+    rdata->key=key;
+  }
+  rdata->value=value;
+  rdata->finalize=finalize;
+}
+
+nxe_data nxweb_get_request_data(nxweb_http_request* req, nxe_data key) {
+  nxweb_http_request_data* rdata=nxweb_find_request_data(req, key);
+  return rdata? rdata->value : (nxe_data)0;
 }
 
 void nxweb_set_response_status(nxweb_http_response* resp, int code, const char* message) {
@@ -682,16 +779,16 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     }
     nxb_append_fast(nxb, "\r\n", 2);
   }
-  nxb_append(nxb, "\r\n", 3);
+  nxb_append(nxb, "\r\n", 3); // add null-terminator
 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
 }
 
-void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* location) {
-  nxweb_send_redirect2(resp, code, location, 0);
+void nxweb_send_redirect(nxweb_http_response *resp, int code, const char* location, int secure) {
+  nxweb_send_redirect2(resp, code, location, 0, secure);
 }
 
-void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info) {
+void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info, int secure) {
   char buf[32];
 
   nxb_buffer* nxb=resp->nxb;
@@ -720,16 +817,18 @@ void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* locat
                       "Connection: ");
   nxb_append_str_fast(nxb, resp->keep_alive?"keep-alive":"close");
   nxb_append_str_fast(nxb, "\r\nContent-Length: 0\r\nLocation: ");
-  if (!strncmp(location, "http", 4)) { // absolute uri
+  if (!strncmp(location, "http://", 7) || !strncmp(location, "https://", 7)) { // absolute uri
     nxb_append_str(nxb, location);
   }
   else {
-    nxb_append_str(nxb, "http://");
+    nxb_append_str(nxb, "http");
+    if (secure) nxb_append_char(nxb, 's');
+    nxb_append_str(nxb, "://");
     nxb_append_str(nxb, resp->host);
     nxb_append_str(nxb, location);
   }
   if (location_path_info) nxb_append_str(nxb, location_path_info);
-  nxb_append_str(nxb, "\r\n\r\n");
+  nxb_append(nxb, "\r\n\r\n", 5); // add null-terminator
 
   resp->raw_headers=nxb_finish_stream(nxb, 0);
 }
@@ -901,7 +1000,7 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
     }
     nxb_append_str(nxb, "\r\n");
   }
-  nxb_append_fast(nxb, "\r\n", 3);
+  nxb_append_fast(nxb, "\r\n", 3); // add null-terminator
 
   return nxb_finish_stream(nxb, 0);
 }
@@ -972,6 +1071,7 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       case NXWEB_HTTP_TRANSFER_ENCODING: transfer_encoding=value; break;
       case NXWEB_HTTP_CONNECTION: resp->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_KEEP_ALIVE: /* skip */ break;
+      case NXWEB_X_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
       default:
         header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=name;
@@ -1017,7 +1117,8 @@ static const char CHAR_MAP[256] = {
 	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
+// already defined in misc.h:
+// static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
 static inline char HEX_DIGIT_VALUE(char c) {
   char n=CHAR_MAP[(unsigned char)c]-100;

@@ -6,6 +6,7 @@ syntax: regexp
 ^nxweb\.pid$
 ^nxweb\.layout$
 ^www/root/benchmark/
+^www/root/httptest
 ^cache/
 ^www/cache/
 ^experimental/
