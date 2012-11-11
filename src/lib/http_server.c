@@ -66,6 +66,7 @@ NXWEB_HANDLER(default, 0, .priority=999999999, .on_headers=default_on_headers);
 int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_handler* handler, nxe_data handler_param) {
   conn->handler=handler;
   conn->handler_param=handler_param;
+  resp->cache_key=0;
 
   if (handler->num_filters) {
     // init filters

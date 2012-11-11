@@ -188,10 +188,14 @@ nxweb_result nxweb_cache_try(nxweb_http_server_connection* conn, nxweb_http_resp
 nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxweb_http_response* resp) {
   nxe_time_t loop_time=nxweb_get_loop_time(conn);
   if (!resp->status_code) resp->status_code=200;
-  const char* fpath=resp->sendfile_path;
 
-  if (resp->status_code==200 && fpath && resp->content_length>=0 && resp->content_length<=NXWEB_MAX_CACHED_ITEM_SIZE && alignhash_size(_nxweb_cache)<NXWEB_MAX_CACHED_ITEMS+16) {
+  if (resp->status_code==200 && resp->sendfile_path // only cache content from files
+      && resp->content_length>=0 && resp->content_length<=NXWEB_MAX_CACHED_ITEM_SIZE // must be small
+      && resp->sendfile_offset==0 && resp->sendfile_end==resp->content_length // whole file only
+      && resp->sendfile_end>=resp->sendfile_info.st_size // st_size could be zero if not initialized
+      && alignhash_size(_nxweb_cache)<NXWEB_MAX_CACHED_ITEMS+16) {
 
+    const char* fpath=resp->sendfile_path;
     if (nxweb_cache_try(conn, resp, fpath, 0, resp->last_modified)!=NXWEB_MISS) return NXWEB_OK;
 
     nxweb_cache_rec* rec=nx_calloc(sizeof(nxweb_cache_rec)+resp->content_length+1+strlen(fpath)+1);
