@@ -134,6 +134,7 @@ static void cache_rec_unref(nxd_http_server_proto* hsp, void* req_data) {
 }
 
 nxweb_result nxweb_cache_try(nxweb_http_server_connection* conn, nxweb_http_response* resp, const char* key, time_t if_modified_since, time_t revalidated_mtime) {
+  if (*key==' ' || *key=='*') return NXWEB_MISS; // not implemented yet
   nxe_time_t loop_time=nxweb_get_loop_time(conn);
   ah_iter_t ci;
   //nxweb_log_error("trying cache for %s", fpath);

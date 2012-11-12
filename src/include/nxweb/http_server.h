@@ -98,7 +98,6 @@ typedef struct nxweb_handler {
   nxweb_filter* filters[NXWEB_MAX_FILTERS];
   int num_filters;
   nxweb_handler_callback on_generate_cache_key;
-  nxweb_handler_callback on_serve_from_cache;
   nxweb_handler_callback on_select;
   nxweb_handler_callback on_headers;
   nxweb_handler_callback on_post_data;

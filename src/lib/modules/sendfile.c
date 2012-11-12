@@ -25,53 +25,6 @@
 
 #define MAX_PATH 1024
 
-static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
-  if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
-
-  nxweb_handler* handler=conn->handler;
-  const char* document_root=handler->dir;
-  assert(document_root);
-
-  assert(resp->cache_key);
-  const char* fpath=resp->cache_key;
-  int rlen=resp->cache_key_root_len;
-  const char* path_info=fpath+rlen;
-
-  if (stat(fpath, &resp->sendfile_info)==-1) {
-    return NXWEB_NEXT;
-  }
-
-  if (S_ISDIR(resp->sendfile_info.st_mode)) {
-    nxweb_send_redirect2(resp, 302, path_info, "/", conn->secure);
-    nxweb_start_sending_response(conn, resp);
-    return NXWEB_OK;
-  }
-/*
-  if (!S_ISREG(finfo.st_mode)) { // symlink or ...?
-    nxweb_send_http_error(resp, 403, "Forbidden");
-    nxweb_start_sending_response(conn, resp);
-    return NXWEB_ERROR;
-  }
-*/
-
-  if (req->if_modified_since && resp->sendfile_info.st_mtime<=req->if_modified_since) {
-    resp->status_code=304;
-    resp->status="Not Modified";
-    nxweb_start_sending_response(conn, resp);
-    return NXWEB_OK;
-  }
-
-  int result=nxweb_send_file(resp, (char*)fpath, rlen, &resp->sendfile_info, 0, 0, 0, resp->mtype, handler->charset);
-  if (result!=0) { // should not happen
-    nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
-    nxweb_send_http_error(resp, 500, "Internal Server Error");
-    return NXWEB_ERROR;
-  }
-
-  nxweb_start_sending_response(conn, resp);
-  return NXWEB_OK;
-}
-
 static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
@@ -107,32 +60,53 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
   return NXWEB_OK;
 }
 
-static nxweb_result sendfile_on_serve_from_cache(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
+  const char* fpath=resp->cache_key;
+  assert(fpath);
   struct stat* finfo=&resp->sendfile_info;
 
+  if (!finfo->st_ino && stat(fpath, finfo)==-1) {
+    // file not found => let other handlers pick up this request
+    return NXWEB_NEXT;
+  }
+
   if (S_ISDIR(finfo->st_mode)) {
-    nxweb_send_redirect2(resp, 302, resp->cache_key+resp->cache_key_root_len, "/", conn->secure);
+    const char* path_info=fpath+resp->cache_key_root_len;
+    nxweb_send_redirect2(resp, 302, path_info, "/", conn->secure);
+    nxweb_start_sending_response(conn, resp);
     return NXWEB_OK;
   }
+
 /*
-  if (!S_ISREG(finfo->st_mode)) { // symlink or ...?
+  if (!S_ISREG(finfo.st_mode)) { // symlink or ...?
     nxweb_send_http_error(resp, 403, "Forbidden");
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_ERROR;
+  }
+*/
+
+/* this is already done in http_server.c in nxweb_select_handler()
+  if (req->if_modified_since && finfo->st_mtime<=req->if_modified_since) {
+    resp->status_code=304;
+    resp->status="Not Modified";
+    nxweb_start_sending_response(conn, resp);
     return NXWEB_OK;
   }
 */
 
-  int result=nxweb_send_file(resp, (char*)resp->cache_key, resp->cache_key_root_len, finfo, 0, 0, 0, resp->mtype, conn->handler->charset);
+  int result=nxweb_send_file(resp, (char*)fpath, resp->cache_key_root_len, finfo, 0, 0, 0, resp->mtype, conn->handler->charset);
   if (result!=0) { // should not happen
-    nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", resp->cache_key);
+    nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
     nxweb_send_http_error(resp, 500, "Internal Server Error");
     return NXWEB_ERROR;
   }
 
+  nxweb_start_sending_response(conn, resp);
   return NXWEB_OK;
 }
 
 nxweb_handler sendfile_handler={.on_select=sendfile_on_select,
-        .on_generate_cache_key=sendfile_generate_cache_key, .on_serve_from_cache=sendfile_on_serve_from_cache,
+        .on_generate_cache_key=sendfile_generate_cache_key,
         .flags=NXWEB_HANDLE_GET};

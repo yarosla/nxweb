@@ -107,6 +107,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         if (filter->translate_cache_key(conn, req, resp, req->filter_data[i], cache_key, cache_key_root_len)==NXWEB_NEXT) continue;
         cache_key=req->filter_data[i]->cache_key;
         cache_key_root_len=req->filter_data[i]->cache_key_root_len;
+        assert(cache_key);
       }
     }
     if (handler->cache) {
@@ -120,9 +121,66 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
       }
       else if (res!=NXWEB_MISS) return res;
     }
-    { // serve from file cache
-      if (stat(resp->cache_key, &resp->sendfile_info)!=-1) {
-        if (req->if_modified_since && resp->sendfile_info.st_mtime<=req->if_modified_since) {
+    if (*cache_key==' ') { // still virtual after translating
+      if (resp->last_modified) {
+        if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
+          resp->status_code=304;
+          resp->status="Not Modified";
+          conn->hsp.cls->start_sending_response(&conn->hsp, resp);
+          return NXWEB_OK;
+        }
+      }
+      // this is all we can do for virtual key
+    }
+    else if (*cache_key=='*') { // NXFC key
+      if (!resp->last_modified) time(&resp->last_modified); // if not set assume current time
+      if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
+        resp->status_code=304;
+        resp->status="Not Modified";
+        conn->hsp.cls->start_sending_response(&conn->hsp, resp);
+        return NXWEB_OK;
+      }
+      // check if NXFC file exists
+      struct stat nxfc_finfo;
+      if (stat(cache_key+1, &nxfc_finfo)!=-1) {
+        if (resp->last_modified <= nxfc_finfo.st_mtime) { // can serve from cache without further checking
+          if (handler->num_filters) {
+            int i;
+            nxweb_filter* filter;
+            nxweb_filter_data* fdata;
+            for (i=handler->num_filters-1; i>=0; i--) {
+              filter=handler->filters[i];
+              fdata=req->filter_data[i];
+              if (filter->serve_from_cache && !fdata->bypass && fdata->cache_key) {
+                if (filter->serve_from_cache(conn, req, resp, fdata)==NXWEB_NEXT) continue;
+                for (i++; i<conn->handler->num_filters; i++) {
+                  filter=handler->filters[i];
+                  fdata=req->filter_data[i];
+                  if (!fdata->bypass && filter->do_filter)
+                    filter->do_filter(conn, req, resp, fdata);
+                }
+                if (handler->cache) {
+                  nxweb_cache_store_response(conn, resp);
+                }
+                conn->hsp.cls->start_sending_response(&conn->hsp, resp);
+                return NXWEB_OK;
+              }
+            }
+          }
+        }
+        else {
+          // we do have nxfc file but it has expired => add If-Modified-Since header and proceed to handler
+        }
+      }
+    }
+    else { // file key => serve from file cache
+      if (!resp->sendfile_info.st_mtime) {
+        if (stat(resp->cache_key, &resp->sendfile_info)==-1) assert(!resp->sendfile_info.st_mtime);
+      }
+      if (!resp->last_modified) resp->last_modified=resp->sendfile_info.st_mtime;
+      assert(resp->last_modified==resp->sendfile_info.st_mtime);
+      if (resp->last_modified) {
+        if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
           resp->status_code=304;
           resp->status="Not Modified";
           conn->hsp.cls->start_sending_response(&conn->hsp, resp);
@@ -137,8 +195,8 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
             fdata=req->filter_data[i];
             if (filter->serve_from_cache && !fdata->bypass && fdata->cache_key) {
               if (stat(fdata->cache_key, &fdata->cache_key_finfo)!=-1) {
-                if (fdata->cache_key_finfo.st_mtime == resp->sendfile_info.st_mtime) {
-                  filter->serve_from_cache(conn, req, resp, fdata);
+                if (fdata->cache_key_finfo.st_mtime == resp->last_modified) {
+                  if (filter->serve_from_cache(conn, req, resp, fdata)==NXWEB_NEXT) continue;
                   for (i++; i<conn->handler->num_filters; i++) {
                     filter=handler->filters[i];
                     fdata=req->filter_data[i];
@@ -157,23 +215,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           }
         }
         // we do have original resp->cache_key present on disk, but it needs to be served by handler, then re-processed by filters
-        if (handler->on_serve_from_cache) {
-          if (handler->on_serve_from_cache(conn, req, resp)==NXWEB_NEXT) return NXWEB_NEXT;
-          int i;
-          nxweb_filter* filter;
-          nxweb_filter_data* fdata;
-          for (i=0; i<handler->num_filters; i++) {
-            filter=handler->filters[i];
-            fdata=req->filter_data[i];
-            if (!fdata->bypass && filter->do_filter)
-              filter->do_filter(conn, req, resp, fdata);
-          }
-          if (handler->cache) {
-            nxweb_cache_store_response(conn, resp);
-          }
-          conn->hsp.cls->start_sending_response(&conn->hsp, resp);
-          return NXWEB_OK;
-        }
+        // do this in nxweb_start_sending_response()
       }
     }
   }
@@ -249,7 +291,6 @@ void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
   handler->vhost_len=handler->vhost? strlen(handler->vhost) : 0;
   if (base) {
     if (!handler->on_generate_cache_key) handler->on_generate_cache_key=base->on_generate_cache_key;
-    if (!handler->on_serve_from_cache) handler->on_serve_from_cache=base->on_serve_from_cache;
     if (!handler->on_select) handler->on_select=base->on_select;
     if (!handler->on_headers) handler->on_headers=base->on_headers;
     if (!handler->on_post_data) handler->on_post_data=base->on_post_data;
