@@ -46,6 +46,20 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
     }
     rdata=rdata->next;
   }
+  if (conn->handler && conn->handler->num_filters) {
+    // finalize filters
+    int i;
+    nxweb_filter* filter;
+    nxweb_filter_data* fdata;
+    nxweb_filter** pfilter=conn->handler->filters;
+    for (i=0; i<conn->handler->num_filters; i++, pfilter++) {
+      filter=*pfilter;
+      fdata=req->filter_data[i];
+      if (fdata && filter->finalize)
+        filter->finalize(conn, req, resp, fdata);
+      req->filter_data[i]=0; // call no more
+    }
+  }
   if (conn->handler && conn->handler->on_complete) {
     conn->handler->on_complete(conn, req, resp);
     conn->handler->on_complete=0; // call no more

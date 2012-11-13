@@ -188,7 +188,19 @@ static nxweb_result nxweb_http_proxy_handler_on_headers(nxweb_http_server_connec
   return start_proxy_request(conn, req, rdata);
 }
 
-nxweb_handler nxweb_http_proxy_handler={.on_headers=nxweb_http_proxy_handler_on_headers, .flags=NXWEB_HANDLE_ANY|NXWEB_ACCEPT_CONTENT};
+static nxweb_result proxy_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
+  char* key=nxb_alloc_obj(req->nxb, strlen(req->uri)+2);
+  *key=' ';
+  strcpy(key+1, req->uri);
+  resp->cache_key=key;
+  resp->cache_key_root_len=1;
+  return NXWEB_OK;
+}
+
+nxweb_handler nxweb_http_proxy_handler={.on_headers=nxweb_http_proxy_handler_on_headers,
+        .on_generate_cache_key=proxy_generate_cache_key,
+        .flags=NXWEB_HANDLE_ANY|NXWEB_ACCEPT_CONTENT};
 
 static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
   nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)sub-offsetof(nxweb_http_proxy_request_data, proxy_events_sub));
@@ -207,6 +219,12 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked content
     resp->ssi_on=presp->ssi_on;
     resp->headers=presp->headers;
+    resp->date=presp->date;
+    resp->last_modified=presp->last_modified;
+    resp->expires=presp->expires;
+    resp->cache_control=presp->cache_control;
+    resp->max_age=presp->max_age;
+    resp->no_cache=presp->no_cache;
     resp->content_out=&rdata->rb_resp.data_out;
     nxweb_start_sending_response(conn, resp);
     rdata->response_sending_started=1;

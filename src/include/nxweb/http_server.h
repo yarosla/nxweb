@@ -72,7 +72,9 @@ typedef struct nxweb_filter {
   const char* (*decode_uri)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri);
   nxweb_result (*translate_cache_key)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len);
   nxweb_result (*serve_from_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  nxweb_result (*revalidate_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
   nxweb_result (*do_filter)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  void (*finalize)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
 } nxweb_filter;
 
 typedef struct nxweb_handler {
@@ -89,6 +91,7 @@ typedef struct nxweb_handler {
   const char* charset;
   const char* index_file;
   const char* gzip_dir;
+  const char* file_cache_dir;
   const char* img_dir;
   const char* key;
   const struct nxweb_image_filter_cmd* allowed_cmds;

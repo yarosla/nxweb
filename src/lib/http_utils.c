@@ -274,16 +274,19 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_COOKIE,
   NXWEB_HTTP_EXPECT,
   NXWEB_HTTP_SERVER,
+  NXWEB_HTTP_EXPIRES,
   NXWEB_HTTP_TRAILER,
   NXWEB_HTTP_CONNECTION,
   NXWEB_HTTP_KEEP_ALIVE,
   NXWEB_HTTP_USER_AGENT,
   NXWEB_HTTP_CONTENT_TYPE,
+  NXWEB_HTTP_LAST_MODIFIED,
+  NXWEB_HTTP_CACHE_CONTROL,
   NXWEB_HTTP_CONTENT_LENGTH,
   NXWEB_HTTP_ACCEPT_ENCODING,
   NXWEB_HTTP_IF_MODIFIED_SINCE,
   NXWEB_HTTP_TRANSFER_ENCODING,
-  NXWEB_X_SSI
+  NXWEB_HTTP_X_SSI
 };
 
 static int identify_http_header(const char* name, int name_len) {
@@ -304,6 +307,7 @@ static int identify_http_header(const char* name, int name_len) {
       return NXWEB_HTTP_UNKNOWN;
     case 7:
       if (first_char=='t') return nx_strcasecmp(name, "Trailer")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_TRAILER;
+      if (first_char=='e') return nx_strcasecmp(name, "Expires")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_EXPIRES;
       return NXWEB_HTTP_UNKNOWN;
     case 10:
       if (first_char=='c') return nx_strcasecmp(name, "Connection")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONNECTION;
@@ -311,10 +315,14 @@ static int identify_http_header(const char* name, int name_len) {
       if (first_char=='u') return nx_strcasecmp(name, "User-Agent")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_USER_AGENT;
       return NXWEB_HTTP_UNKNOWN;
     case 11:
-      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-SSI")? NXWEB_HTTP_UNKNOWN : NXWEB_X_SSI;
+      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-SSI")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_X_SSI;
       return NXWEB_HTTP_UNKNOWN;
     case 12:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Type")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_TYPE;
+      return NXWEB_HTTP_UNKNOWN;
+    case 13:
+      if (first_char=='c') return nx_strcasecmp(name, "Cache-Control")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CACHE_CONTROL;
+      if (first_char=='l') return nx_strcasecmp(name, "Last-Modified")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_LAST_MODIFIED;
       return NXWEB_HTTP_UNKNOWN;
     case 14:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Length")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_LENGTH;
@@ -390,7 +398,7 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
     if (pl) *pl++='\0';
     else pl=end_of_headers;
 
-    if (*name>0 && *name<=' ') {
+    if (*name && (unsigned char)*name<=SPACE) {
       // starts with whitespace => header continuation
       if (value) {
         // concatenate with previous value
@@ -768,6 +776,33 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     nxb_blank_fast(nxb, nxweb_format_http_time(nxb_get_room(nxb, 0), &tm));
     nxb_append_str_fast(nxb, "\r\n");
   }
+  if (resp->expires) {
+    gmtime_r(&resp->expires, &tm);
+    nxb_make_room(nxb, 42);
+    nxb_append_str_fast(nxb, "Expires: ");
+    // strftime(date_buf, sizeof(date_buf), "%a, %d %b %Y %T %Z", &tm);
+    // nxb_append_str(nxb, date_buf);
+    nxb_blank_fast(nxb, nxweb_format_http_time(nxb_get_room(nxb, 0), &tm));
+    nxb_append_str_fast(nxb, "\r\n");
+  }
+  if (resp->cache_control) {
+    nxb_append_str(nxb, "Cache-Control: ");
+    nxb_append_str(nxb, resp->cache_control);
+    nxb_append(nxb, "\r\n", 2);
+  }
+  else if (resp->no_cache) {
+    nxb_append_str(nxb, "Cache-Control: no-cache\r\n");
+  }
+  else if (resp->max_age) {
+    nxb_append_str(nxb, "Cache-Control: max-age=");
+    if (resp->max_age==-1) { // special case => response is cacheable but must be revalidated every time
+      nxb_append(nxb, "0\r\n", 3);
+    }
+    else {
+      nxb_append_str(nxb, uint_to_decimal_string(resp->max_age, buf, sizeof(buf)));
+    }
+    nxb_append(nxb, "\r\n", 2);
+  }
   if (resp->content_length || !must_not_have_body) {
     nxb_make_room(nxb, 48);
     if (resp->content_length>=0) {
@@ -1050,7 +1085,7 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
     if (pl) *pl++='\0';
     else pl=end_of_headers;
 
-    if (*name>0 && *name<=' ') {
+    if (*name && (unsigned char)*name<=SPACE) {
       // starts with whitespace => header continuation
       if (value) {
         // concatenate with previous value
@@ -1071,7 +1106,11 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       case NXWEB_HTTP_TRANSFER_ENCODING: transfer_encoding=value; break;
       case NXWEB_HTTP_CONNECTION: resp->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_KEEP_ALIVE: /* skip */ break;
-      case NXWEB_X_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
+      case NXWEB_HTTP_X_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
+      case NXWEB_HTTP_DATE: resp->date=nxweb_parse_http_time(value); break;
+      case NXWEB_HTTP_LAST_MODIFIED: resp->last_modified=nxweb_parse_http_time(value); break;
+      case NXWEB_HTTP_EXPIRES: resp->expires=nxweb_parse_http_time(value); break;
+      case NXWEB_HTTP_CACHE_CONTROL: resp->cache_control=value; break;
       default:
         header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=name;
@@ -1081,6 +1120,33 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
     }
   }
   resp->headers=header_map;
+
+  if (resp->cache_control) {
+    char* p1=nxb_copy_obj(nxb, resp->cache_control, strlen(resp->cache_control)+1);
+    char *p, *name, *value;
+    while (p1) {
+      p=strchr(p1, ',');
+      if (p) *p++='\0';
+      while (*p1 && (unsigned char)*p1<=SPACE) p1++;
+      name=p1;
+      value=strchr(p1, '=');
+      if (value) {
+        *value++='\0';
+        value=nxweb_trunc_space(value);
+      }
+      if (!nx_strcasecmp(name, "no-cache")) resp->no_cache=1;
+      else if (!nx_strcasecmp(name, "max-age") && value) {
+        if (value[0]=='0' && !value[1]) resp->max_age=-1;
+        else resp->max_age=atol(value);
+      }
+      p1=p;
+    }
+  }
+
+  if (resp->expires && resp->date) {
+    // adjust time difference between backend and nxweb
+    resp->expires=time(0)+(resp->expires-resp->date);
+  }
 
   if (transfer_encoding && !nx_strcasecmp(transfer_encoding, "chunked")) {
     resp->chunked_encoding=1;

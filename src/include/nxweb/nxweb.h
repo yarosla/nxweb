@@ -155,13 +155,18 @@ typedef struct nxweb_http_response {
   unsigned chunked_autoencode:1;
   unsigned gzip_encoded:1;
   unsigned ssi_on:1;
+  unsigned no_cache:1;
 
   // Building response:
   const char* status;
   const char* content_type;
   const char* content_charset;
+  const char* cache_control;
   nxweb_http_header* headers;
+  time_t date;
   time_t last_modified;
+  time_t expires;
+  time_t max_age; // delta seconds
 
   int status_code;
 
@@ -400,6 +405,7 @@ extern nxweb_filter gzip_filter;
 extern nxweb_filter image_filter;
 #endif
 extern nxweb_filter ssi_filter;
+extern nxweb_filter file_cache_filter;
 
 #ifdef	__cplusplus
 }
