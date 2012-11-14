@@ -203,8 +203,8 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
 
     rec->expires_time=loop_time+NXWEB_DEFAULT_CACHED_TIME;
     rec->last_modified=resp->last_modified;
-    rec->content_type=resp->content_type;
-    rec->content_charset=resp->content_charset;
+    rec->content_type=resp->content_type;       // assume content_type and content_charset come
+    rec->content_charset=resp->content_charset; // from statically allocated memory, which won't go away
     rec->content_length=resp->content_length;
     rec->gzip_encoded=resp->gzip_encoded;
     char* ptr=((char*)rec)+offsetof(nxweb_cache_rec, content);
