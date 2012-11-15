@@ -138,7 +138,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
     }
     else {
       if (*resp->cache_key==' ') { // was virtual key in the beginning
-        if (!resp->last_modified) time(&resp->last_modified); // imply last_modified = now
+        if (!resp->last_modified) resp->last_modified=nxe_get_current_http_time(conn->tdata->loop); // imply last_modified = now
       }
       else { // file key => stat() to check existence and get last_modified time
         if (!resp->sendfile_info.st_mtime) {
@@ -151,6 +151,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
           resp->status_code=304;
           resp->status="Not Modified";
+          resp->last_modified=0;
           conn->hsp.cls->start_sending_response(&conn->hsp, resp);
           return NXWEB_OK;
         }

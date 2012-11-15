@@ -545,14 +545,21 @@ void nxe_destroy(nxe_loop* loop) {
   nx_free(loop);
 }
 
-const char* nxe_get_current_http_time(nxe_loop* loop) {
+time_t nxe_get_current_http_time(nxe_loop* loop) {
   if (loop->current_time - loop->last_http_time >= 1000000L) {
-    time_t t;
-    struct tm tm;
-    time(&t);
-    gmtime_r(&t, &tm);
-    nxweb_format_http_time(loop->http_time, &tm);
+    time(&loop->http_time);
     loop->last_http_time=loop->current_time;
+    loop->http_time_str[0]='\0';
   }
   return loop->http_time;
+}
+
+const char* nxe_get_current_http_time_str(nxe_loop* loop) {
+  nxe_get_current_http_time(loop);
+  if (!loop->http_time_str[0]) {
+    struct tm tm;
+    gmtime_r(&loop->http_time, &tm);
+    nxweb_format_http_time(loop->http_time_str, &tm);
+  }
+  return loop->http_time_str;
 }

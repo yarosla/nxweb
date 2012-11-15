@@ -163,10 +163,12 @@ typedef struct nxweb_http_response {
   const char* content_charset;
   const char* cache_control;
   nxweb_http_header* headers;
+  const char* extra_raw_headers;
   time_t date;
   time_t last_modified;
   time_t expires;
   time_t max_age; // delta seconds
+  time_t backend_time_delta; // delta seconds = (backend_date - current_date)
 
   int status_code;
 
@@ -394,6 +396,7 @@ void _nxweb_encode_chunked_advance(nxweb_chunked_encoder_state* encoder_state, n
 int _nxweb_encode_chunked_is_complete(nxweb_chunked_encoder_state* encoder_state);
 void _nxweb_register_printf_extensions();
 nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_buffer* nxb, nxweb_http_request* req);
+void _nxweb_add_extra_response_headers(nxb_buffer* nxb, nxweb_http_header *headers);
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response* resp);
 const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req);
 int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* end_of_headers);

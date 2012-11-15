@@ -67,6 +67,7 @@ typedef struct fc_file_header {
   nxf_data last_modified; // time_t
   nxf_data expires; // time_t
   nxf_data max_age; // time_t, delta seconds
+  nxf_data backend_time_delta; // time_t, delta seconds = (backend_date - current_date)
   nxf_data content_offset; // off_t
   nxf_data content_length; // off_t
   nxf_data content_type; // const char*
@@ -75,10 +76,9 @@ typedef struct fc_file_header {
   nxf_data extra_raw_headers; // const char*
 
   int64_t data_size;
-  char data[]; // last field!
 } fc_file_header;
 
-#define FC_HEADER_SIZE (offsetof(fc_file_header, data))
+#define FC_HEADER_SIZE (sizeof(fc_file_header))
 
 typedef struct fc_filter_data {
   nxweb_filter_data fdata;
@@ -89,6 +89,7 @@ typedef struct fc_filter_data {
   int fd; // cache file
   char* tmp_key;
   nxweb_http_response* resp;
+  fc_file_header hdr;
 } fc_filter_data;
 
 
@@ -151,44 +152,56 @@ static int fc_store_begin(fc_filter_data* fcdata) {
   assert(resp);
   nxb_buffer* nxb=resp->nxb;
   assert(nxb);
-  fc_file_header hdr;
+  fc_file_header* hdr=&fcdata->hdr;
 
-  memset(&hdr, 0, sizeof(hdr));
-  hdr.signature=NXFC_SIGNATURE;
-  hdr.header_size=FC_HEADER_SIZE;
-  hdr.status_code=resp->status_code;
-  hdr.content_length.ssz=resp->content_length;
-  hdr.last_modified.tim=resp->last_modified;
-  hdr.expires.tim=resp->expires;
-  hdr.max_age.tim=resp->max_age;
-  hdr.gzip_encoded=resp->gzip_encoded;
-  hdr.ssi_on=resp->ssi_on;
+  memset(hdr, 0, sizeof(*hdr));
+  hdr->signature=NXFC_SIGNATURE;
+  hdr->header_size=FC_HEADER_SIZE;
+  hdr->status_code=resp->status_code;
+  hdr->content_length.ssz=resp->content_length;
+  hdr->last_modified.tim=resp->last_modified;
+  hdr->expires.tim=resp->expires;
+  hdr->max_age.tim=resp->max_age;
+  hdr->gzip_encoded=resp->gzip_encoded;
+  hdr->ssi_on=resp->ssi_on;
 
-  int len1=0, len2=0, len3=0;
-  if (resp->content_type) len1=strlen(resp->content_type)+1;
-  if (resp->content_charset) len2=strlen(resp->content_charset)+1;
-  if (resp->cache_control) len3=strlen(resp->cache_control)+1;
+  uint64_t idx=0;
+  int len;
+  nxb_append_char(nxb, '\0'); idx++;
+  if (resp->content_type) {
+    hdr->content_type.u64=idx;
+    len=strlen(resp->content_type)+1;
+    nxb_append(nxb, resp->content_type, len);
+    idx+=len;
+  }
+  if (resp->content_charset) {
+    hdr->content_charset.u64=idx;
+    len=strlen(resp->content_charset)+1;
+    nxb_append(nxb, resp->content_charset, len);
+    idx+=len;
+  }
+  if (resp->cache_control) {
+    hdr->cache_control.u64=idx;
+    len=strlen(resp->cache_control)+1;
+    nxb_append(nxb, resp->cache_control, len);
+    idx+=len;
+  }
+  if (resp->headers) {
+    hdr->extra_raw_headers.u64=idx;
+    _nxweb_add_extra_response_headers(nxb, resp->headers);
+    nxb_append_char(nxb, '\0');
+  }
 
-  hdr.data_size=1+len1+len2+len3; // 1st byte for "null-pointer"
-  char* data=nxb_alloc_obj(nxb, hdr.data_size);
-  char* p=data;
-  *p++='\0'; // 1st byte for "null-pointer"
-  if (len1) { memcpy(p, resp->content_type, len1); p+=len1; }
-  if (len2) { memcpy(p, resp->content_charset, len2); p+=len2; }
-  if (len3) { memcpy(p, resp->cache_control, len3); p+=len3; }
+  char* data=nxb_finish_stream(nxb, &len);
+  hdr->data_size=len;
 
-  hdr.content_type.u64=len1? 1+0 : 0; // 1st byte for "null-pointer"
-  hdr.content_charset.u64=len2? 1+len1 : 0;
-  hdr.cache_control.u64=len3? 1+len1+len2 : 0;
-  // hdr.extra_raw_headers.u64=0; // TODO
-
-  hdr.content_offset.offs=FC_HEADER_SIZE+hdr.data_size;
-  if (write(fcdata->fd, &hdr, FC_HEADER_SIZE)!=FC_HEADER_SIZE) {
+  hdr->content_offset.offs=FC_HEADER_SIZE+hdr->data_size;
+  if (write(fcdata->fd, hdr, FC_HEADER_SIZE)!=FC_HEADER_SIZE) {
     nxweb_log_error("fc_store_begin(): can't write header into cache file %s", fcdata->tmp_key);
     fc_store_abort(fcdata);
     return -1;
   }
-  if (write(fcdata->fd, data, hdr.data_size)!=hdr.data_size) {
+  if (write(fcdata->fd, data, hdr->data_size)!=hdr->data_size) {
     nxweb_log_error("fc_store_begin(): can't write data into cache file %s", fcdata->tmp_key);
     fc_store_abort(fcdata);
     return -1;
@@ -196,66 +209,81 @@ static int fc_store_begin(fc_filter_data* fcdata) {
   return 0;
 }
 
-static int fc_read(fc_filter_data* fcdata, nxweb_http_response* resp) {
-  int fd;
-
-  fd=open(fcdata->fdata.cache_key, O_RDONLY);
-  if (fd==-1) {
+static int fc_read_header(fc_filter_data* fcdata) {
+  fc_file_header* hdr=&fcdata->hdr;
+  fcdata->fd=open(fcdata->fdata.cache_key, O_RDONLY);
+  if (fcdata->fd==-1) {
     nxweb_log_error("fc_read(): can't open cache file %s", fcdata->fdata.cache_key);
-    goto E1;
+    return -1;
   }
-  fc_file_header hdr;
-  if (read(fd, &hdr, FC_HEADER_SIZE)!=FC_HEADER_SIZE) {
+  if (read(fcdata->fd, hdr, FC_HEADER_SIZE)!=FC_HEADER_SIZE) {
     nxweb_log_error("fc_read(): can't read header from cache file %s", fcdata->fdata.cache_key);
-    goto E2;
+    close(fcdata->fd);
+    fcdata->fd=0;
+    return -1;
   }
-  if (hdr.signature!=NXFC_SIGNATURE || hdr.header_size!=FC_HEADER_SIZE) {
+  if (hdr->signature!=NXFC_SIGNATURE || hdr->header_size!=FC_HEADER_SIZE) {
     nxweb_log_error("fc_read(): wrong header in cache file %s; trying to delete it", fcdata->fdata.cache_key);
     unlink(fcdata->fdata.cache_key); // try to clean up corrupt file
-    goto E2;
+    close(fcdata->fd);
+    fcdata->fd=0;
+    return -1;
   }
-  char* data=nxb_alloc_obj(resp->nxb, hdr.data_size);
-  if (read(fd, data, hdr.data_size)!=hdr.data_size) {
+  return 0;
+}
+
+static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
+  fc_file_header* hdr=&fcdata->hdr;
+  int fd=fcdata->fd;
+  assert(fd && fd!=-1);
+  char* data=nxb_alloc_obj(resp->nxb, hdr->data_size);
+  if (read(fd, data, hdr->data_size)!=hdr->data_size) {
     nxweb_log_error("fc_read(): can't read data from cache file %s", fcdata->fdata.cache_key);
     goto E2;
   }
-  hdr.content_type.cptrc=hdr.content_type.u64? data+hdr.content_type.u64 : 0;
-  hdr.content_charset.cptrc=hdr.content_charset.u64? data+hdr.content_charset.u64 : 0;
-  hdr.cache_control.cptrc=hdr.cache_control.u64? data+hdr.cache_control.u64 : 0;
+  hdr->content_type.cptrc=hdr->content_type.u64? data+hdr->content_type.u64 : 0;
+  hdr->content_charset.cptrc=hdr->content_charset.u64? data+hdr->content_charset.u64 : 0;
+  hdr->cache_control.cptrc=hdr->cache_control.u64? data+hdr->cache_control.u64 : 0;
+  hdr->extra_raw_headers.cptrc=hdr->extra_raw_headers.u64? data+hdr->extra_raw_headers.u64 : 0;
 
   struct stat finfo;
   if (fstat(fd, &finfo)==-1) {
     nxweb_log_error("fc_read(): can't get content length from cache file %s", fcdata->fdata.cache_key);
     goto E2;
   }
-  if (hdr.content_length.ssz<0) {
-    hdr.content_length.ssz=finfo.st_size - hdr.content_offset.offs;
+  if (hdr->content_length.ssz<0) {
+    hdr->content_length.ssz=finfo.st_size - hdr->content_offset.offs;
   }
 
-  resp->status_code=hdr.status_code;
-  resp->content_length=hdr.content_length.ssz;
-  resp->last_modified=hdr.last_modified.tim;
-  resp->expires=hdr.expires.tim;
-  resp->max_age=hdr.max_age.tim;
-  resp->gzip_encoded=hdr.gzip_encoded;
-  resp->ssi_on=hdr.ssi_on;
+  resp->status_code=hdr->status_code;
+  assert(resp->status_code==200 || !resp->status_code);
+  resp->status="OK";
+  resp->content_length=hdr->content_length.ssz;
+  resp->last_modified=hdr->last_modified.tim;
+  resp->expires=hdr->expires.tim;
+  resp->max_age=hdr->max_age.tim;
+  resp->gzip_encoded=hdr->gzip_encoded;
+  resp->ssi_on=hdr->ssi_on;
 
-  resp->content_type=hdr.content_type.cptrc;
-  resp->content_charset=hdr.content_charset.cptrc;
-  resp->cache_control=hdr.cache_control.cptrc;
+  resp->content_type=hdr->content_type.cptrc;
+  resp->content_charset=hdr->content_charset.cptrc;
+  resp->cache_control=hdr->cache_control.cptrc;
+  resp->extra_raw_headers=hdr->extra_raw_headers.cptrc;
 
   resp->sendfile_info=finfo;
   resp->sendfile_path=fcdata->fdata.cache_key;
   resp->sendfile_path_root_len=fcdata->fdata.cache_key_root_len;
-  resp->sendfile_fd=fd;
-  resp->sendfile_offset=hdr.content_offset.offs;
+  resp->sendfile_fd=fd; // shall auto-close
+  resp->sendfile_offset=hdr->content_offset.offs;
   resp->sendfile_end=resp->sendfile_offset+resp->content_length;
   resp->mtype=0;
 
+  fcdata->fd=0; // don't auto-close twice
   return 0;
 
   E2:
-  close(fd);
+  if (fd && fd!=-1) close(fd);
+  fcdata->fd=0;
   E1:
   return -1;
 }
@@ -405,21 +433,80 @@ static nxweb_result fc_translate_cache_key(struct nxweb_http_server_connection* 
 
 static nxweb_result fc_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   fc_filter_data* fcdata=(fc_filter_data*)fdata;
-  if (fc_read(fcdata, resp)==-1) return NXWEB_NEXT;
+  if (fc_read_header(fcdata)==-1) return NXWEB_NEXT;
+  if (req->if_modified_since && fcdata->hdr.last_modified.tim<=req->if_modified_since) {
+    close(fcdata->fd);
+    fcdata->fd=0;
+    resp->status_code=304;
+    resp->status="Not Modified";
+    resp->content=0;
+    resp->content_out=0; // reset content_out
+    resp->last_modified=fcdata->hdr.last_modified.tim;
+    resp->max_age=0;
+    resp->cache_control="must-revalidate";
+    resp->expires=fdata->cache_key_finfo.st_mtime;
+    return NXWEB_OK;
+  }
+  if (fc_read_data(fcdata, resp)==-1) return NXWEB_NEXT;
+  resp->content=0;
+  resp->content_out=0; // reset content_out
+  // override cache control
+  resp->max_age=0;
+  resp->cache_control="must-revalidate";
+  resp->expires=fdata->cache_key_finfo.st_mtime;
   return NXWEB_OK;
 }
 
 static nxweb_result fc_revalidate_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   // cache file exists but outdated
   // add if-modified-since header to request
+  fc_filter_data* fcdata=(fc_filter_data*)fdata;
   nxweb_log_error("revalidating cache file %s for uri %s", fdata->cache_key, req->uri);
+  fc_file_header* hdr=&fcdata->hdr;
+  if (fc_read_header(fcdata)==-1) {
+    return NXWEB_ERROR;
+  }
+  close(fcdata->fd);
+  fcdata->fd=0;
+  if (!req->if_modified_since) {
+    req->if_modified_since=hdr->last_modified.tim;
+    fcdata->added_ims=1;
+  }
+  req->if_modified_since+=hdr->backend_time_delta.tim;
   return NXWEB_OK;
 }
 
 static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   // if 'not modified' and added_ims flag set => use cached version
+  fc_filter_data* fcdata=(fc_filter_data*)fdata;
   if (!fdata->cache_key || !*fdata->cache_key) return NXWEB_OK;
+  time_t cur_time=nxe_get_current_http_time(conn->tdata->loop);
   if (resp->status_code==304) {
+    if (fcdata->added_ims) {
+      req->if_modified_since=0;
+      time_t expires_time=0;
+      // check new max_age & expires headers if present
+      if (resp->max_age) {
+        expires_time=cur_time+resp->max_age; // note: max_age could be -1, which is OK
+      }
+      else if (resp->expires) {
+        expires_time=resp->expires;
+      }
+      if (fc_serve_from_cache(conn, req, resp, fdata)!=NXWEB_OK) {
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+      if (!expires_time) {
+        if (fcdata->hdr.max_age.tim) { // use previous max_age if was set
+          expires_time=cur_time+fcdata->hdr.max_age.tim; // note: max_age could be -1, which is OK
+        }
+      }
+      if (expires_time) { // have new expires time
+        struct utimbuf ut={.actime=expires_time, .modtime=expires_time};
+        utime(fcdata->fdata.cache_key, &ut);
+        resp->expires=expires_time;
+      }
+    }
     return NXWEB_OK;
   }
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
@@ -431,7 +518,6 @@ static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxwe
     return NXWEB_NEXT;
   }
 
-  time_t cur_time=time(0);
   time_t expires_time=0;
   if (resp->max_age) {
     expires_time=cur_time+resp->max_age; // note: max_age could be -1, which is OK
@@ -440,14 +526,13 @@ static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxwe
     expires_time=resp->expires;
   }
   else if (resp->last_modified) {
-    expires_time=cur_time-1;
+    expires_time=cur_time-1; // one second back in time => cache but require revalidation
   }
   else {
     fdata->bypass=1;
     return NXWEB_NEXT;
   }
 
-  fc_filter_data* fcdata=(fc_filter_data*)fdata;
   fcdata->tmp_key=nxb_alloc_obj(req->nxb, strlen(fdata->cache_key)+4+1);
   strcat(strcpy(fcdata->tmp_key, fdata->cache_key), ".tmp");
   if (nxweb_mkpath(fcdata->tmp_key, 0755)==-1) {

@@ -270,6 +270,7 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_UNKNOWN,
   NXWEB_HTTP_DATE,
   NXWEB_HTTP_HOST,
+  NXWEB_HTTP_ETAG,
   NXWEB_HTTP_RANGE,
   NXWEB_HTTP_COOKIE,
   NXWEB_HTTP_EXPECT,
@@ -282,6 +283,7 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_CONTENT_TYPE,
   NXWEB_HTTP_LAST_MODIFIED,
   NXWEB_HTTP_CACHE_CONTROL,
+  NXWEB_HTTP_ACCEPT_RANGES,
   NXWEB_HTTP_CONTENT_LENGTH,
   NXWEB_HTTP_ACCEPT_ENCODING,
   NXWEB_HTTP_IF_MODIFIED_SINCE,
@@ -296,6 +298,7 @@ static int identify_http_header(const char* name, int name_len) {
     case 4:
       if (first_char=='h') return nx_strcasecmp(name, "Host")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_HOST;
       if (first_char=='d') return nx_strcasecmp(name, "Date")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_DATE;
+      if (first_char=='e') return nx_strcasecmp(name, "ETag")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_ETAG;
       return NXWEB_HTTP_UNKNOWN;
     case 5:
       if (first_char=='r') return nx_strcasecmp(name, "Range")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_RANGE;
@@ -323,6 +326,7 @@ static int identify_http_header(const char* name, int name_len) {
     case 13:
       if (first_char=='c') return nx_strcasecmp(name, "Cache-Control")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CACHE_CONTROL;
       if (first_char=='l') return nx_strcasecmp(name, "Last-Modified")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_LAST_MODIFIED;
+      if (first_char=='a') return nx_strcasecmp(name, "Accept-Ranges")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_ACCEPT_RANGES;
       return NXWEB_HTTP_UNKNOWN;
     case 14:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Length")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_LENGTH;
@@ -700,6 +704,36 @@ void nxweb_add_response_header(nxweb_http_response* resp, const char* name, cons
   resp->headers=nx_simple_map_add(resp->headers, header);
 }
 
+void _nxweb_add_extra_response_headers(nxb_buffer* nxb, nxweb_http_header *headers) {
+  nx_simple_map_entry* itr;
+  const char* name;
+  int header_name_id;
+  for (itr=nx_simple_map_itr_begin(headers); itr; itr=nx_simple_map_itr_next(itr)) {
+    name=itr->name;
+    header_name_id=identify_http_header(name, 0);
+    switch (header_name_id) {
+      case NXWEB_HTTP_CONNECTION:
+      case NXWEB_HTTP_SERVER:
+      case NXWEB_HTTP_CONTENT_TYPE:
+      case NXWEB_HTTP_CONTENT_LENGTH:
+      case NXWEB_HTTP_TRANSFER_ENCODING:
+      case NXWEB_HTTP_DATE:
+      case NXWEB_HTTP_CACHE_CONTROL:
+      case NXWEB_HTTP_EXPIRES:
+      case NXWEB_HTTP_LAST_MODIFIED:
+      case NXWEB_HTTP_ACCEPT_RANGES: // it is not right to always filter this out; file cache filter requires this
+      case NXWEB_HTTP_ETAG: // it is not right to always filter this out; file cache filter requires this
+        // skip these specific headers
+        continue;
+    }
+
+    nxb_append_str(nxb, name);
+    nxb_append(nxb, ": ", 2);
+    nxb_append_str(nxb, itr->value);
+    nxb_append_str(nxb, "\r\n");
+  }
+}
+
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) {
   char buf[32];
   struct tm tm;
@@ -723,7 +757,7 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
   nxb_append_str_fast(nxb, "\r\n"
                       "Server: nxweb/" REVISION "\r\n"
                       "Date: ");
-  nxb_append_str_fast(nxb, nxe_get_current_http_time(loop));
+  nxb_append_str_fast(nxb, nxe_get_current_http_time_str(loop));
   nxb_append_str_fast(nxb, "\r\n"
                       "Connection: ");
   nxb_append_str_fast(nxb, resp->keep_alive?"keep-alive":"close");
@@ -731,29 +765,10 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
 
   if (resp->headers) {
     // write added headers
-    nx_simple_map_entry* itr;
-    const char* name;
-    int header_name_id;
-    for (itr=nx_simple_map_itr_begin(resp->headers); itr; itr=nx_simple_map_itr_next(itr)) {
-      name=itr->name;
-      header_name_id=identify_http_header(name, 0);
-      switch (header_name_id) {
-        case NXWEB_HTTP_CONNECTION:
-        case NXWEB_HTTP_SERVER:
-        case NXWEB_HTTP_CONTENT_TYPE:
-        case NXWEB_HTTP_CONTENT_LENGTH:
-        case NXWEB_HTTP_TRANSFER_ENCODING:
-        case NXWEB_HTTP_DATE:
-          // skip these specific headers
-          continue;
-      }
-
-      nxb_append_str(nxb, name);
-      nxb_append_char(nxb, ':');
-      nxb_append_char(nxb, ' ');
-      nxb_append_str(nxb, itr->value);
-      nxb_append_str(nxb, "\r\n");
-    }
+    _nxweb_add_extra_response_headers(nxb, resp->headers);
+  }
+  if (resp->extra_raw_headers) {
+    nxb_append_str(nxb, resp->extra_raw_headers);
   }
   if (resp->content_length) {
     nxb_append_str(nxb, "Content-Type: ");
@@ -847,7 +862,7 @@ void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* locat
   nxb_append_str_fast(nxb, "\r\n"
                       "Server: nxweb/" REVISION "\r\n"
                       "Date: ");
-  nxb_append_str_fast(nxb, nxe_get_current_http_time(_nxweb_net_thread_data->loop));
+  nxb_append_str_fast(nxb, nxe_get_current_http_time_str(_nxweb_net_thread_data->loop));
   nxb_append_str_fast(nxb, "\r\n"
                       "Connection: ");
   nxb_append_str_fast(nxb, resp->keep_alive?"keep-alive":"close");
@@ -967,6 +982,15 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
                       "Connection: ");
   nxb_append_str_fast(nxb, req->keep_alive?"keep-alive":"close");
   nxb_append_str_fast(nxb, "\r\n");
+
+  if (req->if_modified_since) {
+    struct tm tm;
+    gmtime_r(&req->if_modified_since, &tm);
+    nxb_make_room(nxb, 52);
+    nxb_append_str_fast(nxb, "If-Modified-Since: ");
+    nxb_blank_fast(nxb, nxweb_format_http_time(nxb_get_room(nxb, 0), &tm));
+    nxb_append_str_fast(nxb, "\r\n");
+  }
 
   if (req->expect_100_continue) {
     nxb_append_str_fast(nxb, "Expect: 100-continue\r\n");
@@ -1141,11 +1165,6 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       }
       p1=p;
     }
-  }
-
-  if (resp->expires && resp->date) {
-    // adjust time difference between backend and nxweb
-    resp->expires=time(0)+(resp->expires-resp->date);
   }
 
   if (transfer_encoding && !nx_strcasecmp(transfer_encoding, "chunked")) {

@@ -63,12 +63,12 @@ NXWEB_SET_HANDLER(upload, "/upload", &upload_handler, .priority=1000);
 // This proxies requests to backend with index 0 (see proxy setup further below):
 NXWEB_SET_HANDLER(backend1, "/backend1", &nxweb_http_proxy_handler, .priority=10000, .idx=0, .uri="",
                   .filters={ &file_cache_filter, &ssi_filter },
-                  .file_cache_dir="www/cache/proxy");
+                  .file_cache_dir="www/cache/proxy1");
 
 // This proxies requests to backend with index 1 (see proxy setup further below):
 NXWEB_SET_HANDLER(backend2, "/backend2", &nxweb_http_proxy_handler, .priority=10000, .idx=1, .uri="",
                   .filters={ &file_cache_filter, &ssi_filter },
-                  .file_cache_dir="www/cache/proxy");
+                  .file_cache_dir="www/cache/proxy2");
 
 // This serves static files from $(work_dir)/www/root directory:
 NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,

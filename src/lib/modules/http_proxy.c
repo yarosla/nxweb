@@ -112,6 +112,7 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     preq->keep_alive=1;
     preq->user_agent=req->user_agent;
     preq->cookie=req->cookie;
+    preq->if_modified_since=req->if_modified_since;
     preq->x_forwarded_for=conn->remote_addr;
     preq->x_forwarded_host=req->host;
     preq->x_forwarded_ssl=nxweb_server_config.listen_config[conn->lconf_idx].secure;
@@ -219,9 +220,10 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked content
     resp->ssi_on=presp->ssi_on;
     resp->headers=presp->headers;
-    resp->date=presp->date;
-    resp->last_modified=presp->last_modified;
-    resp->expires=presp->expires;
+    resp->backend_time_delta=presp->date? presp->date-nxe_get_current_http_time(loop) : 0;
+    resp->date=presp->date? presp->date-resp->backend_time_delta : 0;
+    resp->last_modified=presp->last_modified? presp->last_modified-resp->backend_time_delta : 0;
+    resp->expires=presp->expires? presp->expires-resp->backend_time_delta : 0;
     resp->cache_control=presp->cache_control;
     resp->max_age=presp->max_age;
     resp->no_cache=presp->no_cache;

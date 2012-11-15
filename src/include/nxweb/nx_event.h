@@ -277,7 +277,8 @@ typedef struct nxe_timer_queue {
 typedef struct nxe_loop {
   nxe_time_t current_time;
   nxe_time_t last_http_time;
-  char http_time[64];
+  char http_time_str[64];
+  time_t http_time;
 
   volatile _Bool broken;
   int ref_count;
@@ -341,7 +342,8 @@ void nxe_set_timer_queue_timeout(nxe_loop* loop, int queue_idx, nxe_time_t usec_
 void nxe_set_timer(nxe_loop* loop, int queue_idx, nxe_timer* timer);
 void nxe_unset_timer(nxe_loop* loop, int queue_idx, nxe_timer* timer);
 
-const char* nxe_get_current_http_time(nxe_loop* loop);
+time_t nxe_get_current_http_time(nxe_loop* loop);
+const char* nxe_get_current_http_time_str(nxe_loop* loop);
 
 static inline nxe_time_t nxe_get_time_usec() {
   struct timespec ts;
