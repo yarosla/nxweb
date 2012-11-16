@@ -721,8 +721,8 @@ void _nxweb_add_extra_response_headers(nxb_buffer* nxb, nxweb_http_header *heade
       case NXWEB_HTTP_CACHE_CONTROL:
       case NXWEB_HTTP_EXPIRES:
       case NXWEB_HTTP_LAST_MODIFIED:
+      case NXWEB_HTTP_ETAG:
       case NXWEB_HTTP_ACCEPT_RANGES: // it is not right to always filter this out; file cache filter requires this
-      case NXWEB_HTTP_ETAG: // it is not right to always filter this out; file cache filter requires this
         // skip these specific headers
         continue;
     }
@@ -790,6 +790,11 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     // nxb_append_str(nxb, date_buf);
     nxb_blank_fast(nxb, nxweb_format_http_time(nxb_get_room(nxb, 0), &tm));
     nxb_append_str_fast(nxb, "\r\n");
+  }
+  if (resp->etag) {
+    nxb_append_str(nxb, "ETag: ");
+    nxb_append_str(nxb, resp->etag);
+    nxb_append(nxb, "\r\n", 2);
   }
   if (resp->expires) {
     gmtime_r(&resp->expires, &tm);
@@ -1135,6 +1140,7 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       case NXWEB_HTTP_LAST_MODIFIED: resp->last_modified=nxweb_parse_http_time(value); break;
       case NXWEB_HTTP_EXPIRES: resp->expires=nxweb_parse_http_time(value); break;
       case NXWEB_HTTP_CACHE_CONTROL: resp->cache_control=value; break;
+      case NXWEB_HTTP_ETAG: resp->etag=value; break;
       default:
         header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=name;

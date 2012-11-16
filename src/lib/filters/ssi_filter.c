@@ -39,6 +39,7 @@ typedef struct ssi_buffer {
 typedef struct ssi_filter_data {
   nxweb_filter_data fdata;
   ssi_buffer ssib;
+  int input_fd;
 } ssi_filter_data;
 
 #define MAX_SSI_SIZE (1000000)
@@ -199,6 +200,42 @@ static nxweb_filter_data* ssi_init(struct nxweb_http_server_connection* conn, nx
   return fdata;
 }
 
+static void ssi_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+  ssi_filter_data* sfdata=(ssi_filter_data*)fdata;
+  if (sfdata->input_fd) {
+    close(sfdata->input_fd);
+    sfdata->input_fd=0;
+  }
+}
+
+static nxweb_result ssi_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len) {
+  if (!resp->ssi_on) {
+    if (*resp->cache_key!=' ') { // response originally comes from file
+      if (!resp->mtype && *key!=' ') {
+        resp->mtype=nxweb_get_mime_type_by_ext(key); // always returns not null
+      }
+      if (!resp->mtype && resp->content_type) {
+        resp->mtype=nxweb_get_mime_type(resp->content_type);
+      }
+    }
+    if (resp->mtype && !resp->mtype->ssi_on) {
+      fdata->bypass=1;
+      return NXWEB_NEXT;
+    }
+  }
+
+  // transform to virtual key ( )
+  int plen=strlen(key)-root_len;
+  assert(plen>=0);
+  int rlen=sizeof(" /_ssi_")-1;
+  char* fc_key=nxb_alloc_obj(req->nxb, rlen+plen+1);
+  memcpy(fc_key, " /_ssi_", rlen);
+  strcpy(fc_key+rlen, key+root_len);
+  fdata->cache_key=fc_key;
+  fdata->cache_key_root_len=1;
+  return NXWEB_OK;
+}
+
 static nxweb_result ssi_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   ssi_filter_data* sfdata=(ssi_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
@@ -209,7 +246,7 @@ static nxweb_result ssi_do_filter(struct nxweb_http_server_connection* conn, nxw
   }
 
   if (!resp->ssi_on) {
-    if (!resp->mtype) {
+    if (!resp->mtype && resp->content_type) {
       resp->mtype=nxweb_get_mime_type(resp->content_type);
     }
     if (!resp->mtype || !resp->mtype->ssi_on) {
@@ -229,12 +266,21 @@ static nxweb_result ssi_do_filter(struct nxweb_http_server_connection* conn, nxw
   nxweb_composite_stream* cs=nxweb_composite_stream_init(conn, req);
 
   nxweb_composite_stream_start(cs, resp);
-  resp->sendfile_path=0;  // disable small file cache
-  resp->content=0;  // discard raw content
+
+  // reset previous response content
+  resp->content=0;
+  resp->sendfile_path=0;
+  if (resp->sendfile_fd) {
+    // save it to close on finalize
+    sfdata->input_fd=resp->sendfile_fd;
+    resp->sendfile_fd=0;
+  }
+  resp->last_modified=0;
 
   sfdata->ssib.cs=cs;
 
   return NXWEB_OK;
 }
 
-nxweb_filter ssi_filter={.name="ssi", .init=ssi_init, .do_filter=ssi_do_filter};
+nxweb_filter ssi_filter={.name="ssi", .init=ssi_init, .finalize=ssi_finalize,
+        .translate_cache_key=ssi_translate_cache_key, .do_filter=ssi_do_filter};

@@ -442,6 +442,7 @@ static nxweb_result fc_serve_from_cache(struct nxweb_http_server_connection* con
     resp->content=0;
     resp->content_out=0; // reset content_out
     resp->last_modified=fcdata->hdr.last_modified.tim;
+    resp->etag=0;
     resp->max_age=0;
     resp->cache_control="must-revalidate";
     resp->expires=fdata->cache_key_finfo.st_mtime;
@@ -451,6 +452,7 @@ static nxweb_result fc_serve_from_cache(struct nxweb_http_server_connection* con
   resp->content=0;
   resp->content_out=0; // reset content_out
   // override cache control
+  resp->etag=0;
   resp->max_age=0;
   resp->cache_control="must-revalidate";
   resp->expires=fdata->cache_key_finfo.st_mtime;
@@ -542,6 +544,7 @@ static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxwe
   fcdata->resp=resp;
   fcdata->expires_time=expires_time;
   if (!resp->last_modified) resp->last_modified=cur_time;
+  resp->etag=0; // we do not support it
   if (fc_store_begin(fcdata)==-1) return NXWEB_OK;
   nxe_connect_streams(conn->tdata->loop, resp->content_out, &fcdata->data_in);
   resp->content_out=&fcdata->data_out;

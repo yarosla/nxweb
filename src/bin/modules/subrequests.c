@@ -40,4 +40,39 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
 }
 
 NXWEB_HANDLER(subreq, "/subreq", .on_request=subreq_on_request,
-        .flags=NXWEB_HANDLE_ANY, .priority=100);
+        .flags=NXWEB_HANDLE_ANY, .priority=1000);
+
+
+static nxweb_result curtime_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  nxweb_set_response_content_type(resp, "text/html");
+
+  resp->last_modified=nxe_get_current_http_time(conn->tdata->loop);
+  const char* max_age_str=nxweb_get_request_parameter(req, "max_age");
+  int max_age=0;
+  if (max_age_str) {
+    max_age=atoi(max_age_str);
+    resp->max_age=max_age;
+  }
+
+  nxweb_response_append_str(resp, nxe_get_current_http_time_str(conn->tdata->loop));
+  nxweb_response_append_str(resp, " [max-age=");
+  nxweb_response_append_uint(resp, max_age);
+  nxweb_response_append_str(resp, "]");
+
+  return NXWEB_OK;
+}
+
+static nxweb_result curtime_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
+  char* key=nxb_alloc_obj(req->nxb, strlen(req->uri)+2);
+  *key=' ';
+  strcpy(key+1, req->uri);
+  resp->cache_key=key;
+  resp->cache_key_root_len=1;
+  return NXWEB_OK;
+}
+
+NXWEB_HANDLER(curtime, "/curtime", .on_request=curtime_on_request,
+        .on_generate_cache_key=curtime_generate_cache_key,
+        .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS, .priority=1000,
+        .filters={&file_cache_filter}, .file_cache_dir="www/cache/curtime");

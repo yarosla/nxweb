@@ -57,6 +57,11 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
   }
   resp->cache_key=nxb_copy_obj(req->nxb, fpath, strlen(fpath)+1);
   resp->cache_key_root_len=rlen;
+  resp->mtype=nxweb_get_mime_type_by_ext(fpath);
+  if (resp->mtype) {
+    resp->content_type=resp->mtype->mime;
+    if (resp->mtype->charset_required) resp->content_charset=handler->charset;
+  }
   return NXWEB_OK;
 }
 

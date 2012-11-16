@@ -46,6 +46,7 @@ static nxweb_result gzip_translate_cache_key(struct nxweb_http_server_connection
   // it must not implement serve_from_cache either
   if (!*key) return NXWEB_OK;
   if (*key==' ') { // virtual key
+    fdata->bypass=1;
     return NXWEB_NEXT;
   }
   assert(conn->handler->gzip_dir);

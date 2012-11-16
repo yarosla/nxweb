@@ -162,6 +162,7 @@ typedef struct nxweb_http_response {
   const char* content_type;
   const char* content_charset;
   const char* cache_control;
+  const char* etag;
   nxweb_http_header* headers;
   const char* extra_raw_headers;
   time_t date;

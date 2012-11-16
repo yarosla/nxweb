@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SSI with blocks that cache for different time</title>
+</head>
+<body>
+  <h1>SSI with blocks that get cached for different time</h1>
+  <div>Block #1: updated on <!--#include virtual="/curtime" --></div>
+  <div>Block #2: updated on <!--#include virtual="/curtime?max_age=5" --></div>
+  <div>Block #3: updated on <!--#include virtual="/curtime?max_age=10" --></div>
+  <div>Block #4: updated on <!--#include virtual="/curtime?max_age=20" --></div>
+</body>
+</html>
