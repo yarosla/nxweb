@@ -411,6 +411,8 @@ extern nxweb_filter image_filter;
 extern nxweb_filter ssi_filter;
 extern nxweb_filter file_cache_filter;
 
+#include "templates.h"
+
 #ifdef	__cplusplus
 }
 #endif

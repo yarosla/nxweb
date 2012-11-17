@@ -42,6 +42,22 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
 NXWEB_HANDLER(subreq, "/subreq", .on_request=subreq_on_request,
         .flags=NXWEB_HANDLE_ANY, .priority=1000);
 
+void nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
+
+static nxweb_result tmpl_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  nxweb_set_response_content_type(resp, "text/html");
+
+  const char* tmpl="{%raw%}{{{{%%%%}}}}{%endraw%}AAA{% extends 'base' \"ttt\"%}YYY{%block header%}Bbbb Header{%endblock%} bye...";
+  nxt_context ctx;
+  nxt_init(&ctx, req->nxb);
+  nxt_parse(&ctx, req->uri, (char*)tmpl, strlen(tmpl));
+
+  return NXWEB_OK;
+}
+
+NXWEB_HANDLER(tmpl, "/tmpl", .on_request=tmpl_on_request,
+        .flags=NXWEB_HANDLE_ANY, .priority=1000);
+
 
 static nxweb_result curtime_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
