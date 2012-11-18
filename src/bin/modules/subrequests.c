@@ -42,15 +42,39 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
 NXWEB_HANDLER(subreq, "/subreq", .on_request=subreq_on_request,
         .flags=NXWEB_HANDLE_ANY, .priority=1000);
 
-void nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
+int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
+
+static int tmpl_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_block* dst_block) { // function to make subrequests
+  if (dst_block) {
+    nxweb_log_error("including file %s", uri);
+    nxt_block_append_value(ctx, dst_block, "{% This is included file %}", sizeof("{% This is included file %}")-1, 0);
+  }
+  else {
+    nxweb_log_error("loading template from %s", uri);
+    if (!strcmp(uri, "base")) {
+      const char* tmpl_src=" {%block _top_%}{%raw%}{{{{%%%%}}}}{%endraw%}{% include aaa %}AAA-YYY{%block header%}Header{%endblock%} bye...{% endblock %}{% block title %}New Title{% endblock %}";
+      char* tmpl=nxb_copy_obj(ctx->nxb, tmpl_src, strlen(tmpl_src)+1);
+      nxt_parse_file(dst_file, (char*)tmpl, strlen(tmpl));
+    }
+    else if (!strcmp(uri, "ttt")) {
+      const char* tmpl_src=" {% extends 'base'%} {%block header%}Bbbb {%block title%}{%endblock%} {% parent %}{%endblock%}";
+      char* tmpl=nxb_copy_obj(ctx->nxb, tmpl_src, strlen(tmpl_src)+1);
+      nxt_parse_file(dst_file, (char*)tmpl, strlen(tmpl));
+    }
+  }
+}
 
 static nxweb_result tmpl_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
 
-  const char* tmpl="{%raw%}{{{{%%%%}}}}{%endraw%}AAA{% extends 'base' \"ttt\"%}YYY{%block header%}Bbbb Header{%endblock%} bye...";
+  const char* tmpl="{% extends \"ttt\"%} {% block title %}The Very {% parent %}{% endblock %}";
+  tmpl=nxb_copy_obj(req->nxb, tmpl, strlen(tmpl)+1);
   nxt_context ctx;
-  nxt_init(&ctx, req->nxb);
+  nxt_init(&ctx, req->nxb, tmpl_load);
   nxt_parse(&ctx, req->uri, (char*)tmpl, strlen(tmpl));
+  nxt_merge(&ctx);
+  resp->content=nxt_serialize(&ctx);
+  resp->content_length=strlen(resp->content);
 
   return NXWEB_OK;
 }

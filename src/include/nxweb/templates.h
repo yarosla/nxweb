@@ -24,6 +24,15 @@
 extern "C" {
 #endif
 
+// max number of directive arguments:
+#define NXT_MAX_ARGS 32
+// max number of block names in template tree:
+#define NXT_MAX_BLOCKS 2048
+// max nesting level of blocks inside blocks:
+#define NXT_MAX_BLOCK_NESTING 64
+// max inheritance (extends/use) level (to prevent recursion):
+#define NXT_MAX_INHERITANCE_LEVEL 32
+
 enum nxt_cmd {
   NXT_EOF=-1,
   NXT_NONE=0,
@@ -36,24 +45,28 @@ enum nxt_cmd {
   NXT_INCLUDE_PARENT
 };
 
-#define NXT_MAX_ARGS 32
-
 typedef struct nxt_block_name {
+//  union {
+//    uint64_t h;
+//    char pfx[8];
+//  } name_hash;
   const char* name;
   struct nxt_block* block; // assigned on merge
 } nxt_block_name;
 
 struct nxt_context;
 struct nxt_file;
+struct nxt_block;
 
-typedef int (*nxt_loader)(struct nxt_context* ctx, struct nxt_file* file); // function to make subrequests
+typedef int (*nxt_loader)(struct nxt_context* ctx, const char* uri, struct nxt_file* dst_file, struct nxt_block* dst_block); // function to make subrequests
 
 typedef struct nxt_context {
   struct nxt_file* start_file;
   nxt_loader load; // function to make subrequests
-  nxt_block_name* block_names;
   nxb_buffer* nxb;
-  int next_free_id;
+  nxt_block_name block_names[NXT_MAX_BLOCKS];
+  int next_free_block_id;
+  int files_pending;
 } nxt_context;
 
 typedef struct nxt_file {
@@ -61,26 +74,35 @@ typedef struct nxt_file {
   const char* uri;
   struct nxt_file* parents;
   struct nxt_file* next_parent; // sibling
+  //struct nxt_file* next; // within context
+  struct nxt_block* first_block;
   char* content;
   int content_length;
+  int inheritance_level;
 } nxt_file;
 
 typedef struct nxt_value_part {
   const char* text;
-  nxt_block_name* insert_after_text;
+  int text_len;
+  int insert_after_text_id;
   struct nxt_value_part* next;
 } nxt_value_part;
 
 typedef struct nxt_block {
   int id;
+  _Bool clear_on_append:1;
   nxt_value_part* value;
-  struct nxt_block* parent;
+  struct nxt_block* parent; // assigned on merge
+  struct nxt_block* next; // within file
 } nxt_block;
 
-void nxt_init(nxt_context* ctx, nxb_buffer* nxb);
+void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader);
 void nxt_content_loaded(nxt_context* ctx, struct nxt_file* file); // this must be called back by the loader
-void nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
-
+int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
+int nxt_parse_file(nxt_file* file, char* buf, int buf_len);
+nxt_value_part* nxt_block_append_value(nxt_context* ctx, nxt_block* blk, const char* text, int text_len, int insert_after_text_id);
+void nxt_merge(nxt_context* ctx);
+char* nxt_serialize(nxt_context* ctx);
 
 #ifdef	__cplusplus
 }

@@ -19,16 +19,23 @@
 
 #include "nxweb/nxweb.h"
 
-void nxt_init(nxt_context* ctx, nxb_buffer* nxb) {
+#define BN_NONE_ID (-1)
+#define BN_PARENT_ID (-2)
+
+void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader) {
   memset(ctx, 0, sizeof(*ctx));
   ctx->nxb=nxb;
+  ctx->load=loader;
 }
 
 void nxt_content_loaded(nxt_context* ctx, struct nxt_file* file) { // this must be called back by the loader
-
+  if (--ctx->files_pending==0) {
+    // merge
+    // serialize
+  }
 }
 
-enum nxt_cmd nxt_parse_cmd(char* buf, int buf_len, char** args) {
+static enum nxt_cmd nxt_parse_cmd(char* buf, int buf_len, char** args) {
   char *p, *pc, *pe, *pq, *pn;
   char* end=buf+buf_len;
   p=buf;
@@ -81,7 +88,7 @@ enum nxt_cmd nxt_parse_cmd(char* buf, int buf_len, char** args) {
   return cmd;
 }
 
-enum nxt_cmd nxt_get_next_cmd(nxt_file* file, int *raw_mode, char** ptr, char** text, int* text_len, char** args) {
+static enum nxt_cmd nxt_get_next_cmd(nxt_file* file, int *raw_mode, char** ptr, char** text, int* text_len, char** args) {
   if (!file->content_length) return NXT_EOF;
   nxt_context* ctx=file->ctx;
   char* end=file->content+file->content_length;
@@ -136,29 +143,235 @@ NOT_FOUND:
   return NXT_NONE;
 }
 
-void nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len) {
+static nxt_block* nxt_block_create(nxt_file* file, const char* name) {
+  nxt_context* ctx=file->ctx;
+  int id;
+  if (name) {
+    for (id=0; id<ctx->next_free_block_id; id++) {
+      if (ctx->block_names[id].name && !strcmp(name, ctx->block_names[id].name)) break;
+    }
+    if (id==ctx->next_free_block_id) {
+      ctx->next_free_block_id++;
+      ctx->block_names[id].name=name;
+    }
+  }
+  else {
+    id=ctx->next_free_block_id++;
+  }
+
+  nxt_block* blk;
+  if (file->first_block) {
+    blk=file->first_block;
+    while (1) {
+      if (blk->id==id) return blk; // return existing block
+      if (!blk->next) break;
+      blk=blk->next;
+    }
+    blk=blk->next=nxb_calloc_obj(ctx->nxb, sizeof(nxt_block));
+  }
+  else {
+    blk=file->first_block=nxb_calloc_obj(ctx->nxb, sizeof(nxt_block));
+  }
+  blk->id=id;
+
+  return blk;
+}
+
+nxt_value_part* nxt_block_append_value(nxt_context* ctx, nxt_block* blk, const char* text, int text_len, int insert_after_text_id) {
+  nxt_value_part* vp;
+  if (blk->value && !blk->clear_on_append) {
+    vp=blk->value;
+    while (vp->next) vp=vp->next;
+    vp=vp->next=nxb_calloc_obj(ctx->nxb, sizeof(nxt_value_part));
+  }
+  else {
+    vp=blk->value=nxb_calloc_obj(ctx->nxb, sizeof(nxt_value_part));
+    blk->clear_on_append=0;
+  }
+  vp->text=text;
+  vp->text_len=text_len;
+  vp->insert_after_text_id=insert_after_text_id;
+  return vp;
+}
+
+static nxt_file* nxt_file_create(nxt_context* ctx, const char* uri) {
+  nxt_file* new_file=nxb_calloc_obj(ctx->nxb, sizeof(nxt_file));
+  new_file->ctx=ctx;
+  new_file->uri=uri;
+  if (!ctx->start_file) ctx->start_file=new_file;
+  return new_file;
+}
+
+static nxt_file* nxt_use(nxt_file* cur_file, const char* new_uri) {
+  nxt_context* ctx=cur_file->ctx;
+  nxt_file* new_file=nxt_file_create(ctx, new_uri);
+  if (cur_file->parents) {
+    nxt_file* f=cur_file->parents;
+    while (f->next_parent) f=f->next_parent;
+    f->next_parent=new_file;
+  }
+  else {
+    cur_file->parents=new_file;
+  }
+  new_file->inheritance_level=cur_file->inheritance_level+1;
+  if (new_file->inheritance_level>NXT_MAX_INHERITANCE_LEVEL) {
+    nxweb_log_error("maximum inheritance level reached, check for infinite recursion or increase NXT_MAX_INHERITANCE_LEVEL");
+    return 0;
+  }
+  ctx->load(ctx, new_uri, new_file, 0);
+  return new_file;
+}
+
+int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
+  file->content=buf;
+  file->content_length=buf_len;
+  nxt_context* ctx=file->ctx;
   char* args[NXT_MAX_ARGS*2]; // start and end pointers for each arg; ends with a pair of null-pointers
+  nxt_block* block_stack[NXT_MAX_BLOCK_NESTING];
+  int block_stack_idx=0;
+  nxt_block* cur_block;
   char* ptr=0;
   char* text;
   int text_len;
   int raw_mode=0;
-  nxt_file* file=nxb_calloc_obj(ctx->nxb, sizeof(*file));
-  file->ctx=ctx;
-  file->uri=uri;
-  file->content=buf;
-  file->content_length=buf_len;
+  int i;
   enum nxt_cmd cmd=NXT_NONE;
+
+  cur_block=nxt_block_create(file, "_top_");
+
   for (;;) {
     cmd=nxt_get_next_cmd(file, &raw_mode, &ptr, &text, &text_len, args);
     if (cmd==NXT_EOF) break;
-    nxweb_log_error("nxt_parse: cmd=%d text=%.*s arg1=%.*s arg2=%.*s", cmd, text_len, text, (int)(args[1]-args[0]), args[0], (int)(args[3]-args[2]), args[2]);
+    switch (cmd) {
+      case NXT_NONE:
+        if (text_len) {
+          nxt_block_append_value(ctx, cur_block, text, text_len, BN_NONE_ID);
+        }
+        break;
+      case NXT_BLOCK:
+        if (!args[0] || !args[1]) {
+          nxweb_log_error("template error: block without name; cur_block=%s", ctx->block_names[cur_block->id].name);
+          return -1;
+        }
+        if (block_stack_idx>=NXT_MAX_BLOCK_NESTING-1) {
+          nxweb_log_error("template error: block nesting over the limit (NXT_MAX_BLOCK_NESTING=%d); cur_block=%s", NXT_MAX_BLOCK_NESTING, ctx->block_names[cur_block->id].name);
+          return -1;
+        }
+        block_stack[block_stack_idx++]=cur_block;
+        *args[1]='\0';
+        nxt_block* new_block=nxt_block_create(file, args[0]);
+        nxt_block_append_value(ctx, cur_block, text, text_len, new_block->id);
+        new_block->clear_on_append=1;
+        cur_block=new_block;
+        break;
+      case NXT_ENDBLOCK:
+        if (text_len) {
+          nxt_block_append_value(ctx, cur_block, text, text_len, BN_NONE_ID);
+        }
+        if (!block_stack_idx) {
+          nxweb_log_error("template error: endblock without block; cur_block=%s", ctx->block_names[cur_block->id].name);
+          return -1;
+        }
+        cur_block=block_stack[--block_stack_idx];
+        break;
+      case NXT_USE:
+        if (text_len) {
+          nxt_block_append_value(ctx, cur_block, text, text_len, BN_NONE_ID);
+        }
+        for (i=0; i<NXT_MAX_ARGS; i++) {
+          if (!args[2*i] || !args[2*i+1]) break;
+          *args[2*i+1]='\0';
+          if (!nxt_use(file, args[2*i])) return -1;
+        }
+        break;
+      case NXT_INCLUDE:
+        if (!args[0] || !args[1]) {
+          nxweb_log_error("template error: block without name; cur_block=%s", ctx->block_names[cur_block->id].name);
+          return -1;
+        }
+        *args[1]='\0';
+        nxt_block* include_blk=nxt_block_create(file, 0);
+        ctx->load(ctx, args[0], 0, include_blk);
+        ctx->files_pending++;
+        nxt_block_append_value(ctx, cur_block, text, text_len, include_blk->id);
+        break;
+      case NXT_INCLUDE_PARENT:
+        nxt_block_append_value(ctx, cur_block, text, text_len, BN_PARENT_ID);
+        break;
+    }
+    // nxweb_log_error("nxt_parse: cmd=%d text=%.*s arg1=%.*s arg2=%.*s", cmd, text_len, text, (int)(args[1]-args[0]), args[0], (int)(args[3]-args[2]), args[2]);
+  }
+
+  nxt_block* blk;
+  for (blk=file->first_block; blk; blk=blk->next) {
+    nxweb_log_error("BLOCK %s: %.*s", ctx->block_names[blk->id].name, blk->value? blk->value->text_len:1, blk->value? blk->value->text:"-");
+  }
+
+  return 0;
+}
+
+int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len) {
+  nxt_file* file=nxt_file_create(ctx, uri);
+  nxt_parse_file(file, buf, buf_len);
+}
+
+static int nxt_is_top_block_empty(nxt_block* blk) {
+  nxt_value_part* vp;
+  const char* p;
+  int i;
+  for (vp=blk->value; vp; vp=vp->next) {
+    for (i=0, p=vp->text; i<vp->text_len; i++, p++) {
+      if ((unsigned char)*p>' ') return 0;
+    }
+  }
+  return 1;
+}
+
+static void nxt_merge_file(nxt_file* file) {
+  nxt_context* ctx=file->ctx;
+  nxt_file* parent;
+  for (parent=file->parents; parent; parent=parent->next_parent) {
+    nxt_merge_file(parent);
+  }
+  nxt_block* blk;
+  nxt_block_name* bnames=ctx->block_names;
+  nxt_block_name* bn;
+  for (blk=file->first_block; blk; blk=blk->next) {
+    if (!blk->value) continue; // just a placeholder without value
+    if (!blk->id && nxt_is_top_block_empty(blk)) continue;
+    bn=&bnames[blk->id];
+    blk->parent=bn->block;
+    bn->block=blk;
   }
 }
 
-void nxt_merge(nxt_context* ctx, const char* uri, char* buf, int buf_len) {
-
+void nxt_merge(nxt_context* ctx) {
+  if (ctx->start_file) nxt_merge_file(ctx->start_file);
 }
 
-void nxt_serialize(nxt_context* ctx, const char* uri, char* buf, int buf_len) {
+static void nxt_serialize_block(nxt_context* ctx, nxt_block* blk) {
+  if (!blk) {
+    nxb_append_str(ctx->nxb, "[missing block]");
+    return;
+  }
+  nxt_value_part* vp;
+  const char* p;
+  int i;
+  for (vp=blk->value; vp; vp=vp->next) {
+    if (vp->text_len) nxb_append(ctx->nxb, vp->text, vp->text_len);
+    if (vp->insert_after_text_id>0) {
+      nxt_serialize_block(ctx, ctx->block_names[vp->insert_after_text_id].block);
+    }
+    else if (vp->insert_after_text_id==BN_PARENT_ID) {
+      nxt_serialize_block(ctx, blk->parent);
+    }
+  }
+}
 
+char* nxt_serialize(nxt_context* ctx) {
+  if (ctx->block_names[0].block) {
+    nxt_serialize_block(ctx, ctx->block_names[0].block);
+  }
+  nxb_append_char(ctx->nxb, '\0');
+  return nxb_finish_stream(ctx->nxb, 0);
 }
