@@ -41,6 +41,8 @@ static const nxweb_mime_type const mime_types[] = {
   {"html", "text/html", 1, .gzippable=1},
   {"shtml", "text/html", 1, .gzippable=0, .ssi_on=1},
   {"shtm", "text/html", 1, .gzippable=0, .ssi_on=1},
+  {"thtml", "text/html", 1, .gzippable=0, .templates_on=1},
+  {"thtm", "text/html", 1, .gzippable=0, .templates_on=1},
   {"txt", "text/plain", 1, .gzippable=1},
   {"c", "text/plain", 1, .gzippable=1},
   {"h", "text/plain", 1, .gzippable=1},

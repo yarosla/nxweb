@@ -64,6 +64,7 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
     conn->handler->on_complete(conn, req, resp);
     conn->handler->on_complete=0; // call no more
   }
+  nxweb_http_server_connection_finalize_subrequests(conn, 0);
 }
 
 static void request_cleanup(nxe_loop* loop, nxd_http_server_proto* hsp) {

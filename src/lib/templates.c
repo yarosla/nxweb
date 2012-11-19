@@ -28,13 +28,6 @@ void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader) {
   ctx->load=loader;
 }
 
-void nxt_content_loaded(nxt_context* ctx, struct nxt_file* file) { // this must be called back by the loader
-  if (--ctx->files_pending==0) {
-    // merge
-    // serialize
-  }
-}
-
 static enum nxt_cmd nxt_parse_cmd(char* buf, int buf_len, char** args) {
   char *p, *pc, *pe, *pq, *pn;
   char* end=buf+buf_len;
@@ -138,7 +131,7 @@ FOUND_CMD:
 
 NOT_FOUND:
   *text=*ptr? *ptr : file->content;
-  if (text_len) *text_len=(pc-1)-*text;
+  if (text_len) *text_len=end-*text;
   *ptr=end;
   return NXT_NONE;
 }
@@ -194,11 +187,12 @@ nxt_value_part* nxt_block_append_value(nxt_context* ctx, nxt_block* blk, const c
   return vp;
 }
 
-static nxt_file* nxt_file_create(nxt_context* ctx, const char* uri) {
+nxt_file* nxt_file_create(nxt_context* ctx, const char* uri) {
   nxt_file* new_file=nxb_calloc_obj(ctx->nxb, sizeof(nxt_file));
   new_file->ctx=ctx;
   new_file->uri=uri;
   if (!ctx->start_file) ctx->start_file=new_file;
+  ctx->files_pending++;
   return new_file;
 }
 
@@ -302,11 +296,15 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
     // nxweb_log_error("nxt_parse: cmd=%d text=%.*s arg1=%.*s arg2=%.*s", cmd, text_len, text, (int)(args[1]-args[0]), args[0], (int)(args[3]-args[2]), args[2]);
   }
 
+#if 0
+  // debug print out
   nxt_block* blk;
   for (blk=file->first_block; blk; blk=blk->next) {
     nxweb_log_error("BLOCK %s: %.*s", ctx->block_names[blk->id].name, blk->value? blk->value->text_len:1, blk->value? blk->value->text:"-");
   }
+#endif
 
+  ctx->files_pending--;
   return 0;
 }
 
@@ -374,4 +372,31 @@ char* nxt_serialize(nxt_context* ctx) {
   }
   nxb_append_char(ctx->nxb, '\0');
   return nxb_finish_stream(ctx->nxb, 0);
+}
+
+static void nxt_serialize_block_to_cs(nxt_context* ctx, nxt_block* blk, nxweb_composite_stream* cs) {
+  if (!blk) {
+    nxweb_composite_stream_append_bytes(cs, "<!--[missing block]-->", sizeof("<!--[missing block]-->")-1);
+    return;
+  }
+  nxt_value_part* vp;
+  const char* p;
+  int i;
+  for (vp=blk->value; vp; vp=vp->next) {
+    if (vp->text_len) {
+      nxweb_composite_stream_append_bytes(cs, vp->text, vp->text_len);
+    }
+    if (vp->insert_after_text_id>0) {
+      nxt_serialize_block_to_cs(ctx, ctx->block_names[vp->insert_after_text_id].block, cs);
+    }
+    else if (vp->insert_after_text_id==BN_PARENT_ID) {
+      nxt_serialize_block_to_cs(ctx, blk->parent, cs);
+    }
+  }
+}
+
+void nxt_serialize_to_cs(nxt_context* ctx, nxweb_composite_stream* cs) {
+  if (ctx->block_names[0].block) {
+    nxt_serialize_block_to_cs(ctx, ctx->block_names[0].block, cs);
+  }
 }

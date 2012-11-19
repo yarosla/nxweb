@@ -97,12 +97,15 @@ typedef struct nxt_block {
 } nxt_block;
 
 void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader);
-void nxt_content_loaded(nxt_context* ctx, struct nxt_file* file); // this must be called back by the loader
 int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
+nxt_file* nxt_file_create(nxt_context* ctx, const char* uri);
 int nxt_parse_file(nxt_file* file, char* buf, int buf_len);
 nxt_value_part* nxt_block_append_value(nxt_context* ctx, nxt_block* blk, const char* text, int text_len, int insert_after_text_id);
 void nxt_merge(nxt_context* ctx);
 char* nxt_serialize(nxt_context* ctx);
+void nxt_serialize_to_cs(nxt_context* ctx, nxweb_composite_stream* cs);
+
+static inline int nxt_is_complete(nxt_context* ctx) { return !ctx->files_pending; }
 
 #ifdef	__cplusplus
 }

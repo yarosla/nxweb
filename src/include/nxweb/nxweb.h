@@ -105,6 +105,7 @@ typedef struct nxweb_http_request {
   unsigned keep_alive:1;
   unsigned sending_100_continue:1;
   unsigned x_forwarded_ssl:1;
+  unsigned templates_no_parse:1;
 
   // Parsed HTTP request info:
   const char* method;
@@ -155,6 +156,7 @@ typedef struct nxweb_http_response {
   unsigned chunked_autoencode:1;
   unsigned gzip_encoded:1;
   unsigned ssi_on:1;
+  unsigned templates_on:1;
   unsigned no_cache:1;
 
   // Building response:
@@ -198,6 +200,7 @@ typedef struct nxweb_mime_type {
   unsigned gzippable:1;
   unsigned image:1;
   unsigned ssi_on:1;
+  unsigned templates_on:1;
 } nxweb_mime_type;
 
 #include "nxd.h"
@@ -409,6 +412,7 @@ extern nxweb_filter gzip_filter;
 extern nxweb_filter image_filter;
 #endif
 extern nxweb_filter ssi_filter;
+extern nxweb_filter templates_filter;
 extern nxweb_filter file_cache_filter;
 
 #include "templates.h"

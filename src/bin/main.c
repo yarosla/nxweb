@@ -73,6 +73,7 @@ NXWEB_SET_HANDLER(backend2, "/backend2", &nxweb_http_proxy_handler, .priority=10
 // This serves static files from $(work_dir)/www/root directory:
 NXWEB_SET_HANDLER(sendfile, 0, &sendfile_handler, .priority=900000,
         .filters={
+          &templates_filter,
           &ssi_filter,
 #ifdef WITH_IMAGEMAGICK
           &image_filter,

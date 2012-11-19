@@ -137,7 +137,7 @@ static int parse_text(ssi_buffer* ssib) {
 }
 
 static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
-  ssi_buffer* ssib=(ssi_buffer*)((char*)os-offsetof(ssi_buffer, data_in));
+  ssi_buffer* ssib=OBJ_PTR_FROM_FLD_PTR(ssi_buffer, data_in, os);
   //nxe_loop* loop=os->super.loop;
   if (ssib->overflow) { // reached max_ssi_size
     // swallow input data
@@ -146,8 +146,8 @@ static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, in
     int wsize=size;
     if (ssib->data_size+wsize > MAX_SSI_SIZE) wsize=MAX_SSI_SIZE-ssib->data_size;
     assert(wsize>=0);
-    nxb_make_room(ssib->nxb, wsize);
     if (wsize>0) {
+      nxb_make_room(ssib->nxb, wsize);
       char* dptr=nxb_get_room(ssib->nxb, 0);
       memcpy(dptr, ptr.cptr, wsize);
       nxb_blank_fast(ssib->nxb, wsize);
@@ -202,6 +202,7 @@ static nxweb_filter_data* ssi_init(struct nxweb_http_server_connection* conn, nx
 
 static void ssi_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   ssi_filter_data* sfdata=(ssi_filter_data*)fdata;
+  if (sfdata->ssib.data_in.pair) nxe_disconnect_streams(sfdata->ssib.data_in.pair, &sfdata->ssib.data_in);
   if (sfdata->input_fd) {
     close(sfdata->input_fd);
     sfdata->input_fd=0;

@@ -255,6 +255,7 @@ void nxd_fbuffer_init(nxd_fbuffer* fb, int fd, off_t offset, off_t end) {
 }
 
 void nxd_fbuffer_finalize(nxd_fbuffer* fb) {
+  if (fb->data_out.pair) nxe_disconnect_streams(&fb->data_out, fb->data_out.pair);
   nx_file_reader_finalize(&fb->fr);
   fb->fd=0;
 }

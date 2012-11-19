@@ -511,6 +511,16 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
   //__sync_add_and_fetch(&num_connections, 1);
 }
 
+void nxweb_http_server_connection_finalize_subrequests(nxweb_http_server_connection* conn, int good) {
+  nxweb_http_server_connection* sub=conn->subrequests;
+  while (sub) {
+    sub->parent=0;
+    nxweb_http_server_connection_finalize(sub, good);
+    sub=sub->next;
+  }
+  conn->subrequests=0;
+}
+
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good) {
   if (conn->parent) {
     // this can be called more than once
@@ -525,12 +535,7 @@ void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, i
     return;
   }
   //nxe_loop* loop=conn->sock.fs.data_is.super.loop;
-  nxweb_http_server_connection* sub=conn->subrequests;
-  while (sub) {
-    sub->parent=0;
-    nxweb_http_server_connection_finalize(sub, good);
-    sub=sub->next;
-  }
+  nxweb_http_server_connection_finalize_subrequests(conn, good);
   if (conn->worker_complete.pub) nxe_unsubscribe(conn->worker_complete.pub, &conn->worker_complete);
   conn->hsp.cls->finalize(&conn->hsp);
   if (conn->sock.cls) conn->sock.cls->finalize((nxd_socket*)&conn->sock, good);
@@ -555,6 +560,7 @@ nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_serv
   memcpy(conn->remote_addr, parent_conn->remote_addr, sizeof(conn->remote_addr));
   //nxweb_http_server_connection_connect(conn, loop, client_fd);
   nxe_subscribe(loop, &conn->hsp.events_pub, &conn->events_sub);
+  if (!host) host=parent_conn->hsp.req.host;
   nxweb_http_server_proto_subrequest_execute(&conn->hsp, host, uri);
   return conn;
 }
