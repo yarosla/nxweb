@@ -67,6 +67,7 @@ typedef struct nxt_context {
   nxt_block_name block_names[NXT_MAX_BLOCKS];
   int next_free_block_id;
   int files_pending;
+  unsigned error:1;
 } nxt_context;
 
 typedef struct nxt_file {

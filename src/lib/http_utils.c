@@ -1337,7 +1337,7 @@ char* nxweb_url_decode(char* src, char* dst) { // can do it inplace
   return dst;
 }
 
-int nxweb_remove_dots_from_uri_path(char* path) {
+int nxweb_remove_dots_from_uri_path(char* path) { // returns 0=OK
   if (!*path) return 0; // end of path
   if (*path!='/') return -1; // invalid path
   while (1) {

@@ -98,16 +98,26 @@ static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int
 
     tf_filter_data* tfdata=tfb->tfdata;
     nxt_context* ctx=&tfdata->ctx;
-    int size;
-    char* ptr=nxb_finish_stream(tfb->nxb, &size);
-    if (tfb->file) {
-      if (nxt_parse_file(tfb->file, ptr, size)==-1) {
-        // TODO handle error
-      }
-    }
-    else if (tfb->blk) {
-      nxt_block_append_value(ctx, tfb->blk, ptr, size, NXT_NONE);
+    if (tfb->overflow) {
+      nxweb_log_error("MAX_TEMPLATE_SIZE exceeded");
+      nxb_unfinish_stream(tfb->nxb);
+      ctx->error=1;
       ctx->files_pending--;
+    }
+    else {
+      int size;
+      char* ptr=nxb_finish_stream(tfb->nxb, &size);
+      if (tfb->file) {
+        if (nxt_parse_file(tfb->file, ptr, size)==-1) {
+          // handle error
+          ctx->files_pending--;
+          // it's been logged; ignore it
+        }
+      }
+      else if (tfb->blk) {
+        nxt_block_append_value(ctx, tfb->blk, ptr, size, NXT_NONE);
+        ctx->files_pending--;
+      }
     }
     tf_check_complete(tfdata);
   }

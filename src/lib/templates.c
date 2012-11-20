@@ -88,7 +88,7 @@ static enum nxt_cmd nxt_get_next_cmd(nxt_file* file, int *raw_mode, char** ptr, 
   char *pb, *pc, *pd;
   pb=*ptr? *ptr+1 : file->content+1;
 REPEAT:
-  if (pb>=end) return NXT_EOF;
+  if (pb-1>=end) return NXT_EOF;
   for (;;) {
     pc=memchr(pb, '%', end-pb);
     if (!pc) goto NOT_FOUND;
@@ -187,6 +187,23 @@ nxt_value_part* nxt_block_append_value(nxt_context* ctx, nxt_block* blk, const c
   return vp;
 }
 
+static const char* nxt_resolve_uri(nxt_context* ctx, const char* cur_uri, const char* new_uri) {
+  if (*new_uri=='/') return new_uri;
+  const char* query=strchr(cur_uri, '?');
+  const char* slash=query? query : cur_uri+strlen(cur_uri);
+  assert(*cur_uri=='/');
+  while (*(--slash)!='/') ; // find last slash
+  int base_len=slash-cur_uri+1;
+  char* buf=nxb_alloc_obj(ctx->nxb, base_len+strlen(new_uri)+1);
+  memcpy(buf, cur_uri, base_len);
+  strcpy(buf+base_len, new_uri);
+  if (nxweb_remove_dots_from_uri_path(buf)) { // invalid path
+    nxweb_log_error("template error: invalid path resolving %s from %s", new_uri, cur_uri);
+    return 0;
+  }
+  return buf;
+}
+
 nxt_file* nxt_file_create(nxt_context* ctx, const char* uri) {
   nxt_file* new_file=nxb_calloc_obj(ctx->nxb, sizeof(nxt_file));
   new_file->ctx=ctx;
@@ -196,8 +213,20 @@ nxt_file* nxt_file_create(nxt_context* ctx, const char* uri) {
   return new_file;
 }
 
+static nxt_block* nxt_include(nxt_file* cur_file, nxt_block* cur_block, const char* new_uri) {
+  nxt_context* ctx=cur_file->ctx;
+  new_uri=nxt_resolve_uri(ctx, cur_file->uri, new_uri);
+  if (!new_uri) return 0;
+  nxt_block* include_blk=nxt_block_create(cur_file, 0);
+  ctx->load(ctx, new_uri, 0, include_blk);
+  ctx->files_pending++;
+  return include_blk;
+}
+
 static nxt_file* nxt_use(nxt_file* cur_file, const char* new_uri) {
   nxt_context* ctx=cur_file->ctx;
+  new_uri=nxt_resolve_uri(ctx, cur_file->uri, new_uri);
+  if (!new_uri) return 0;
   nxt_file* new_file=nxt_file_create(ctx, new_uri);
   if (cur_file->parents) {
     nxt_file* f=cur_file->parents;
@@ -209,7 +238,7 @@ static nxt_file* nxt_use(nxt_file* cur_file, const char* new_uri) {
   }
   new_file->inheritance_level=cur_file->inheritance_level+1;
   if (new_file->inheritance_level>NXT_MAX_INHERITANCE_LEVEL) {
-    nxweb_log_error("maximum inheritance level reached, check for infinite recursion or increase NXT_MAX_INHERITANCE_LEVEL");
+    nxweb_log_error("template error (%s): maximum inheritance level reached, check for infinite recursion or increase NXT_MAX_INHERITANCE_LEVEL", cur_file->uri);
     return 0;
   }
   ctx->load(ctx, new_uri, new_file, 0);
@@ -244,11 +273,13 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
         break;
       case NXT_BLOCK:
         if (!args[0] || !args[1]) {
-          nxweb_log_error("template error: block without name; cur_block=%s", ctx->block_names[cur_block->id].name);
+          nxweb_log_error("template error (%s): block without name; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
+          ctx->error=1;
           return -1;
         }
         if (block_stack_idx>=NXT_MAX_BLOCK_NESTING-1) {
-          nxweb_log_error("template error: block nesting over the limit (NXT_MAX_BLOCK_NESTING=%d); cur_block=%s", NXT_MAX_BLOCK_NESTING, ctx->block_names[cur_block->id].name);
+          nxweb_log_error("template error (%s): block nesting over the limit (NXT_MAX_BLOCK_NESTING=%d); cur_block=%s", file->uri, NXT_MAX_BLOCK_NESTING, ctx->block_names[cur_block->id].name);
+          ctx->error=1;
           return -1;
         }
         block_stack[block_stack_idx++]=cur_block;
@@ -263,7 +294,8 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
           nxt_block_append_value(ctx, cur_block, text, text_len, BN_NONE_ID);
         }
         if (!block_stack_idx) {
-          nxweb_log_error("template error: endblock without block; cur_block=%s", ctx->block_names[cur_block->id].name);
+          nxweb_log_error("template error (%s): endblock without block; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
+          ctx->error=1;
           return -1;
         }
         cur_block=block_stack[--block_stack_idx];
@@ -275,18 +307,24 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
         for (i=0; i<NXT_MAX_ARGS; i++) {
           if (!args[2*i] || !args[2*i+1]) break;
           *args[2*i+1]='\0';
-          if (!nxt_use(file, args[2*i])) return -1;
+          if (!nxt_use(file, args[2*i])) {
+            ctx->error=1;
+            return -1;
+          }
         }
         break;
       case NXT_INCLUDE:
         if (!args[0] || !args[1]) {
-          nxweb_log_error("template error: block without name; cur_block=%s", ctx->block_names[cur_block->id].name);
+          nxweb_log_error("template error (%s): block without name; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
+          ctx->error=1;
           return -1;
         }
         *args[1]='\0';
-        nxt_block* include_blk=nxt_block_create(file, 0);
-        ctx->load(ctx, args[0], 0, include_blk);
-        ctx->files_pending++;
+        nxt_block* include_blk=nxt_include(file, cur_block, args[0]);
+        if (!include_blk) {
+          ctx->error=1;
+          return -1;
+        }
         nxt_block_append_value(ctx, cur_block, text, text_len, include_blk->id);
         break;
       case NXT_INCLUDE_PARENT:
@@ -294,6 +332,12 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
         break;
     }
     // nxweb_log_error("nxt_parse: cmd=%d text=%.*s arg1=%.*s arg2=%.*s", cmd, text_len, text, (int)(args[1]-args[0]), args[0], (int)(args[3]-args[2]), args[2]);
+  }
+
+  if (block_stack_idx) {
+    nxweb_log_error("template error (%s): block without endblock; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
+    ctx->error=1;
+    return -1;
   }
 
 #if 0
@@ -344,12 +388,13 @@ static void nxt_merge_file(nxt_file* file) {
 }
 
 void nxt_merge(nxt_context* ctx) {
+  if (ctx->error) return; // no need
   if (ctx->start_file) nxt_merge_file(ctx->start_file);
 }
 
 static void nxt_serialize_block(nxt_context* ctx, nxt_block* blk) {
   if (!blk) {
-    nxb_append_str(ctx->nxb, "[missing block]");
+    nxb_append_str(ctx->nxb, "<!--[missing block]-->");
     return;
   }
   nxt_value_part* vp;
@@ -367,6 +412,7 @@ static void nxt_serialize_block(nxt_context* ctx, nxt_block* blk) {
 }
 
 char* nxt_serialize(nxt_context* ctx) {
+  if (ctx->error) return "<!--[template error; check error log]-->";
   if (ctx->block_names[0].block) {
     nxt_serialize_block(ctx, ctx->block_names[0].block);
   }
@@ -396,6 +442,10 @@ static void nxt_serialize_block_to_cs(nxt_context* ctx, nxt_block* blk, nxweb_co
 }
 
 void nxt_serialize_to_cs(nxt_context* ctx, nxweb_composite_stream* cs) {
+  if (ctx->error) {
+    nxweb_composite_stream_append_bytes(cs, "<!--[template error; check error log]-->", sizeof("<!--[template error; check error log]-->")-1);
+    return;
+  }
   if (ctx->block_names[0].block) {
     nxt_serialize_block_to_cs(ctx, ctx->block_names[0].block, cs);
   }
