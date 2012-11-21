@@ -115,7 +115,7 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
             if (r<0) nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_RESPONSE_CHUNKED_ENCODING_ERROR);
             else if (r>0) hcp->response_body_complete=1;
           }
-          else if (first_body_chunk_size >= hcp->resp.content_length) {
+          else if (first_body_chunk_size >= hcp->resp.content_length && hcp->resp.content_length>=0) {
             hcp->response_body_complete=1;
           }
         }
@@ -295,7 +295,7 @@ static nxe_size_t resp_body_out_read(nxe_istream* is, nxe_ostream* os, void* ptr
       else {
         hcp->resp.content_received+=bytes_received2;
         bytes_received+=bytes_received2;
-        if (hcp->resp.content_received >= hcp->resp.content_length) {
+        if (hcp->resp.content_received >= hcp->resp.content_length && hcp->resp.content_length>=0) {
           hcp->response_body_complete=1;
         }
       }
@@ -361,7 +361,10 @@ static void data_error_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_d
        && (hcp->resp.content_length<0 && !hcp->resp.chunked_encoding)
        && (hcp->state!=HCP_IDLE)) {
     // content-length = until-close
-    request_complete(hcp, loop);
+    //request_complete(hcp, loop);
+    hcp->response_body_complete=1;
+    nxe_istream_set_ready(loop, &hcp->resp_body_out); // signal readiness for EOF
+    return;
   }
   else if (hcp->response_body_complete && !hcp->request_complete && data.i<0) {
     // queue error message until request is complete

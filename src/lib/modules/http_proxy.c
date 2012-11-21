@@ -219,6 +219,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->content_length=presp->content_length;
     if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked content
     resp->ssi_on=presp->ssi_on;
+    resp->templates_on=presp->templates_on;
     resp->headers=presp->headers;
     resp->backend_time_delta=presp->date? presp->date-nxe_get_current_http_time(loop) : 0;
     resp->date=presp->date? presp->date-resp->backend_time_delta : 0;

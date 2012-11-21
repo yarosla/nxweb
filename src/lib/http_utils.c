@@ -288,7 +288,8 @@ enum nxweb_http_header_name {
   NXWEB_HTTP_ACCEPT_ENCODING,
   NXWEB_HTTP_IF_MODIFIED_SINCE,
   NXWEB_HTTP_TRANSFER_ENCODING,
-  NXWEB_HTTP_X_SSI
+  NXWEB_HTTP_X_NXWEB_SSI,
+  NXWEB_HTTP_X_NXWEB_TEMPLATES
 };
 
 static int identify_http_header(const char* name, int name_len) {
@@ -318,7 +319,7 @@ static int identify_http_header(const char* name, int name_len) {
       if (first_char=='u') return nx_strcasecmp(name, "User-Agent")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_USER_AGENT;
       return NXWEB_HTTP_UNKNOWN;
     case 11:
-      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-SSI")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_X_SSI;
+      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-SSI")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_X_NXWEB_SSI;
       return NXWEB_HTTP_UNKNOWN;
     case 12:
       if (first_char=='c') return nx_strcasecmp(name, "Content-Type")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_CONTENT_TYPE;
@@ -337,6 +338,7 @@ static int identify_http_header(const char* name, int name_len) {
     case 17:
       if (first_char=='t') return nx_strcasecmp(name, "Transfer-Encoding")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_TRANSFER_ENCODING;
       if (first_char=='i') return nx_strcasecmp(name, "If-Modified-Since")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_IF_MODIFIED_SINCE;
+      if (first_char=='x') return nx_strcasecmp(name, "X-NXWEB-Templates")? NXWEB_HTTP_UNKNOWN : NXWEB_HTTP_X_NXWEB_TEMPLATES;
       return NXWEB_HTTP_UNKNOWN;
     default:
       return NXWEB_HTTP_UNKNOWN;
@@ -1135,7 +1137,8 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
       case NXWEB_HTTP_TRANSFER_ENCODING: transfer_encoding=value; break;
       case NXWEB_HTTP_CONNECTION: resp->keep_alive=!nx_strcasecmp(value, "keep-alive"); break;
       case NXWEB_HTTP_KEEP_ALIVE: /* skip */ break;
-      case NXWEB_HTTP_X_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
+      case NXWEB_HTTP_X_NXWEB_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
+      case NXWEB_HTTP_X_NXWEB_TEMPLATES: resp->templates_on=!nx_strcasecmp(value, "ON"); break;
       case NXWEB_HTTP_DATE: resp->date=nxweb_parse_http_time(value); break;
       case NXWEB_HTTP_LAST_MODIFIED: resp->last_modified=nxweb_parse_http_time(value); break;
       case NXWEB_HTTP_EXPIRES: resp->expires=nxweb_parse_http_time(value); break;
@@ -1185,39 +1188,80 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
 }
 
 
-static const char CHAR_MAP[256] = {
-	/* 0 */
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 1, 1, 0,
-	100, 101, 102, 103, 104, 105, 106, 107,   108, 109, 0, 0, 0, 0, 0, 0,
-	/* 64 */
-	0, 110, 111, 112, 113, 114, 115, 1,   1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1,   1, 1, 1, 0, 0, 0, 0, 1,
-	0, 110, 111, 112, 113, 114, 115, 1,   1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1,   1, 1, 1, 0, 0, 0, 1, 0,
-	/* 128 */
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	/* 192 */
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
-};
+static char _CHAR_MAP[256];
+
+#define _CM_LETTER 0x10
+#define _CM_DIGIT 0x20
+#define _CM_URI_CHAR 0x40
+#define _CM_FILE_PATH_CHAR 0x80
+#define _CM_HEX_VALUE_MASK 0xf
+
+static void init_char_map() __attribute__((constructor));
+
+static void init_char_map() {
+  unsigned c, m;
+  _CHAR_MAP[0]=0;
+  for (c=1; c<256; c++) {
+    m=0;
+    if (c>='0' && c<='9') m|=(c-'0')&_CM_HEX_VALUE_MASK;
+    if (c>='a' && c<='f') m|=(c-'a'+0xa)&_CM_HEX_VALUE_MASK;
+    if (c>='A' && c<='F') m|=(c-'A'+0xa)&_CM_HEX_VALUE_MASK;
+    if (c>='0' && c<='9') m|=_CM_DIGIT|_CM_URI_CHAR|_CM_FILE_PATH_CHAR;
+    if ((c>='a' && c<='z') || (c>='A' && c<='Z')) m|=_CM_LETTER|_CM_URI_CHAR|_CM_FILE_PATH_CHAR;
+    if (strchr(".-_~", c)) m|=_CM_URI_CHAR;
+    if (strchr(".-_/", c)) m|=_CM_FILE_PATH_CHAR;
+    _CHAR_MAP[c]=m;
+  }
+}
 
 // already defined in misc.h:
 // static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
 static inline char HEX_DIGIT_VALUE(char c) {
-  char n=CHAR_MAP[(unsigned char)c]-100;
-  return n<0? 0 : n;
+  return _CHAR_MAP[(unsigned char)c]&_CM_HEX_VALUE_MASK;
 }
 
 static inline int IS_URI_CHAR(char c) {
-  return CHAR_MAP[(unsigned char)c];
+  return _CHAR_MAP[(unsigned char)c]&_CM_URI_CHAR;
+}
+
+static inline int IS_FILE_PATH_CHAR(char c) {
+  return _CHAR_MAP[(unsigned char)c]&_CM_FILE_PATH_CHAR;
+}
+
+void _nxb_append_escape_url(nxb_buffer* nxb, const char* url) {
+  int max_size=strlen(url)*3;
+  nxb_make_room(nxb, max_size);
+
+  const char* pt=url;
+  char c;
+  while ((c=*pt++)) {
+    if (IS_URI_CHAR(c)) nxb_append_char_fast(nxb, c);
+    else {
+      nxb_append_char_fast(nxb, '%');
+      nxb_append_char_fast(nxb, HEX_DIGIT(c>>4));
+      nxb_append_char_fast(nxb, HEX_DIGIT(c));
+    }
+  }
+}
+
+void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path) {
+  if (!path || !*path) return;
+  int max_size=strlen(path)*3;
+  nxb_make_room(nxb, max_size);
+
+  const char* pt=path;
+  const char* pe=path+strlen(path);
+  int dir_path=(*(pe-1)=='/');
+  char c;
+  while ((c=*pt++)) {
+    if ((pt!=pe || !dir_path) && IS_FILE_PATH_CHAR(c)) nxb_append_char_fast(nxb, c); // trailing slash gets encoded too
+    else {
+      nxb_append_char_fast(nxb, '$');
+      nxb_append_char_fast(nxb, HEX_DIGIT(c>>4));
+      nxb_append_char_fast(nxb, HEX_DIGIT(c));
+    }
+  }
 }
 
 //int nxweb_response_append_escape_url(nxweb_request *req, const char* text) {
@@ -1328,6 +1372,20 @@ char* nxweb_url_decode(char* src, char* dst) { // can do it inplace
     char c=*s;
     if (c=='+') *d++=' ';
     else if (c=='%' && s[1] && s[2]) {
+      *d++=HEX_DIGIT_VALUE(s[1])<<4 | HEX_DIGIT_VALUE(s[2]);
+      s+=2;
+    }
+    else *d++=c;
+  }
+  *d='\0';
+  return dst;
+}
+
+char* _nxweb_file_path_decode(char* src, char* dst) { // can do it inplace
+  register char *d=(dst?dst:src), *s=src;
+  for (; *s; s++) {
+    char c=*s;
+    if (c=='$' && s[1] && s[2]) {
       *d++=HEX_DIGIT_VALUE(s[1])<<4 | HEX_DIGIT_VALUE(s[2]);
       s+=2;
     }

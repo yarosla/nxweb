@@ -101,6 +101,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
   if (resp->cache_key) {
     const char* cache_key=resp->cache_key;
     int cache_key_root_len=resp->cache_key_root_len;
+    _Bool have_file_key=(*cache_key!=' ');
     if (handler->num_filters) {
       int i;
       nxweb_filter* filter;
@@ -111,6 +112,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         if (filter->translate_cache_key(conn, req, resp, req->filter_data[i], cache_key, cache_key_root_len)==NXWEB_NEXT) continue;
         cache_key=req->filter_data[i]->cache_key;
         cache_key_root_len=req->filter_data[i]->cache_key_root_len;
+        if (*cache_key!=' ') have_file_key=1;
         assert(cache_key);
       }
     }
@@ -125,7 +127,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
       }
       else if (res!=NXWEB_MISS) return res;
     }
-    if (*cache_key==' ') { // still virtual key after translating
+    if (!have_file_key) { // only had virtual keys through translation
       if (resp->last_modified) {
         if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
           resp->status_code=304;
@@ -162,7 +164,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           for (i=handler->num_filters-1; i>=0; i--) {
             filter=handler->filters[i];
             fdata=req->filter_data[i];
-            if (filter->serve_from_cache && fdata && !fdata->bypass && fdata->cache_key) {
+            if (filter->serve_from_cache && fdata && !fdata->bypass && fdata->cache_key && *fdata->cache_key!=' ') {
               if (stat(fdata->cache_key, &fdata->cache_key_finfo)!=-1) {
                 if (fdata->cache_key_finfo.st_mtime >= resp->last_modified) {
                   if (filter->serve_from_cache(conn, req, resp, fdata)==NXWEB_NEXT) continue;
@@ -186,7 +188,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
             }
           }
         }
-        // we do have original resp->cache_key present on disk, but it needs to be served by handler, then re-processed by filters
+        // we do have original resp->cache_key present on disk, but it needs to be served by handler, then re-processed by filters;
         // do this in nxweb_start_sending_response()
       }
     }

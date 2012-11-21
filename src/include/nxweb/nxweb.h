@@ -404,6 +404,9 @@ void _nxweb_add_extra_response_headers(nxb_buffer* nxb, nxweb_http_header *heade
 void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response* resp);
 const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req);
 int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* end_of_headers);
+void _nxb_append_escape_url(nxb_buffer* nxb, const char* url);
+void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path);
+char* _nxweb_file_path_decode(char* src, char* dst); // can do it inplace
 
 #ifdef WITH_ZLIB
 extern nxweb_filter gzip_filter;

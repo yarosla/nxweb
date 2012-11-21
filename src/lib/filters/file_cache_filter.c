@@ -62,6 +62,7 @@ typedef struct fc_file_header {
 
   uint32_t gzip_encoded:1;
   uint32_t ssi_on:1;
+  uint32_t templates_on:1;
   int32_t status_code;
 
   nxf_data last_modified; // time_t
@@ -164,6 +165,7 @@ static int fc_store_begin(fc_filter_data* fcdata) {
   hdr->max_age.tim=resp->max_age;
   hdr->gzip_encoded=resp->gzip_encoded;
   hdr->ssi_on=resp->ssi_on;
+  hdr->templates_on=resp->templates_on;
 
   uint64_t idx=0;
   int len;
@@ -264,6 +266,7 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
   resp->max_age=hdr->max_age.tim;
   resp->gzip_encoded=hdr->gzip_encoded;
   resp->ssi_on=hdr->ssi_on;
+  resp->templates_on=hdr->templates_on;
 
   resp->content_type=hdr->content_type.cptrc;
   resp->content_charset=hdr->content_charset.cptrc;
@@ -421,12 +424,15 @@ static nxweb_result fc_translate_cache_key(struct nxweb_http_server_connection* 
   }
   assert(conn->handler->file_cache_dir);
   assert(root_len==1);
-  int plen=strlen(key)-root_len;
+  assert(key[root_len]=='/');
+
+  // encode cache key
+  nxb_buffer* nxb=req->nxb;
   int rlen=strlen(conn->handler->file_cache_dir);
-  char* fc_key=nxb_alloc_obj(req->nxb, rlen+41+1);
-  strcpy(fc_key, conn->handler->file_cache_dir);
-  sha1path(key+root_len, plen, fc_key+rlen);
-  fdata->cache_key=fc_key;
+  nxb_append(nxb, conn->handler->file_cache_dir, rlen);
+  _nxb_append_escape_file_path(nxb, key+root_len);
+  nxb_append_char(nxb, '\0');
+  fdata->cache_key=nxb_finish_stream(nxb, 0);
   fdata->cache_key_root_len=rlen;
   return NXWEB_OK;
 }

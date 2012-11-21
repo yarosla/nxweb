@@ -138,7 +138,7 @@ static void rbuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
   if (flags&NXEF_EOF) {
     //nxweb_log_error("rb[%p] received EOF", rb);
     rb->eof=1;
-    //nxe_istream_set_ready(os->super.loop, &rb->data_out);
+    nxe_istream_set_ready(os->super.loop, &rb->data_out); // even when no bytes received make sure we signal readiness on EOF
   }
 }
 
