@@ -158,16 +158,29 @@ static void retry_proxy_request(nxweb_http_proxy_request_data* rdata) {
   start_proxy_request(conn, &conn->hsp.req, rdata);
 }
 
+static void fail_proxy_request(nxweb_http_proxy_request_data* rdata) {
+  nxweb_http_server_connection* conn=rdata->conn;
+  if (rdata->response_sending_started) {
+    nxweb_http_server_connection_finalize(conn, 0);
+  }
+  else {
+    nxweb_http_response* resp=&conn->hsp._resp;
+    nxweb_send_http_error(resp, 504, "Gateway Timeout");
+    nxweb_start_sending_response(conn, resp);
+    rdata->proxy_request_complete=1; // ignore further backend errors
+  }
+}
+
 static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
   nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)timer-offsetof(nxweb_http_proxy_request_data, timer_backend));
   nxweb_http_server_connection* conn=rdata->conn;
   if (rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
-    // can't retry => do nothing continue processing
+    // can't retry => do nothing, continue processing until parent connection times out
     nxweb_log_error("backend connection %p timeout; can't retry", conn);
   }
   else if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT) {
     nxweb_log_error("backend connection %p timeout; retry count exceeded", conn);
-    nxweb_http_server_connection_finalize(conn, data.i==NXE_RDCLOSED);
+    fail_proxy_request(rdata);
   }
   else {
     nxweb_log_error("backend connection %p timeout; retrying", conn);
@@ -217,7 +230,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->status_code=presp->status_code;
     resp->content_type=presp->content_type;
     resp->content_length=presp->content_length;
-    if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked content
+    if (resp->content_length<0) resp->chunked_autoencode=1; // re-encode chunked or until-close content
     resp->ssi_on=presp->ssi_on;
     resp->templates_on=presp->templates_on;
     resp->headers=presp->headers;
@@ -243,7 +256,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
       nxe_unset_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
       if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT || rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
         nxweb_log_error("proxy request conn=%p rc=%d retry=%d error=%d; failed", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
-        nxweb_http_server_connection_finalize(conn, data.i==NXE_RDCLOSED);
+        fail_proxy_request(rdata);
       }
       else {
         if (rdata->retry_count || !(data.i==NXE_ERROR || data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED)) {

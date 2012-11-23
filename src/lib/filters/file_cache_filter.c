@@ -87,6 +87,7 @@ typedef struct fc_filter_data {
   nxe_ostream data_in;
   nxe_istream data_out;
   time_t expires_time;
+  time_t if_modified_since_original;
   int fd; // cache file
   char* tmp_key;
   nxweb_http_response* resp;
@@ -476,6 +477,7 @@ static nxweb_result fc_revalidate_cache(struct nxweb_http_server_connection* con
   }
   close(fcdata->fd);
   fcdata->fd=0;
+  fcdata->if_modified_since_original=req->if_modified_since;
   if (!req->if_modified_since) {
     req->if_modified_since=hdr->last_modified.tim;
     fcdata->added_ims=1;
@@ -514,6 +516,14 @@ static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxwe
         utime(fcdata->fdata.cache_key, &ut);
         resp->expires=expires_time;
       }
+    }
+    return NXWEB_OK;
+  }
+  else if (resp->status_code/100==5) { // backend error => use cached data
+    req->if_modified_since=fcdata->if_modified_since_original;
+    if (fc_serve_from_cache(conn, req, resp, fdata)!=NXWEB_OK) {
+      nxweb_send_http_error(resp, 500, "Internal Server Error");
+      return NXWEB_ERROR;
     }
     return NXWEB_OK;
   }
