@@ -29,6 +29,7 @@ endif
 
 if WITH_IMAGEMAGICK
 libnxweb_la_SOURCES += filters/image_filter.c
+libnxweb_la_SOURCES += filters/draw_filter.c
 endif
 
 libnxweb_la_LDFLAGS = -version-info $(NXWEB_LIB_VERSION_INFO)

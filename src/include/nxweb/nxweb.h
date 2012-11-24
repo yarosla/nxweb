@@ -257,7 +257,7 @@ static inline const char* nx_simple_map_get(nx_simple_map_entry* map, const char
 
 static inline const char* nx_simple_map_get_nocase(nx_simple_map_entry* map, const char* name) {
   while (map) {
-    if (strcasecmp(map->name, name)==0) return map->value;
+    if (nx_strcasecmp(map->name, name)==0) return map->value;
     map=map->next;
   }
   return 0;
@@ -266,6 +266,36 @@ static inline const char* nx_simple_map_get_nocase(nx_simple_map_entry* map, con
 static inline nx_simple_map_entry* nx_simple_map_add(nx_simple_map_entry* map, nx_simple_map_entry* new_entry) {
   new_entry->next=map;
   return new_entry; // returns pointer to new map
+}
+
+static inline nx_simple_map_entry* nx_simple_map_remove(nx_simple_map_entry** map, const char* name) {
+  nx_simple_map_entry* me=*map;
+  nx_simple_map_entry* prev=0;
+  while (me) {
+    if (strcmp(me->name, name)==0) {
+      if (prev) prev->next=me->next;
+      else *map=me->next;
+      return me;
+    }
+    prev=me;
+    me=me->next;
+  }
+  return 0; // returns pointer to removed entry; modifies map
+}
+
+static inline nx_simple_map_entry* nx_simple_map_remove_nocase(nx_simple_map_entry** map, const char* name) {
+  nx_simple_map_entry* me=*map;
+  nx_simple_map_entry* prev=0;
+  while (me) {
+    if (nx_strcasecmp(me->name, name)==0) {
+      if (prev) prev->next=me->next;
+      else *map=me->next;
+      return me;
+    }
+    prev=me;
+    me=me->next;
+  }
+  return 0; // returns pointer to removed entry; modifies map
 }
 
 static inline nx_simple_map_entry* nx_simple_map_itr_begin(nx_simple_map_entry* map) {
@@ -413,6 +443,7 @@ extern nxweb_filter gzip_filter;
 #endif
 #ifdef WITH_IMAGEMAGICK
 extern nxweb_filter image_filter;
+extern nxweb_filter draw_filter;
 #endif
 extern nxweb_filter ssi_filter;
 extern nxweb_filter templates_filter;

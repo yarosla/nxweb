@@ -59,7 +59,6 @@ struct nxweb_http_server_connection;
 typedef nxweb_result (*nxweb_handler_callback)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
 
 typedef struct nxweb_filter_data {
-  void (*finalize)(struct nxweb_filter_data* fdata);
   const char* cache_key;
   int cache_key_root_len;
   struct stat cache_key_finfo;
