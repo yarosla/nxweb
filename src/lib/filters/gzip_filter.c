@@ -111,19 +111,26 @@ void myfree(void* q, void* p) {
 
 #define BUF_SIZE 8192
 
+static int gzip_file_fd(const char* src, int sfd, const char* dst, struct stat* src_finfo);
+
 static int gzip_file(const char* src, const char* dst, struct stat* src_finfo) {
+  int sfd=open(src, O_RDONLY);
+  if (sfd==-1) return -1;
+  int result=gzip_file_fd(src, sfd, dst, src_finfo);
+  close(sfd);
+  return result;
+}
+
+static int gzip_file_fd(const char* src, int sfd, const char* dst, struct stat* src_finfo) {
   struct stat _finfo;
   if (!src_finfo) {
-    if (stat(src, &_finfo)==-1) {
+    if (fstat(sfd, &_finfo)==-1) {
       return -1;
     }
     src_finfo=&_finfo;
   }
-  int sfd=open(src, O_RDONLY);
-  if (sfd==-1) return -1;
   int dfd=open(dst, O_WRONLY|O_CREAT|O_TRUNC, 0644);
   if (dfd==-1) {
-    close(sfd);
     return -1;
   }
   z_stream zs;
@@ -138,12 +145,12 @@ static int gzip_file(const char* src, const char* dst, struct stat* src_finfo) {
   void* ibuf=nx_alloc(BUF_SIZE);
   void* obuf=nx_alloc(BUF_SIZE);
   ssize_t cnt;
+  lseek(sfd, 0, SEEK_SET);
   do {
     cnt=read(sfd, ibuf, BUF_SIZE);
     if (cnt<0) {
       nx_free(ibuf);
       nx_free(obuf);
-      close(sfd);
       close(dfd);
       unlink(dst);
       return -1;
@@ -157,7 +164,6 @@ static int gzip_file(const char* src, const char* dst, struct stat* src_finfo) {
       if (write(dfd, obuf, BUF_SIZE-zs.avail_out)!=BUF_SIZE-zs.avail_out) {
         nx_free(ibuf);
         nx_free(obuf);
-        close(sfd);
         close(dfd);
         unlink(dst);
         return -1;
@@ -168,7 +174,6 @@ static int gzip_file(const char* src, const char* dst, struct stat* src_finfo) {
 
   nx_free(ibuf);
   nx_free(obuf);
-  close(sfd);
   close(dfd);
   struct utimbuf ut={.actime=src_finfo->st_atime, .modtime=src_finfo->st_mtime};
   utime(dst, &ut);
@@ -210,17 +215,20 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   if (resp->sendfile_path) { // gzip on disk
     assert(fdata->cache_key);
+    assert(resp->sendfile_fd>0);
     assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
     int rlen=fdata->cache_key_root_len;
     const char* fpath=fdata->cache_key;
 
     if (nxweb_mkpath((char*)fpath, 0755)<0
-     || gzip_file(resp->sendfile_path, fpath, &resp->sendfile_info)<0) {
+     || gzip_file_fd(resp->sendfile_path, resp->sendfile_fd, fpath, &resp->sendfile_info)<0) {
       nxweb_log_error("nxweb_mkpath() or gzip_file() failed for %s", resp->sendfile_path);
       return NXWEB_ERROR;
     }
     nxweb_log_error("gzipped %s", resp->sendfile_path);
 
+    close(resp->sendfile_fd);
+    resp->sendfile_fd=0;
     resp->sendfile_path=fpath;
     resp->sendfile_path_root_len=rlen;
     if (stat(fpath, &resp->sendfile_info)==-1) {
@@ -232,9 +240,11 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
     resp->last_modified=resp->sendfile_info.st_mtime;
     resp->gzip_encoded=1;
     resp->content_out=0; // reset content_out
+    resp->content=0;
     return NXWEB_OK;
   }
   else if (resp->content && resp->content_length>0) { // gzip in memory
+    assert(!resp->sendfile_fd);
     if (!resp->mtype) {
       resp->mtype=nxweb_get_mime_type(resp->content_type);
     }
@@ -249,6 +259,7 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
     resp->content_length=zsize;
     resp->gzip_encoded=1;
     resp->content_out=0; // reset content_out
+    resp->sendfile_path=0;
     return NXWEB_OK;
   }
   // TODO gzip istream

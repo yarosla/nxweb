@@ -544,6 +544,11 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
     return NXWEB_ERROR;
   }
 
+  if (resp->sendfile_fd>0) {
+    close(resp->sendfile_fd);
+  }
+  resp->sendfile_fd=0;
+
   MagickWand* image=NewMagickWand();
   if (!MagickReadImage(image, resp->sendfile_path)) {
     DestroyMagickWand(image);
@@ -589,6 +594,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
   resp->content_length=resp->sendfile_info.st_size;
   resp->last_modified=resp->sendfile_info.st_mtime;
   resp->content_out=0; // reset content_out
+  resp->content=0;
   return NXWEB_OK;
 }
 

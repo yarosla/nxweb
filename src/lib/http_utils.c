@@ -856,6 +856,9 @@ void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* locat
   resp->content_type=0;
   resp->content_length=0;
   resp->sendfile_path=0;
+  if (resp->sendfile_fd>0) {
+    close(resp->sendfile_fd);
+  }
   resp->sendfile_fd=0;
   resp->content_out=0;
 
@@ -906,6 +909,9 @@ void nxweb_send_http_error(nxweb_http_response *resp, int code, const char* mess
   resp->content_length=size;
   resp->content_type="text/html";
   resp->sendfile_path=0;
+  if (resp->sendfile_fd>0) {
+    close(resp->sendfile_fd);
+  }
   resp->sendfile_fd=0;
   resp->content_out=0;
   //resp->keep_alive=0; // close connection after error response

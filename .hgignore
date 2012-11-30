@@ -58,3 +58,4 @@ _strace
 ^src/lib/Makefile$
 ^src/lib/nxweb\.pc$
 ^ssl/Makefile$
+.*\.sublime-\w+$
