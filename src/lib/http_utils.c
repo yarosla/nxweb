@@ -1025,6 +1025,22 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
     nxb_append_str(nxb, "\r\n");
   }
 
+  if (req->uid) {
+    nxb_append_str(nxb, "X-NXWEB-Request-ID: ");
+    nxb_append_uint_hex_zeropad(nxb, req->uid, 16);
+    nxb_append_str(nxb, "\r\n");
+  }
+
+  if (req->parent_req) {
+    nxweb_http_request* preq=req->parent_req;
+    while (preq->parent_req) preq=preq->parent_req; // find root request
+    if (preq->uid) {
+      nxb_append_str(nxb, "X-NXWEB-Root-Request-ID: ");
+      nxb_append_uint_hex_zeropad(nxb, preq->uid, 16);
+      nxb_append_str(nxb, "\r\n");
+    }
+  }
+
   if (req->user_agent) {
     nxb_append_str(nxb, "User-Agent: ");
     nxb_append_str(nxb, req->user_agent);

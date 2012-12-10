@@ -142,6 +142,12 @@ static inline void nxb_append_uint(nxb_buffer* nxb, unsigned long n) {
   nxb->ptr+=plen;
 }
 
+static inline void nxb_append_uint_hex_zeropad(nxb_buffer* nxb, unsigned long n, int num_digits) {
+  nxb_make_room(nxb, num_digits);
+  char* p=uint_to_hex_string_zeropad(n, nxb->ptr, num_digits, 0);
+  nxb->ptr+=num_digits;
+}
+
 static inline void nxb_blank(nxb_buffer* nxb, int size) {
   if (nxb->end - nxb->ptr < size) {
     if (nxb_realloc_chunk(nxb, size)) return;

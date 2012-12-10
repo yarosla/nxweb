@@ -133,6 +133,9 @@ typedef struct nxweb_http_request {
   nxweb_http_parameter* parameters;
   nxweb_http_cookie* cookies;
 
+  struct nxweb_http_request* parent_req; // for subrequests
+  uint64_t uid;
+
   struct nxweb_filter_data* filter_data[NXWEB_MAX_FILTERS];
 
   nxweb_chunked_decoder_state cdstate;

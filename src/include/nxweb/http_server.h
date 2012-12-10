@@ -20,6 +20,9 @@
 #ifndef NXWEB_SERVER_H
 #define	NXWEB_SERVER_H
 
+#include "misc.h"
+
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -128,6 +131,8 @@ typedef struct nxweb_http_server_listening_socket {
 
 typedef struct nxweb_net_thread_data {
   pthread_t thread_id;
+  uint8_t thread_num; // up to 256 net threads
+  uint64_t unique_num;
   nxe_loop* loop;
   nxe_eventfd_source shutdown_efs;
   nxweb_http_server_listening_socket listening_sock[NXWEB_MAX_LISTEN_SOCKETS];
@@ -244,6 +249,16 @@ void nxweb_http_server_connection_finalize_subrequests(nxweb_http_server_connect
 
 static inline nxe_time_t nxweb_get_loop_time(nxweb_http_server_connection* conn) {
   return conn->tdata->loop->current_time;
+}
+
+static inline uint64_t nxweb_generate_unique_id() {
+  nxweb_net_thread_data* tdata=_nxweb_net_thread_data;
+  tdata->unique_num++;
+  // unique for one nxweb instance within ~2 years time frame if called less than 68 billion times per second
+  uint64_t uid=(((uint64_t)tdata->thread_num)<<56) // thread_num is highest byte
+          | ((((uint64_t)tdata->loop->current_time) & (0xfffff<<20))<<16) // time value: changes ~ once per second, repeats after ~ two year's time
+          | (tdata->unique_num & 0xfffffffff); // repeats after 2^36 = 68'719'476'736 generations
+  return uid;
 }
 
 nxweb_result nxweb_cache_try(nxweb_http_server_connection* conn, nxweb_http_response* resp, const char* key, time_t if_modified_since, time_t revalidated_mtime);

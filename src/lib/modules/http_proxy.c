@@ -116,6 +116,8 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     preq->x_forwarded_for=conn->remote_addr;
     preq->x_forwarded_host=req->host;
     preq->x_forwarded_ssl=nxweb_server_config.listen_config[conn->lconf_idx].secure;
+    preq->uid=req->uid;
+    preq->parent_req=req->parent_req;
     nxd_http_proxy_start_request(hpx, preq);
     nxe_init_subscriber(&rdata->proxy_events_sub, &nxweb_http_server_proxy_events_sub_class);
     nxe_subscribe(loop, &hpx->hcp.events_pub, &rdata->proxy_events_sub);

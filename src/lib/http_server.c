@@ -563,7 +563,7 @@ nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_serv
   //nxweb_http_server_connection_connect(conn, loop, client_fd);
   nxe_subscribe(loop, &conn->hsp.events_pub, &conn->events_sub);
   if (!host) host=parent_conn->hsp.req.host;
-  nxweb_http_server_proto_subrequest_execute(&conn->hsp, host, uri);
+  nxweb_http_server_proto_subrequest_execute(&conn->hsp, host, uri, &parent_conn->hsp.req);
   return conn;
 }
 
@@ -843,6 +843,7 @@ void nxweb_run() {
 
   nxweb_net_thread_data* tdata;
   for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
+    tdata->thread_num=i;
     pthread_attr_t tattr;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);

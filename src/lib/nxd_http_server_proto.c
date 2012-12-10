@@ -131,6 +131,7 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
       if ((end_of_headers=_nxweb_find_end_of_http_headers(read_buf, read_buf_size, &start_of_body))) {
         nxb_finish_stream(hsp->nxb, 0);
         hsp->req.nxb=hsp->nxb;
+        hsp->req.uid=nxweb_generate_unique_id();
         if (_nxweb_parse_http_request(&hsp->req, read_buf, end_of_headers)) {
           // bad request
           nxe_unset_timer(loop, NXWEB_TIMER_READ, &hsp->timer_read);

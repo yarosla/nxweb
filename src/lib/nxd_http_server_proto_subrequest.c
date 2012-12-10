@@ -112,12 +112,14 @@ void nxd_http_server_proto_subrequest_init(nxd_http_server_proto* hsp, nxp_pool*
   hsp->state=HSP_WAITING_FOR_REQUEST;
 }
 
-void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri) {
+void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri, nxweb_http_request* parent_req) {
   hsp->nxb=nxp_alloc(hsp->nxb_pool);
   nxb_init(hsp->nxb, NXWEB_CONN_NXB_SIZE);
   hsp->state=HSP_RECEIVING_HEADERS;
   nxweb_http_request* req=&hsp->req;
   req->nxb=hsp->nxb;
+  req->parent_req=parent_req;
+  req->uid=nxweb_generate_unique_id();
   req->method="GET";
   req->get_method=1;
   req->host=host;
