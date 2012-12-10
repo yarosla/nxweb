@@ -115,6 +115,10 @@ static const nxweb_mime_type const mime_types[] = {
   {"qt", "video/quicktime", 0},
   {"asf", "video/x-ms-asf", 0},
   {"asx", "video/x-ms-asf", 0},
+  {"woff", "application/x-font-woff", 0},
+  {"eot", "application/vnd.ms-fontobject", 0},
+  {"ttf", "application/x-font-ttf", 0},
+  {"otf", "application/x-font-otf", 0},
   {"dat", "application/octet-stream", 0},
   {0}
 };
