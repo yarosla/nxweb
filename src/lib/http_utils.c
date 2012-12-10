@@ -82,8 +82,9 @@ time_t nxweb_parse_http_time(const char* str) { // must be GMT
   switch (*p++) {
     case 'J':
       if (*p=='a') {
-        tm.tm_mon=0;
+        p++;
         if (*p++!='n') return 0;
+        tm.tm_mon=0;
         break;
       }
       if (*p++!='u') return 0;
@@ -106,13 +107,15 @@ time_t nxweb_parse_http_time(const char* str) { // must be GMT
       break;
     case 'A':
       if (*p=='p') {
-        tm.tm_mon=3;
+        p++;
         if (*p++!='r') return 0;
+        tm.tm_mon=3;
         break;
       }
       if (*p=='u') {
-        tm.tm_mon=7;
+        p++;
         if (*p++!='g') return 0;
+        tm.tm_mon=7;
         break;
       }
       return 0;
