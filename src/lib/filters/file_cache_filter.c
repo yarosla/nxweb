@@ -520,12 +520,14 @@ static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxwe
     return NXWEB_OK;
   }
   else if (resp->status_code/100==5) { // backend error => use cached data
-    req->if_modified_since=fcdata->if_modified_since_original;
-    if (fc_serve_from_cache(conn, req, resp, fdata)!=NXWEB_OK) {
-      nxweb_send_http_error(resp, 500, "Internal Server Error");
-      return NXWEB_ERROR;
+    if (fdata->cache_key_finfo.st_mtime) { // cache file exists?
+      req->if_modified_since=fcdata->if_modified_since_original;
+      if (fc_serve_from_cache(conn, req, resp, fdata)!=NXWEB_OK) {
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+      return NXWEB_OK;
     }
-    return NXWEB_OK;
   }
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   if (resp->no_cache) return NXWEB_OK;
