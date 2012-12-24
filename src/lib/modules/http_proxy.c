@@ -87,6 +87,7 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
   if (hpx) {
     rdata->hpx=hpx;
     nxweb_http_request* preq=nxd_http_proxy_prepare(hpx);
+    if (handler->proxy_copy_host) preq->host=req->host;
     preq->method=req->method;
     preq->head_method=req->head_method;
     preq->content_length=req->content_length;

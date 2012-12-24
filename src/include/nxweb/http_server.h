@@ -98,6 +98,7 @@ typedef struct nxweb_handler {
   const char* key;
   const struct nxweb_image_filter_cmd* allowed_cmds;
   _Bool cache:1;
+  _Bool proxy_copy_host:1;
   int idx;
   struct nxweb_handler* next;
   nxweb_filter* filters[NXWEB_MAX_FILTERS];

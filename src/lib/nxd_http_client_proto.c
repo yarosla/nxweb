@@ -483,7 +483,7 @@ void nxd_http_client_proto_rearm(nxd_http_client_proto* hcp) {
   hcp->nxb=0;
   memset(&hcp->_req, 0, sizeof(hcp->_req));
   hcp->_req.nxb=hcp->nxb;
-  hcp->_req.host=hcp->host;
+  hcp->_req.host=0;
   hcp->resp.nxb=hcp->nxb;
   while (hcp->events_pub.sub) nxe_unsubscribe(&hcp->events_pub, hcp->events_pub.sub);
   if (hcp->req_body_in.pair) nxe_disconnect_streams(hcp->req_body_in.pair, &hcp->req_body_in);
