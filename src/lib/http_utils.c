@@ -1276,11 +1276,9 @@ void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path) {
   nxb_make_room(nxb, max_size);
 
   const char* pt=path;
-  const char* pe=path+strlen(path);
-  int dir_path=(*(pe-1)=='/');
   char c;
   while ((c=*pt++)) {
-    if ((pt!=pe || !dir_path) && IS_FILE_PATH_CHAR(c)) nxb_append_char_fast(nxb, c); // trailing slash gets encoded too
+    if (IS_FILE_PATH_CHAR(c)) nxb_append_char_fast(nxb, c); // trailing slash gets encoded too
     else {
       nxb_append_char_fast(nxb, '$');
       nxb_append_char_fast(nxb, HEX_DIGIT(c>>4));

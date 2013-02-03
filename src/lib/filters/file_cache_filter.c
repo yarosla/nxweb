@@ -432,7 +432,7 @@ static nxweb_result fc_translate_cache_key(struct nxweb_http_server_connection* 
   int rlen=strlen(conn->handler->file_cache_dir);
   nxb_append(nxb, conn->handler->file_cache_dir, rlen);
   _nxb_append_escape_file_path(nxb, key+root_len);
-  nxb_append_char(nxb, '\0');
+  nxb_append(nxb, ".nxc", sizeof(".nxc")); // including null-terminator
   fdata->cache_key=nxb_finish_stream(nxb, 0);
   fdata->cache_key_root_len=rlen;
   return NXWEB_OK;
