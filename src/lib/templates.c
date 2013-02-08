@@ -446,7 +446,5 @@ void nxt_serialize_to_cs(nxt_context* ctx, nxweb_composite_stream* cs) {
     nxweb_composite_stream_append_bytes(cs, "<!--[template error; check error log]-->", sizeof("<!--[template error; check error log]-->")-1);
     return;
   }
-  if (ctx->block_names[0].block) {
-    nxt_serialize_block_to_cs(ctx, ctx->block_names[0].block, cs);
-  }
+  nxt_serialize_block_to_cs(ctx, ctx->block_names[0].block, cs);
 }
