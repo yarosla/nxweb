@@ -232,7 +232,7 @@ static void fbuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
       const void* ptr=nx_file_reader_get_mbuf_ptr(&fb->fr, fb->fd, fb->end, fb->offset, &fr_size);
       if (fr_size!=size) flags=0; // no EOF yet
       if (ptr) {
-        nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
+        nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, fr_size, &flags);
         if (bytes_sent>0) {
           fb->offset+=bytes_sent;
         }
