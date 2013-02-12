@@ -22,6 +22,9 @@
 #define BN_NONE_ID (-1)
 #define BN_PARENT_ID (-2)
 
+//#define MISSING_BLOCK_STUB "<!--[missing block]-->"
+#define MISSING_BLOCK_STUB ""
+
 void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader) {
   memset(ctx, 0, sizeof(*ctx));
   ctx->nxb=nxb;
@@ -394,7 +397,7 @@ void nxt_merge(nxt_context* ctx) {
 
 static void nxt_serialize_block(nxt_context* ctx, nxt_block* blk) {
   if (!blk) {
-    nxb_append_str(ctx->nxb, "<!--[missing block]-->");
+    nxb_append_str(ctx->nxb, MISSING_BLOCK_STUB);
     return;
   }
   nxt_value_part* vp;
@@ -422,7 +425,7 @@ char* nxt_serialize(nxt_context* ctx) {
 
 static void nxt_serialize_block_to_cs(nxt_context* ctx, nxt_block* blk, nxweb_composite_stream* cs) {
   if (!blk) {
-    nxweb_composite_stream_append_bytes(cs, "<!--[missing block]-->", sizeof("<!--[missing block]-->")-1);
+    nxweb_composite_stream_append_bytes(cs, MISSING_BLOCK_STUB, sizeof(MISSING_BLOCK_STUB)-1);
     return;
   }
   nxt_value_part* vp;
