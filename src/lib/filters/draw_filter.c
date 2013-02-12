@@ -20,6 +20,7 @@
 #include "nxweb.h"
 
 #include <wand/MagickWand.h>
+#include <math.h>
 
 
 static int on_startup() {
