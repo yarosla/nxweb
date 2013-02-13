@@ -1272,17 +1272,33 @@ void _nxb_append_escape_url(nxb_buffer* nxb, const char* url) {
 
 void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path) {
   if (!path || !*path) return;
-  int max_size=strlen(path)*3;
+  int path_len=strlen(path);
+  int max_size=path_len*3+path_len/250;
   nxb_make_room(nxb, max_size);
 
   const char* pt=path;
   char c;
+  int fname_len_count=0;
   while ((c=*pt++)) {
-    if (IS_FILE_PATH_CHAR(c)) nxb_append_char_fast(nxb, c); // trailing slash gets encoded too
+    if (c=='/') {
+      fname_len_count=0;
+      nxb_append_char_fast(nxb, c);
+    }
     else {
-      nxb_append_char_fast(nxb, '$');
-      nxb_append_char_fast(nxb, HEX_DIGIT(c>>4));
-      nxb_append_char_fast(nxb, HEX_DIGIT(c));
+      if (fname_len_count>=250) { // break long names into ~250 char segments (ext3/4 limit)
+        nxb_append_char_fast(nxb, '/');
+        fname_len_count=0;
+      }
+      if (IS_FILE_PATH_CHAR(c)) {
+        nxb_append_char_fast(nxb, c);
+        fname_len_count++;
+      }
+      else {
+        nxb_append_char_fast(nxb, '$');
+        nxb_append_char_fast(nxb, HEX_DIGIT(c>>4));
+        nxb_append_char_fast(nxb, HEX_DIGIT(c));
+        fname_len_count+=3;
+      }
     }
   }
 }
