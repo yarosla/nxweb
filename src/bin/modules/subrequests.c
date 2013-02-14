@@ -117,6 +117,7 @@ NXWEB_HANDLER(curtime, "/curtime", .on_request=curtime_on_request,
         .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS, .priority=1000,
         .filters={&file_cache_filter}, .file_cache_dir="www/cache/curtime");
 
+#ifdef WITH_IMAGEMAGICK
 
 static nxweb_result captcha_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
@@ -127,3 +128,5 @@ static nxweb_result captcha_on_request(nxweb_http_server_connection* conn, nxweb
 NXWEB_HANDLER(captcha, "/captcha", .on_request=captcha_on_request,
         .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS, .priority=1000,
         .filters={&draw_filter}, .param.cptrc="www/fonts/Sansation/Sansation_Bold.ttf");
+
+#endif
