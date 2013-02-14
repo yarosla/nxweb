@@ -127,6 +127,6 @@ static nxweb_result captcha_on_request(nxweb_http_server_connection* conn, nxweb
 
 NXWEB_HANDLER(captcha, "/captcha", .on_request=captcha_on_request,
         .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS, .priority=1000,
-        .filters={&draw_filter}, .param.cptrc="www/fonts/Sansation/Sansation_Bold.ttf");
+        .filters={&draw_filter}, .font="www/fonts/Sansation/Sansation_Bold.ttf");
 
 #endif

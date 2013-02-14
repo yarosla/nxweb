@@ -96,6 +96,7 @@ typedef struct nxweb_handler {
   const char* file_cache_dir;
   const char* img_dir;
   const char* key;
+  const char* font;
   const struct nxweb_image_filter_cmd* allowed_cmds;
   _Bool cache:1;
   _Bool proxy_copy_host:1;

@@ -120,7 +120,7 @@ static nxweb_result draw_do_filter(struct nxweb_http_server_connection* conn, nx
     MagickCompositeImage(bg, rect, XorCompositeOp, 0, 0);
   }
   ClearDrawingWand(d_wand);
-  if (conn->handler->param.cptrc) DrawSetFont(d_wand, conn->handler->param.cptrc);
+  if (conn->handler->font) DrawSetFont(d_wand, conn->handler->font);
   DrawSetFontSize(d_wand, 30);
   DrawSetFillColor(d_wand, p_black);
   char t[2];
@@ -151,6 +151,7 @@ static nxweb_result draw_do_filter(struct nxweb_http_server_connection* conn, nx
   resp->content=blob;
 
   // reset previous response content
+  resp->content_out=0;
   resp->sendfile_path=0;
   if (resp->sendfile_fd) {
     // save it to close on finalize
