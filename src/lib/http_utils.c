@@ -920,7 +920,7 @@ void nxweb_send_http_error(nxweb_http_response *resp, int code, const char* mess
   //resp->keep_alive=0; // close connection after error response
 }
 
-int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, const struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset) {
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded, off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset) {
   if (fpath==0) { // cancel sendfile
     if (resp->sendfile_fd) close(resp->sendfile_fd);
     resp->sendfile_fd=0;
@@ -947,7 +947,6 @@ int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, 
   //int fd=open(fpath, O_RDONLY|O_NONBLOCK);
   //if (fd==-1) return -1;
   resp->sendfile_path=fpath;
-  resp->sendfile_path_root_len=fpath_root_len;
   //resp->sendfile_fd=fd;
   resp->sendfile_offset=offset;
   resp->content_length=size? size : finfo->st_size-offset;
@@ -1270,10 +1269,13 @@ void _nxb_append_escape_url(nxb_buffer* nxb, const char* url) {
   }
 }
 
-void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path) {
+// allow up to ~22 chars to be appended as extensions
+#define MAX_PATH_SEGMENT 230
+
+void _nxb_append_encode_file_path(nxb_buffer* nxb, const char* path) {
   if (!path || !*path) return;
   int path_len=strlen(path);
-  int max_size=path_len*3+path_len/250;
+  int max_size=path_len*3+path_len/MAX_PATH_SEGMENT;
   nxb_make_room(nxb, max_size);
 
   const char* pt=path;
@@ -1285,19 +1287,19 @@ void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path) {
       nxb_append_char_fast(nxb, c);
     }
     else {
-      if (fname_len_count>=250) { // break long names into ~250 char segments (ext3/4 limit)
+      if (fname_len_count>=MAX_PATH_SEGMENT) { // break long names into ~MAX_PATH_SEGMENT char segments (ext3/4 limit)
         nxb_append_char_fast(nxb, '/');
         fname_len_count=0;
       }
-      if (IS_FILE_PATH_CHAR(c)) {
-        nxb_append_char_fast(nxb, c);
-        fname_len_count++;
-      }
-      else {
+      if ((c=='.' && fname_len_count==0) || !IS_FILE_PATH_CHAR(c)) {
         nxb_append_char_fast(nxb, '$');
         nxb_append_char_fast(nxb, HEX_DIGIT(c>>4));
         nxb_append_char_fast(nxb, HEX_DIGIT(c));
-        fname_len_count+=3;
+        fname_len_count+=3; // might go over MAX_PATH_SEGMENT by 2 chars but that is OK
+      }
+      else {
+        nxb_append_char_fast(nxb, c);
+        fname_len_count++;
       }
     }
   }
@@ -1420,31 +1422,41 @@ char* nxweb_url_decode(char* src, char* dst) { // can do it inplace
   return dst;
 }
 
-char* _nxweb_file_path_decode(char* src, char* dst) { // can do it inplace
-  register char *d=(dst?dst:src), *s=src;
-  for (; *s; s++) {
-    char c=*s;
-    if (c=='$' && s[1] && s[2]) {
-      *d++=HEX_DIGIT_VALUE(s[1])<<4 | HEX_DIGIT_VALUE(s[2]);
-      s+=2;
-    }
-    else *d++=c;
-  }
-  *d='\0';
-  return dst;
-}
-
 int nxweb_remove_dots_from_uri_path(char* path) { // returns 0=OK
   if (!*path) return 0; // end of path
   if (*path!='/') return -1; // invalid path
-  while (1) {
-    if (path[1]=='.' && path[2]=='.' && (path[3]=='/' || path[3]=='\0')) { // /..(/.*)?$
-      memmove(path, path+3, strlen(path+3)+1);
-      return 1;
+
+  char* src=path+1; // skip first '/'
+  char* dst=src;
+
+  while (*src) {
+    // process path segment
+    if (*src=='/') { // two '/' in a row => skip
+      src++;
+      continue;
     }
-    char* p1=strchr(path+1, '/');
-    if (!p1) return 0;
-    if (!nxweb_remove_dots_from_uri_path(p1)) return 0;
-    memmove(path, p1, strlen(p1)+1);
+    if (*src=='.') {
+      switch (src[1]) {
+        case '/': src+=2; continue;
+        case '\0': src++; continue;
+        case '.':
+          if (src[2]=='/' || src[2]=='\0') { // /..(/.*)?$
+            if (dst==path+1) { // we are at root already
+              return -1; // invalid path
+            }
+            // cut last path segment from dst
+            while ((--dst)[-1] != '/');
+            continue;
+          }
+          break;
+      }
+    }
+    // copy segment
+    *dst++=*src++;
+    while (*src && *src!='/') {
+      *dst++=*src++;
+    }
+    *dst++=*src++;
   }
+  return 0;
 }

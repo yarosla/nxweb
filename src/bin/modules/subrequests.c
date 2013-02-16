@@ -104,11 +104,11 @@ static nxweb_result curtime_on_request(nxweb_http_server_connection* conn, nxweb
 
 static nxweb_result curtime_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
-  char* key=nxb_alloc_obj(req->nxb, strlen(req->uri)+2);
-  *key=' ';
-  strcpy(key+1, req->uri);
-  resp->cache_key=key;
-  resp->cache_key_root_len=1;
+  _nxb_append_encode_file_path(req->nxb, req->host);
+  if (conn->secure) nxb_append_str(req->nxb, "_s");
+  _nxb_append_encode_file_path(req->nxb, req->uri);
+  nxb_append_char(req->nxb, '\0');
+  resp->cache_key=nxb_finish_stream(req->nxb, 0);
   return NXWEB_OK;
 }
 

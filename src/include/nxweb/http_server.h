@@ -61,23 +61,30 @@ struct nxweb_http_server_connection;
 
 typedef nxweb_result (*nxweb_handler_callback)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
 
+struct fc_filter_data;
+
 typedef struct nxweb_filter_data {
   const char* cache_key;
-  int cache_key_root_len;
-  struct stat cache_key_finfo;
+  struct fc_filter_data* fcache;
   unsigned bypass:1;
+  unsigned delay_start:1;
 } nxweb_filter_data;
 
 typedef struct nxweb_filter {
   const char* name;
   nxweb_filter_data* (*init)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
   const char* (*decode_uri)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri);
-  nxweb_result (*translate_cache_key)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len);
-  nxweb_result (*serve_from_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
-  nxweb_result (*revalidate_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  nxweb_result (*translate_cache_key)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key);
+  nxweb_result (*serve_from_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time);
   nxweb_result (*do_filter)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
   void (*finalize)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
 } nxweb_filter;
+
+struct fc_filter_data* _nxweb_fc_create(nxb_buffer* nxb, const char* cache_dir);
+void _nxweb_fc_init(struct fc_filter_data* fcdata, const char* cache_dir);
+void _nxweb_fc_finalize(struct fc_filter_data* fcdata);
+nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* conn, struct nxweb_http_request* req, struct nxweb_http_response* resp, const char* cache_key, struct fc_filter_data* fcdata, time_t check_time);
+nxweb_result _nxweb_fc_do_filter(struct nxweb_http_server_connection* conn, struct nxweb_http_request* req, struct nxweb_http_response* resp, struct fc_filter_data* fcdata);
 
 typedef struct nxweb_handler {
   const char* name;
@@ -195,6 +202,7 @@ struct nxweb_server_config {
   nxweb_handler_callback request_dispatcher;
   nxweb_handler* handler_list;
   nxweb_module* module_list;
+  char* work_dir;
 };
 
 typedef struct nxweb_image_filter_cmd {
@@ -209,6 +217,7 @@ typedef struct nxweb_image_filter_cmd {
   char color[8]; // "#FF00AA\0"
   char* cmd_string;
   const char* query_string;
+  const char* uri_path;
   const nxweb_mime_type* mtype;
 } nxweb_image_filter_cmd;
 

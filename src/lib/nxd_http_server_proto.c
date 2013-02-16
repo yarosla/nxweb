@@ -535,6 +535,14 @@ void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_h
   }
 }
 
+void nxweb_reset_content_out(nxweb_http_response* resp) {
+  resp->content_out=0;
+  resp->content=0;
+  resp->content_length=0;
+  resp->sendfile_path=0;
+  resp->sendfile_fd=0;
+}
+
 static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
   if (hsp->state!=HSP_RECEIVING_HEADERS && hsp->state!=HSP_RECEIVING_BODY && hsp->state!=HSP_HANDLING) {
     nxweb_log_error("illegal state for start_sending_response()");

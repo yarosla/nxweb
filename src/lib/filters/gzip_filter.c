@@ -28,43 +28,31 @@
 
 #include <zlib.h>
 
-static nxweb_filter_data* gzip_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
-  nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_filter_data));
-  fdata->bypass=!req->accept_gzip_encoding;
-  return fdata;
-}
+// compression level is between 0 and 9: 1 gives best speed, 9 gives best compression, 0 gives no compression at all
+#define GZIP_COMPRESSION_LEVEL 4
 
-/*
-static char* gzip_decode_uri(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, char* uri) {
-  return uri; // unchanged
-}
-*/
+typedef struct gzip_filter_data {
+  nxweb_filter_data fdata;
+  nxd_rbuffer rb;
+  z_stream zs;
+  int input_fd;
+} gzip_filter_data;
 
-static nxweb_result gzip_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len) {
-  // if filter does not store its own cache file
-  // it must not store cache_key and just return NXWEB_NEXT
-  // it must not implement serve_from_cache either
-  if (!*key) return NXWEB_OK;
-  if (*key==' ') { // virtual key
-    fdata->bypass=1;
-    return NXWEB_NEXT;
-  }
-  assert(conn->handler->gzip_dir);
-  if (!resp->mtype) {
-    resp->mtype=nxweb_get_mime_type_by_ext(key);
-  }
-  if (!resp->mtype->gzippable) {
-    fdata->bypass=1;
-    return NXWEB_NEXT;
-  }
-  int plen=strlen(key)-root_len;
-  int rlen=strlen(conn->handler->gzip_dir);
-  char* gzip_key=nxb_calloc_obj(req->nxb, rlen+plen+3+1);
-  strcpy(gzip_key, conn->handler->gzip_dir);
-  strcpy(gzip_key+rlen, key+root_len);
-  strcpy(gzip_key+rlen+plen, ".gz");
+static nxweb_result gzip_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
+  /* if filter's behavior (and therefore response content) depends
+   * on some request parameters other than handler took care of (host, uri, etc.)
+   * then we should add corresponding variations to cache key here.
+   */
+
+  // NOTE we have already checked req->accept_gzip_encoding in init() method
+
+  // looking at request we can say that content is gzippable,
+  // so let's add $gzip suffix
+  int key_len=strlen(key);
+  char* gzip_key=nxb_alloc_obj(req->nxb, key_len+5+1);
+  memcpy(gzip_key, key, key_len);
+  strcpy(gzip_key+key_len, "$gzip");
   fdata->cache_key=gzip_key;
-  fdata->cache_key_root_len=rlen;
   return NXWEB_OK;
 }
 
@@ -205,67 +193,134 @@ static int gzip_mem_buf(const void* src, unsigned src_size, nxb_buffer* nxb, con
   return 0;
 }
 
-static nxweb_result gzip_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
-  nxweb_send_file(resp, (char*)fdata->cache_key, fdata->cache_key_root_len, &fdata->cache_key_finfo, 1, 0, 0, resp->mtype, conn->handler->charset);
-  return NXWEB_OK;
+
+static void gzip_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
+  nxd_rbuffer* rb=OBJ_PTR_FROM_FLD_PTR(nxd_rbuffer, data_out, is);
+  nxe_loop* loop=is->super.loop;
+
+  nxe_size_t size;
+  const void* ptr;
+  nxe_flags_t flags=0;
+  ptr=nxd_rbuffer_get_read_ptr(rb, &size, &flags);
+  if (size>0 || flags&NXEF_EOF) {
+    nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
+    if (bytes_sent>0) {
+      nxd_rbuffer_read(rb, bytes_sent);
+    }
+  }
+  else {
+    nxe_istream_unset_ready(is);
+  }
+}
+
+static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+  nxd_rbuffer* rb=OBJ_PTR_FROM_FLD_PTR(nxd_rbuffer, data_in, os);
+  gzip_filter_data* gdata=OBJ_PTR_FROM_FLD_PTR(gzip_filter_data, rb, rb);
+  z_stream* zs=&gdata->zs;
+  nxe_loop* loop=os->super.loop;
+  nxe_ssize_t bytes_sent=0;
+  int deflate_result=0;
+  if (size>0 || *flags&NXEF_EOF) {
+    nxe_size_t size_avail;
+    zs->next_out=nxd_rbuffer_get_write_ptr(rb, &size_avail);
+    if (size_avail) {
+      zs->avail_out=size_avail;
+      zs->next_in=ptr.ptr;
+      zs->avail_in=size;
+      int flush=*flags&NXEF_EOF? Z_FINISH : Z_SYNC_FLUSH;
+      deflate_result=deflate(zs, flush);
+      assert((flush==Z_FINISH && (deflate_result==Z_STREAM_END || deflate_result==Z_OK)) || (flush==Z_SYNC_FLUSH && deflate_result==Z_OK));
+      bytes_sent=size - zs->avail_in;
+      nxd_rbuffer_write(rb, size_avail - zs->avail_out);
+    }
+    else {
+      nxe_ostream_unset_ready(os);
+      nxe_istream_set_ready(loop, &gdata->rb.data_out); // please read out compressed data
+    }
+  }
+  if (*flags&NXEF_EOF && bytes_sent==size && deflate_result==Z_STREAM_END) {
+    nxe_ostream_unset_ready(os);
+    gdata->rb.eof=1;
+    nxe_istream_set_ready(os->super.loop, &rb->data_out); // even when no bytes received make sure we signal readiness on EOF
+    deflateEnd(zs);
+  }
+  return bytes_sent;
+}
+
+static const nxe_istream_class gzip_data_out_class={.do_write=gzip_data_out_do_write};
+static const nxe_ostream_class gzip_data_in_class={.write=gzip_data_in_write /*, .sendfile=gzip_data_in_write_or_sendfile*/ };
+
+
+static nxweb_filter_data* gzip_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (!req->accept_gzip_encoding) return 0; // bypass
+  gzip_filter_data* gdata=nxb_calloc_obj(req->nxb, sizeof(gzip_filter_data));
+  gdata->rb.data_out.super.cls.is_cls=&gzip_data_out_class;
+  gdata->rb.data_out.evt.cls=NXE_EV_STREAM;
+  gdata->rb.data_in.super.cls.os_cls=&gzip_data_in_class;
+  gdata->rb.data_in.ready=1;
+  // gdata->rb.data_out.ready=1;
+  gdata->fdata.fcache=_nxweb_fc_create(req->nxb, conn->handler->gzip_dir);
+  return &gdata->fdata;
+}
+
+static void gzip_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+  gzip_filter_data* gdata=(gzip_filter_data*)fdata;
+  _nxweb_fc_finalize(fdata->fcache);
+  if (gdata->rb.data_out.pair)
+    nxe_disconnect_streams(&gdata->rb.data_out, gdata->rb.data_out.pair);
+  if (gdata->rb.data_in.pair)
+    nxe_disconnect_streams(gdata->rb.data_in.pair, &gdata->rb.data_in);
+  if (gdata->input_fd) close(gdata->input_fd);
+}
+
+static nxweb_result gzip_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
+  return _nxweb_fc_serve_from_cache(conn, req, resp, fdata->cache_key, fdata->fcache, check_time);
 }
 
 static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
-  assert(!resp->gzip_encoded);
+  gzip_filter_data* gdata=(gzip_filter_data*)fdata;
+  nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);
+  if (r!=NXWEB_NEXT) return r;
+
+  if (resp->gzip_encoded) return NXWEB_NEXT;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
-  if (resp->sendfile_path) { // gzip on disk
-    assert(fdata->cache_key);
-    assert(resp->sendfile_fd>0);
-    assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
-    int rlen=fdata->cache_key_root_len;
-    const char* fpath=fdata->cache_key;
 
-    if (nxweb_mkpath((char*)fpath, 0755)<0
-     || gzip_file_fd(resp->sendfile_path, resp->sendfile_fd, fpath, &resp->sendfile_info)<0) {
-      nxweb_log_error("nxweb_mkpath() or gzip_file() failed for %s", resp->sendfile_path);
-      return NXWEB_ERROR;
-    }
-    nxweb_log_error("gzipped %s", resp->sendfile_path);
+  if (!resp->mtype && resp->content_type) {
+    resp->mtype=nxweb_get_mime_type(resp->content_type);
+  }
+  if (!resp->mtype || !resp->mtype->gzippable) {
+    return NXWEB_NEXT;
+  }
 
-    close(resp->sendfile_fd);
+  // do gzip
+  nxweb_log_error("gzipping %s", fdata->cache_key);
+  nxd_rbuffer_init_ptr(&gdata->rb, nxb_alloc_obj(req->nxb, 16384), 16384);
+  gdata->zs.zalloc=myalloc;
+  gdata->zs.zfree=myfree;
+  gdata->zs.opaque=Z_NULL;
+  gdata->zs.next_in=Z_NULL;
+  if (deflateInit2(&gdata->zs, GZIP_COMPRESSION_LEVEL, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY)!=Z_OK) { // level 0-9
+    nxweb_log_error("deflateInit2() failed in gzip_do_filter()");
+    return NXWEB_ERROR;
+  }
+
+  nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
+  nxe_connect_streams(conn->tdata->loop, resp->content_out, &gdata->rb.data_in);
+  resp->content_out=&gdata->rb.data_out;
+  resp->gzip_encoded=1;
+  // reset previous response content
+  resp->content=0;
+  resp->sendfile_path=0;
+  if (resp->sendfile_fd) {
+    // save it to close on finalize
+    gdata->input_fd=resp->sendfile_fd;
     resp->sendfile_fd=0;
-    resp->sendfile_path=fpath;
-    resp->sendfile_path_root_len=rlen;
-    if (stat(fpath, &resp->sendfile_info)==-1) {
-      nxweb_log_error("can't stat gzipped %s", fpath);
-      return NXWEB_ERROR;
-    }
-    resp->sendfile_end=
-    resp->content_length=resp->sendfile_info.st_size;
-    resp->last_modified=resp->sendfile_info.st_mtime;
-    resp->gzip_encoded=1;
-    resp->content_out=0; // reset content_out
-    resp->content=0;
-    return NXWEB_OK;
   }
-  else if (resp->content && resp->content_length>0) { // gzip in memory
-    assert(!resp->sendfile_fd);
-    if (!resp->mtype) {
-      resp->mtype=nxweb_get_mime_type(resp->content_type);
-    }
-    if (!resp->mtype || !resp->mtype->gzippable) {
-      fdata->bypass=1;
-      return NXWEB_NEXT;
-    }
-    unsigned zsize=0;
-    const void* zbuf=0;
-    gzip_mem_buf(resp->content, resp->content_length, resp->nxb, &zbuf, &zsize);
-    resp->content=zbuf;
-    resp->content_length=zsize;
-    resp->gzip_encoded=1;
-    resp->content_out=0; // reset content_out
-    resp->sendfile_path=0;
-    return NXWEB_OK;
-  }
-  // TODO gzip istream
-  assert(0); // not implemented
-  return NXWEB_OK;
+  resp->content_length=-1; // chunked encoding
+  resp->chunked_autoencode=1;
+
+  return _nxweb_fc_store(conn, req, resp, fdata->fcache);
 }
 
-nxweb_filter gzip_filter={.name="gzip", .init=gzip_init, .translate_cache_key=gzip_translate_cache_key,
+nxweb_filter gzip_filter={.name="gzip", .init=gzip_init, .finalize=gzip_finalize, .translate_cache_key=gzip_translate_cache_key,
         .serve_from_cache=gzip_serve_from_cache, .do_filter=gzip_do_filter};

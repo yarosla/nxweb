@@ -31,6 +31,9 @@
 #include <math.h>
 #include <utime.h>
 
+#define MAGICKCORE_QUANTUM_DEPTH 16
+#define MAGICKCORE_HDRI_ENABLE 0
+
 #include <wand/MagickWand.h>
 
 #ifdef WITH_NETTLE
@@ -73,7 +76,6 @@
 #define CMD_SIGN_SECRET_KEY "XbLBZeqSsUgfKWooMKoh0r1gjzqG856yVCMLf1pz"
 
 #define WATERMARK_FILE_NAME "watermark.png"
-#define MAX_PATH 1024
 
 #ifndef max
 #define max(a,b) \
@@ -123,9 +125,9 @@ static void image_filter_finalize() {
 
 NXWEB_MODULE(image_filter, .on_server_startup=image_filter_init, .on_server_shutdown=image_filter_finalize);
 
-static int locate_watermark(const char* fpath, const char* path_info, char* wpath) {
+static int locate_watermark(const char* fpath, int doc_root_len, char* wpath) {
   strcpy(wpath, fpath);
-  const char* wpath_info=wpath+(path_info-fpath);
+  const char* wpath_info=wpath+doc_root_len;
   char* p;
   struct stat finfo;
   while ((p=strrchr(wpath_info, '/'))) {
@@ -138,7 +140,7 @@ static int locate_watermark(const char* fpath, const char* path_info, char* wpat
   return 0; // not found
 }
 
-static int process_cmd(const char* fpath, const char* path_info, MagickWand* image, nxweb_image_filter_cmd* cmd) {
+static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, nxweb_image_filter_cmd* cmd) {
   int width=MagickGetImageWidth(image);
   int height=MagickGetImageHeight(image);
   if (width<=0 || height<=0) {
@@ -225,7 +227,8 @@ static int process_cmd(const char* fpath, const char* path_info, MagickWand* ima
   }
   if (!cmd->dont_watermark && width>=200 && height>=200) { // don't watermark images smaller than 200x200
     char wpath[2096];
-    if (locate_watermark(fpath, path_info, wpath)) {
+    assert(strlen(fpath)<sizeof(wpath));
+    if (locate_watermark(fpath, doc_root_len, wpath)) {
       MagickWand* watermark=NewMagickWand();
       MagickReadImage(watermark, wpath);
       int wwidth=MagickGetImageWidth(watermark);
@@ -379,6 +382,7 @@ static int decode_cmd(char* uri, nxweb_image_filter_cmd* cmd, nxb_buffer* nxb) {
   cmd->cmd_string=nxb_copy_obj(nxb, cc, cmd_string_len+1);
   cmd->cmd_string[cmd_string_len]='\0';
   if (q) cmd->query_string=nxb_copy_obj(nxb, q+1, strlen(q));
+  cmd->uri_path=nxb_copy_obj(nxb, uri, q? q-uri : strlen(uri));
   //*q='\0';
   memmove(cc, ext, strlen(ext)+1);
   fnlen-=cmd_string_len;
@@ -468,128 +472,141 @@ static const char* img_decode_uri(struct nxweb_http_server_connection* conn, nxw
   img_filter_data* ifdata=(img_filter_data*)fdata;
   char* uri_copy=nxb_copy_obj(req->nxb, uri, strlen(uri)+1);
   decode_cmd(uri_copy, &ifdata->cmd, req->nxb);
-  if (!ifdata->cmd.mtype || !ifdata->cmd.mtype->image) fdata->bypass=1;
+  if (!ifdata->cmd.mtype || !ifdata->cmd.mtype->image) {
+    fdata->bypass=1;
+    return uri;
+  }
   return uri_copy;
 }
 
-static nxweb_result img_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len) {
-  // if filter does not store its own cache file
-  // it must not store cache_key and just return NXWEB_NEXT
-  // it must not implement serve_from_cache either
-  if (!*key) return NXWEB_OK;
-  if (*key==' ') { // virtual key
-    fdata->bypass=1;
-    return NXWEB_NEXT;
-  }
-  assert(conn->handler->img_dir);
+static nxweb_result img_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* cache_key) {
   img_filter_data* ifdata=(img_filter_data*)fdata;
-  int plen=strlen(key)-root_len;
-  int rlen=strlen(conn->handler->img_dir);
-  int cmd_len=ifdata->cmd.cmd_string? strlen(ifdata->cmd.cmd_string) : 0;
-  char* img_key=nxb_calloc_obj(req->nxb, rlen+plen+cmd_len+1);
-  strcpy(img_key, conn->handler->img_dir);
-  strcpy(img_key+rlen, key+root_len);
-  const char* ext=strrchr(key+root_len, '.');
-  assert(ext);
-  int ext_len=plen+root_len-(ext-key);
-  if (cmd_len) strcpy(img_key+rlen+plen-ext_len, ifdata->cmd.cmd_string);
-  strcpy(img_key+rlen+plen-ext_len+cmd_len, ext);
-  fdata->cache_key=img_key;
-  fdata->cache_key_root_len=rlen;
-  return NXWEB_OK;
-}
-
-static nxweb_result img_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
-  nxweb_send_file(resp, (char*)fdata->cache_key, fdata->cache_key_root_len, &fdata->cache_key_finfo, 0, 0, 0, resp->mtype, conn->handler->charset);
+  if (!ifdata->cmd.cmd_string) {
+    fdata->cache_key=cache_key;
+    return NXWEB_OK;
+  }
+  // append previously extracted cmd_string
+  nxb_buffer* nxb=req->nxb;
+  nxb_append_str(nxb, cache_key);
+  nxb_append_str(nxb, "$img");
+  nxb_append_str(nxb, ifdata->cmd.cmd_string);
+  nxb_append_char(nxb, '\0');
+  fdata->cache_key=nxb_finish_stream(nxb, 0);
   return NXWEB_OK;
 }
 
 static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+  img_filter_data* ifdata=(img_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   assert(fdata->cache_key);
   assert(resp->sendfile_path);
   assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
-  int rlen=fdata->cache_key_root_len;
-  const char* fpath=fdata->cache_key;
-  img_filter_data* ifdata=(img_filter_data*)fdata;
 
-  if (ifdata->cmd.cmd) {
-    // check if cmd is allowed
-    const nxweb_image_filter_cmd* ac=conn->handler->allowed_cmds? conn->handler->allowed_cmds : allowed_cmds;
-    _Bool allowed=0;
-    while (ac->cmd) {
-      if (ifdata->cmd.cmd==ac->cmd && ifdata->cmd.width==ac->width && ifdata->cmd.height==ac->height
-              && ifdata->cmd.gravity_top==ac->gravity_top && ifdata->cmd.gravity_bottom==ac->gravity_bottom
-              && ifdata->cmd.gravity_left==ac->gravity_left && ifdata->cmd.gravity_right==ac->gravity_right
-              && !strcmp(ifdata->cmd.color, ac->color)) {
-        allowed=1;
-        break;
+  assert(conn->handler->img_dir);
+  nxb_buffer* nxb=req->nxb;
+  nxb_append_str(nxb, conn->handler->img_dir);
+  const char* cache_key=ifdata->fdata.cache_key;
+  if (cache_key[0]=='.' && cache_key[1]=='.' && cache_key[2]=='/') cache_key+=2; // avoid going up dir tree
+  if (*cache_key!='/') nxb_append_char(nxb, '/');
+  nxb_append_str(nxb, cache_key);
+  nxb_append_char(nxb, '\0');
+  /*
+  int cmd_len=ifdata->cmd.cmd_string? strlen(ifdata->cmd.cmd_string) : 0;
+  nxb_blank(nxb, cmd_len);
+  */
+  char* fpath=nxb_finish_stream(req->nxb, 0);
+  /*
+  if (cmd_len) {
+    char* ext=strrchr(fpath, '.');
+    int ext_len=strlen(ext);
+    assert(ext);
+    memmove(ext+cmd_len, ext, ext_len+1);
+    memcpy(ext, ifdata->cmd.cmd_string, cmd_len);
+  }
+  */
+  struct stat finfo;
+
+  if (stat(fpath, &finfo)==-1 || finfo.st_mtime!=resp->sendfile_info.st_mtime) {
+    if (ifdata->cmd.cmd) {
+      // check if cmd is allowed
+      const nxweb_image_filter_cmd* ac=conn->handler->allowed_cmds? conn->handler->allowed_cmds : allowed_cmds;
+      _Bool allowed=0;
+      while (ac->cmd) {
+        if (ifdata->cmd.cmd==ac->cmd && ifdata->cmd.width==ac->width && ifdata->cmd.height==ac->height
+                && ifdata->cmd.gravity_top==ac->gravity_top && ifdata->cmd.gravity_bottom==ac->gravity_bottom
+                && ifdata->cmd.gravity_left==ac->gravity_left && ifdata->cmd.gravity_right==ac->gravity_right
+                && !strcmp(ifdata->cmd.color, ac->color)) {
+          allowed=1;
+          break;
+        }
+        ac++;
       }
-      ac++;
+      if (!allowed && ifdata->cmd.query_string) {
+        char signature[41];
+        sha1sign(ifdata->cmd.uri_path, strlen(ifdata->cmd.uri_path), conn->handler->key? conn->handler->key : CMD_SIGN_SECRET_KEY, signature);
+        nxweb_log_error("path=%s sha1sign=%s query_string=%s", ifdata->cmd.uri_path, signature, ifdata->cmd.query_string);
+        if (!strcmp(ifdata->cmd.query_string, signature)) allowed=1;
+      }
+      if (!allowed) {
+        nxweb_send_http_error(resp, 403, "Forbidden");
+        return NXWEB_ERROR;
+      }
     }
-    if (!allowed && ifdata->cmd.query_string) {
-      char signature[41];
-      sha1sign(fpath+rlen, strlen(fpath+rlen), conn->handler->key? conn->handler->key : CMD_SIGN_SECRET_KEY, signature);
-      nxweb_log_error("path=%s sha1sign=%s query_string=%s", fpath+rlen, signature, ifdata->cmd.query_string);
-      if (!strcmp(ifdata->cmd.query_string, signature)) allowed=1;
-    }
-    if (!allowed) {
-      nxweb_send_http_error(resp, 403, "Forbidden");
+
+    if (nxweb_mkpath((char*)fpath, 0755)<0) {
+      nxweb_log_error("nxweb_mkpath(%s) failed", fpath);
       return NXWEB_ERROR;
     }
-  }
 
-  if (nxweb_mkpath((char*)fpath, 0755)<0) {
-    nxweb_log_error("nxweb_mkpath(%s) failed", fpath);
-    return NXWEB_ERROR;
-  }
+    if (resp->sendfile_fd>0) {
+      close(resp->sendfile_fd);
+    }
+    resp->sendfile_fd=0;
 
-  if (resp->sendfile_fd>0) {
-    close(resp->sendfile_fd);
-  }
-  resp->sendfile_fd=0;
-
-  MagickWand* image=NewMagickWand();
-  if (!MagickReadImage(image, resp->sendfile_path)) {
-    DestroyMagickWand(image);
-    nxweb_log_error("MagickReadImage(%s) failed", resp->sendfile_path);
-    nxweb_send_http_error(resp, 500, "Internal Server Error");
-    return NXWEB_ERROR;
-  }
-  MagickStripImage(image);
-
-  if (process_cmd(resp->sendfile_path, resp->sendfile_path+resp->sendfile_path_root_len, image, &ifdata->cmd)) {
-    nxweb_log_error("writing image file %s", fpath);
-    if (!MagickWriteImage(image, fpath)) {
+    MagickWand* image=NewMagickWand();
+    if (!MagickReadImage(image, resp->sendfile_path)) {
       DestroyMagickWand(image);
-      nxweb_log_error("MagickWriteImage(%s) failed", fpath);
+      nxweb_log_error("MagickReadImage(%s) failed", resp->sendfile_path);
       nxweb_send_http_error(resp, 500, "Internal Server Error");
       return NXWEB_ERROR;
     }
-    DestroyMagickWand(image);
+    MagickStripImage(image);
+
+    if (process_cmd(resp->sendfile_path, conn->handler->dir? strlen(conn->handler->dir) : 0, image, &ifdata->cmd)) {
+      nxweb_log_error("writing image file %s", fpath);
+      if (!MagickWriteImage(image, fpath)) {
+        DestroyMagickWand(image);
+        nxweb_log_error("MagickWriteImage(%s) failed", fpath);
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+      DestroyMagickWand(image);
+    }
+    else {
+      // processing changed nothing => just copy the original
+      DestroyMagickWand(image);
+      nxweb_log_error("copying image file %s", fpath);
+      if (copy_file(resp->sendfile_path, fpath)) {
+        nxweb_log_error("error %d copying image file %s", errno, fpath);
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+    }
+
+    struct utimbuf ut={.actime=resp->sendfile_info.st_atime, .modtime=resp->sendfile_info.st_mtime};
+    utime(fpath, &ut);
+
+    nxweb_log_error("image processed %s -> %s", resp->sendfile_path, fpath);
+    if (stat(fpath, &resp->sendfile_info)==-1) {
+      nxweb_log_error("can't stat processed image %s", fpath);
+      return NXWEB_ERROR;
+    }
   }
   else {
-    // processing changed nothing => just copy the original
-    DestroyMagickWand(image);
-    nxweb_log_error("copying image file %s", fpath);
-    if (copy_file(resp->sendfile_path, fpath)) {
-      nxweb_log_error("error %d copying image file %s", errno, fpath);
-      nxweb_send_http_error(resp, 500, "Internal Server Error");
-      return NXWEB_ERROR;
-    }
+    resp->sendfile_info=finfo;
   }
-
-  struct utimbuf ut={.actime=resp->sendfile_info.st_atime, .modtime=resp->sendfile_info.st_mtime};
-  utime(fpath, &ut);
-
-  nxweb_log_error("image processed %s -> %s", resp->sendfile_path, fpath);
 
   resp->sendfile_path=fpath;
-  resp->sendfile_path_root_len=rlen;
-  if (stat(fpath, &resp->sendfile_info)==-1) {
-    nxweb_log_error("can't stat processed image %s", fpath);
-    return NXWEB_ERROR;
-  }
   resp->sendfile_end=
   resp->content_length=resp->sendfile_info.st_size;
   resp->last_modified=resp->sendfile_info.st_mtime;
@@ -599,5 +616,5 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
 }
 
 nxweb_filter image_filter={.name="image", .init=img_init, .translate_cache_key=img_translate_cache_key,
-        .decode_uri=img_decode_uri, .serve_from_cache=img_serve_from_cache, .do_filter=img_do_filter};
+        .decode_uri=img_decode_uri, .do_filter=img_do_filter};
 

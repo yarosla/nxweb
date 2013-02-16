@@ -162,11 +162,7 @@ static const nxe_istream_class rbuffer_data_out_class={.do_write=rbuffer_data_ou
 
 void nxd_rbuffer_init(nxd_rbuffer* rb, void* buf, int size) {
   memset(rb, 0, sizeof(nxd_rbuffer));
-  rb->read_ptr=
-  rb->start_ptr=
-  rb->write_ptr=buf;
-  rb->end_ptr=buf+size;
-  rb->last_write=0;
+  nxd_rbuffer_init_ptr(rb, buf, size);
   rb->data_out.super.cls.is_cls=&rbuffer_data_out_class;
   rb->data_in.super.cls.os_cls=&rbuffer_data_in_class;
   rb->data_out.evt.cls=NXE_EV_STREAM;

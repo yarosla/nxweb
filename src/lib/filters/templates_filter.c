@@ -36,6 +36,7 @@ typedef struct tf_filter_data {
   tf_buffer tfb;
   nxweb_composite_stream* cs;
   int input_fd;
+  time_t last_modified;
   nxt_context ctx;
   nxweb_http_server_connection* conn;
 } tf_filter_data;
@@ -69,6 +70,18 @@ static void tf_check_complete(tf_filter_data* tfdata) {
     // serialize
     nxt_serialize_to_cs(ctx, tfdata->cs);
     nxweb_composite_stream_close(tfdata->cs);
+
+    nxweb_http_request* req=&tfdata->conn->hsp.req;
+    nxweb_http_response* resp=tfdata->conn->hsp.resp;
+
+    resp->last_modified=tfdata->last_modified;
+    if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
+      resp->status_code=304;
+      resp->status="Not Modified";
+      nxweb_reset_content_out(resp);
+      nxd_http_server_proto_setup_content_out(&tfdata->conn->hsp, resp);
+    }
+    tfdata->conn->hsp.cls->start_sending_response(&tfdata->conn->hsp, tfdata->conn->hsp.resp);
   }
 }
 
@@ -154,6 +167,10 @@ static void tf_on_subrequest_ready(nxe_data data) {
 
   int status=resp->status_code;
   if (!subconn->subrequest_failed && (!status || status==200)) {
+    if (tfdata->last_modified) {
+      if (!resp->last_modified) tfdata->last_modified=0;
+      else if (resp->last_modified > tfdata->last_modified) tfdata->last_modified=resp->last_modified;
+    }
     if (resp->content_length>0) tf_buffer_make_room(tfb, min(MAX_TEMPLATE_SIZE, resp->content_length));
     nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &tfb->data_in);
   }
@@ -189,6 +206,7 @@ static int tf_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_bl
 }
 
 static nxweb_filter_data* tf_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (req->templates_no_parse) return 0; // bypass
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(tf_filter_data));
   return fdata;
 }
@@ -202,35 +220,12 @@ static void tf_finalize(struct nxweb_http_server_connection* conn, nxweb_http_re
   }
 }
 
-static nxweb_result tf_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len) {
-  if (req->templates_no_parse) {
-    fdata->bypass=1;
-    return NXWEB_NEXT;
-  }
-  if (!resp->templates_on) {
-    if (*resp->cache_key!=' ') { // response originally comes from file
-      if (!resp->mtype && *key!=' ') {
-        resp->mtype=nxweb_get_mime_type_by_ext(key); // always returns not null
-      }
-      if (!resp->mtype && resp->content_type) {
-        resp->mtype=nxweb_get_mime_type(resp->content_type);
-      }
-    }
-    if (resp->mtype && !resp->mtype->templates_on) {
-      fdata->bypass=1;
-      return NXWEB_NEXT;
-    }
-  }
-
-  // transform to virtual key ( )
-  int plen=strlen(key)-root_len;
-  assert(plen>=0);
-  int rlen=sizeof(" /_tf_")-1;
-  char* fc_key=nxb_alloc_obj(req->nxb, rlen+plen+1);
-  memcpy(fc_key, " /_tf_", rlen);
-  strcpy(fc_key+rlen, key+root_len);
-  fdata->cache_key=fc_key;
-  fdata->cache_key_root_len=1;
+static nxweb_result tf_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
+  int key_len=strlen(key);
+  char* tf_key=nxb_alloc_obj(req->nxb, key_len+5+1);
+  memcpy(tf_key, key, key_len);
+  strcpy(tf_key+key_len, "$tmpl");
+  fdata->cache_key=tf_key;
   return NXWEB_OK;
 }
 
@@ -276,9 +271,10 @@ static nxweb_result tf_do_filter(struct nxweb_http_server_connection* conn, nxwe
     tfdata->input_fd=resp->sendfile_fd;
     resp->sendfile_fd=0;
   }
-  resp->last_modified=0;
 
   tfdata->cs=cs;
+  tfdata->last_modified=resp->last_modified;
+  tfdata->fdata.delay_start=1;
 
   return NXWEB_OK;
 }

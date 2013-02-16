@@ -113,7 +113,7 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
     preq->keep_alive=1;
     preq->user_agent=req->user_agent;
     preq->cookie=req->cookie;
-    preq->if_modified_since=req->if_modified_since;
+    preq->if_modified_since=req->if_modified_since + nxd_http_proxy_pool_get_backend_time_delta(hpx->pool);
     preq->x_forwarded_for=conn->remote_addr;
     preq->x_forwarded_host=req->host;
     preq->x_forwarded_ssl=nxweb_server_config.listen_config[conn->lconf_idx].secure;
@@ -207,11 +207,11 @@ static nxweb_result nxweb_http_proxy_handler_on_headers(nxweb_http_server_connec
 
 static nxweb_result proxy_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
-  char* key=nxb_alloc_obj(req->nxb, strlen(req->uri)+2);
-  *key=' ';
-  strcpy(key+1, req->uri);
-  resp->cache_key=key;
-  resp->cache_key_root_len=1;
+  _nxb_append_encode_file_path(req->nxb, req->host);
+  if (conn->secure) nxb_append_str(req->nxb, "_s");
+  _nxb_append_encode_file_path(req->nxb, req->uri);
+  nxb_append_char(req->nxb, '\0');
+  resp->cache_key=nxb_finish_stream(req->nxb, 0);
   return NXWEB_OK;
 }
 
@@ -237,10 +237,12 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->ssi_on=presp->ssi_on;
     resp->templates_on=presp->templates_on;
     resp->headers=presp->headers;
-    resp->backend_time_delta=presp->date? presp->date-nxe_get_current_http_time(loop) : 0;
-    resp->date=presp->date? presp->date-resp->backend_time_delta : 0;
-    resp->last_modified=presp->last_modified? presp->last_modified-resp->backend_time_delta : 0;
-    resp->expires=presp->expires? presp->expires-resp->backend_time_delta : 0;
+    time_t backend_time_delta=presp->date? presp->date-nxe_get_current_http_time(loop) : 0;
+    nxd_http_proxy_pool_report_backend_time_delta(hpx->pool, backend_time_delta);
+    backend_time_delta=nxd_http_proxy_pool_get_backend_time_delta(hpx->pool);
+    resp->date=presp->date? presp->date-backend_time_delta : 0;
+    resp->last_modified=presp->last_modified? presp->last_modified-backend_time_delta : 0;
+    resp->expires=presp->expires? presp->expires-backend_time_delta : 0;
     resp->cache_control=presp->cache_control;
     resp->max_age=presp->max_age;
     resp->no_cache=presp->no_cache;

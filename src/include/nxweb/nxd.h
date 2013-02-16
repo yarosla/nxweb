@@ -115,6 +115,14 @@ typedef struct nxd_rbuffer {
 
 void nxd_rbuffer_init(nxd_rbuffer* rb, void* buf, int size);
 
+static inline void nxd_rbuffer_init_ptr(nxd_rbuffer* rb, char* buf, int size) {
+  rb->read_ptr=
+  rb->start_ptr=
+  rb->write_ptr=buf;
+  rb->end_ptr=buf+size;
+  rb->last_write=0;
+}
+
 static inline int nxd_rbuffer_is_empty(nxd_rbuffer* rb) {
   return rb->read_ptr==rb->write_ptr && !rb->last_write;
 }
@@ -256,6 +264,7 @@ void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
 void nxd_http_server_proto_subrequest_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
 void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri, nxweb_http_request* parent_req);
 void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp);
+void nxweb_reset_content_out(nxweb_http_response* resp);
 
 enum nxd_http_client_proto_state {
   HCP_CONNECTING=0,
@@ -338,6 +347,8 @@ nxweb_http_request* nxd_http_proxy_prepare(nxd_http_proxy* hpx);
 void nxd_http_proxy_start_request(nxd_http_proxy* hpx, nxweb_http_request* req);
 
 #define NXD_FREE_PROXY_POOL_INITIAL_SIZE 4
+#define NXD_HTTP_PROXY_POOL_TIME_DELTA_SAMPLES 8
+#define NXD_HTTP_PROXY_POOL_TIME_DELTA_NO_VALUE 1000000
 
 typedef struct nxd_http_proxy_pool {
   nxe_loop* loop;
@@ -348,6 +359,8 @@ typedef struct nxd_http_proxy_pool {
   nxp_pool* free_pool;
   nxp_pool* nxb_pool;
   nxe_subscriber gc_sub;
+  time_t backend_time_delta[NXD_HTTP_PROXY_POOL_TIME_DELTA_SAMPLES]; // delta seconds = (backend_date - current_date)
+  int backend_time_delta_idx;
   int conn_count;
   int conn_count_max;
 } nxd_http_proxy_pool;
@@ -356,6 +369,8 @@ void nxd_http_proxy_pool_init(nxd_http_proxy_pool* pp, nxe_loop* loop, nxp_pool*
 nxd_http_proxy* nxd_http_proxy_pool_connect(nxd_http_proxy_pool* pp);
 void nxd_http_proxy_pool_return(nxd_http_proxy* hpx, int closed);
 void nxd_http_proxy_pool_finalize(nxd_http_proxy_pool* pp);
+void nxd_http_proxy_pool_report_backend_time_delta(nxd_http_proxy_pool* pp, time_t delta);
+time_t nxd_http_proxy_pool_get_backend_time_delta(nxd_http_proxy_pool* pp);
 
 #ifdef	__cplusplus
 }

@@ -174,7 +174,6 @@ typedef struct nxweb_http_response {
   time_t last_modified;
   time_t expires;
   time_t max_age; // delta seconds
-  time_t backend_time_delta; // delta seconds = (backend_date - current_date)
 
   int status_code;
 
@@ -182,11 +181,9 @@ typedef struct nxweb_http_response {
   nxweb_chunked_encoder_state cestate;
 
   const char* cache_key;
-  int cache_key_root_len;
   const struct nxweb_mime_type* mtype;
 
   const char* sendfile_path;
-  int sendfile_path_root_len;
   int sendfile_fd;
   off_t sendfile_offset;
   off_t sendfile_end;
@@ -383,7 +380,7 @@ static inline void nxweb_response_append_uint(nxweb_http_response* resp, unsigne
 void nxweb_send_redirect(nxweb_http_response* resp, int code, const char* location, int secure);
 void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* location, const char* location_path_info, int secure);
 void nxweb_send_http_error(nxweb_http_response* resp, int code, const char* message);
-int nxweb_send_file(nxweb_http_response *resp, char* fpath, int fpath_root_len, const struct stat* finfo, int gzip_encoded,
+int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* finfo, int gzip_encoded,
         off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect
 void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, const char* content_type);
 
@@ -438,8 +435,7 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response* resp);
 const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req);
 int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* end_of_headers);
 void _nxb_append_escape_url(nxb_buffer* nxb, const char* url);
-void _nxb_append_escape_file_path(nxb_buffer* nxb, const char* path);
-char* _nxweb_file_path_decode(char* src, char* dst); // can do it inplace
+void _nxb_append_encode_file_path(nxb_buffer* nxb, const char* path);
 
 #ifdef WITH_ZLIB
 extern nxweb_filter gzip_filter;
