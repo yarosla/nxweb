@@ -179,14 +179,14 @@ static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
   nxweb_http_server_connection* conn=rdata->conn;
   if (rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
     // can't retry => do nothing, continue processing until parent connection times out
-    nxweb_log_error("backend connection %p timeout; can't retry", conn);
+    nxweb_log_warning("backend connection %p timeout; can't retry", conn);
   }
   else if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT) {
-    nxweb_log_error("backend connection %p timeout; retry count exceeded", conn);
+    nxweb_log_warning("backend connection %p timeout; retry count exceeded", conn);
     fail_proxy_request(rdata);
   }
   else {
-    nxweb_log_error("backend connection %p timeout; retrying", conn);
+    nxweb_log_info("backend connection %p timeout; retrying", conn);
     retry_proxy_request(rdata);
   }
 }
@@ -265,7 +265,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
       }
       else {
         if (rdata->retry_count || !(data.i==NXE_ERROR || data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED)) {
-          nxweb_log_error("proxy request conn=%p rc=%d retry=%d error=%d; retrying", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
+          nxweb_log_warning("proxy request conn=%p rc=%d retry=%d error=%d; retrying", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
         }
         retry_proxy_request(rdata);
       }

@@ -46,11 +46,11 @@ int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
 
 static int tmpl_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_block* dst_block) { // function to make subrequests
   if (dst_block) {
-    nxweb_log_error("including file %s", uri);
+    nxweb_log_info("including file %s", uri);
     nxt_block_append_value(ctx, dst_block, "{% This is included file %}", sizeof("{% This is included file %}")-1, 0);
   }
   else {
-    nxweb_log_error("loading template from %s", uri);
+    nxweb_log_info("loading template from %s", uri);
     if (!strcmp(uri, "base")) {
       const char* tmpl_src=" {%block _top_%}{%raw%}{{{{%%%%}}}}{%endraw%}{% include aaa %}AAA-YYY{%block header%}Header{%endblock%} bye...{% endblock %}{% block title %}New Title{% endblock %}";
       char* tmpl=nxb_copy_obj(ctx->nxb, tmpl_src, strlen(tmpl_src)+1);

@@ -248,7 +248,7 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
       MagickGetImagePage(watermark, &wpage_width, &wpage_height, &woffset_x, &woffset_y);
       woffset_x=(int32_t)woffset_x;
       woffset_y=(int32_t)woffset_y;
-      nxweb_log_error("watermark found: %s size %dx%d page %ldx%ld offs %ldx%ld", wpath, wwidth, wheight, wpage_width, wpage_height, woffset_x, woffset_y);
+      nxweb_log_info("watermark found: %s size %dx%d page %ldx%ld offs %ldx%ld", wpath, wwidth, wheight, wpage_width, wpage_height, woffset_x, woffset_y);
       if (wpage_width>wwidth && wpage_height>wheight) { // page defined => watermark file has layout
         if (width<wpage_width || height<wpage_height) { // scale watermark down
           double scale_x=(double)width/(double)wpage_width;
@@ -544,8 +544,8 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
       if (!allowed && ifdata->cmd.query_string) {
         char signature[41];
         sha1sign(ifdata->cmd.uri_path, strlen(ifdata->cmd.uri_path), conn->handler->key? conn->handler->key : CMD_SIGN_SECRET_KEY, signature);
-        nxweb_log_error("path=%s sha1sign=%s query_string=%s", ifdata->cmd.uri_path, signature, ifdata->cmd.query_string);
         if (!strcmp(ifdata->cmd.query_string, signature)) allowed=1;
+        else nxweb_log_warning("img cmd not allowed: path=%s sha1sign=%s query_string=%s", ifdata->cmd.uri_path, signature, ifdata->cmd.query_string);
       }
       if (!allowed) {
         nxweb_send_http_error(resp, 403, "Forbidden");
@@ -573,7 +573,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
     MagickStripImage(image);
 
     if (process_cmd(resp->sendfile_path, conn->handler->dir? strlen(conn->handler->dir) : 0, image, &ifdata->cmd)) {
-      nxweb_log_error("writing image file %s", fpath);
+      nxweb_log_info("writing image file %s", fpath);
       if (!MagickWriteImage(image, fpath)) {
         DestroyMagickWand(image);
         nxweb_log_error("MagickWriteImage(%s) failed", fpath);
@@ -585,7 +585,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
     else {
       // processing changed nothing => just copy the original
       DestroyMagickWand(image);
-      nxweb_log_error("copying image file %s", fpath);
+      nxweb_log_info("copying image file %s", fpath);
       if (copy_file(resp->sendfile_path, fpath)) {
         nxweb_log_error("error %d copying image file %s", errno, fpath);
         nxweb_send_http_error(resp, 500, "Internal Server Error");
@@ -596,7 +596,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
     struct utimbuf ut={.actime=resp->sendfile_info.st_atime, .modtime=resp->sendfile_info.st_mtime};
     utime(fpath, &ut);
 
-    nxweb_log_error("image processed %s -> %s", resp->sendfile_path, fpath);
+    nxweb_log_info("image processed %s -> %s", resp->sendfile_path, fpath);
     if (stat(fpath, &resp->sendfile_info)==-1) {
       nxweb_log_error("can't stat processed image %s", fpath);
       return NXWEB_ERROR;

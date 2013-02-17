@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -38,6 +38,8 @@
 
 //#include "nxweb_internal.h"
 
+int nxweb_error_log_level=3; // 0=nothing; 1=errors; 2=warnings; 3=info
+
 void nxweb_die(const char* fmt, ...) {
   va_list ap;
   fprintf(stderr, "FATAL: ");
@@ -57,19 +59,40 @@ static const char* get_current_time(char* buf, int max_buf_size) {
   return buf;
 }
 
-void nxweb_log_error(const char* fmt, ...) {
+static void _nxweb_log_error(int level, const char* fmt, va_list ap) {
+  //if (level>nxweb_error_log_level) return;
   char cur_time[32];
-  va_list ap;
-
   get_current_time(cur_time, sizeof(cur_time));
   flockfile(stderr);
-  fprintf(stderr, "%s [%u:%p]: ", cur_time, getpid(), (void*)pthread_self());
-  va_start(ap, fmt);
+  fprintf(stderr, "%s %d [%u:%p]: ", cur_time, level, getpid(), (void*)pthread_self());
   vfprintf(stderr, fmt, ap);
-  va_end(ap);
   fputc('\n', stderr);
   fflush(stderr);
   funlockfile(stderr);
+}
+
+void nxweb_log_error(const char* fmt, ...) {
+  if (nxweb_error_log_level<1) return;
+  va_list ap;
+  va_start(ap, fmt);
+  _nxweb_log_error(1, fmt, ap);
+  va_end(ap);
+}
+
+void nxweb_log_warning(const char* fmt, ...) {
+  if (nxweb_error_log_level<2) return;
+  va_list ap;
+  va_start(ap, fmt);
+  _nxweb_log_error(2, fmt, ap);
+  va_end(ap);
+}
+
+void nxweb_log_info(const char* fmt, ...) {
+  if (nxweb_error_log_level<3) return;
+  va_list ap;
+  va_start(ap, fmt);
+  _nxweb_log_error(3, fmt, ap);
+  va_end(ap);
 }
 
 int _nxweb_set_non_block(int fd) {

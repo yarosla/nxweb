@@ -34,6 +34,15 @@ int nxweb_drop_privileges(const char* group_name, const char* user_name);
 
 void nxweb_die(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
+void nxweb_log_warning(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
+void nxweb_log_info(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
+
+#define NXWEB_LOG_NONE 0
+#define NXWEB_LOG_ERROR 1
+#define NXWEB_LOG_WARNING 2
+#define NXWEB_LOG_INFO 3
+
+extern int nxweb_error_log_level;
 
 int _nxweb_set_non_block(int fd);
 int _nxweb_setup_listening_socket(int fd);

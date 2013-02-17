@@ -155,12 +155,14 @@ typedef struct nxweb_http_response {
 
   unsigned keep_alive:1;
   unsigned http11:1;
-  unsigned chunked_encoding:1;
+  unsigned chunked_encoding:1; // only used in proxy's client_proto; set content_length=-1 for chunked encoding
   unsigned chunked_autoencode:1;
   unsigned gzip_encoded:1;
   unsigned ssi_on:1;
   unsigned templates_on:1;
   unsigned no_cache:1;
+
+  int run_filter_idx;
 
   // Building response:
   const char* status;

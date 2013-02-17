@@ -75,7 +75,7 @@ typedef struct fc_file_header {
 #define FC_HEADER_SIZE (sizeof(fc_file_header))
 
 typedef struct fc_filter_data {
-  _Bool added_ims:1; // If-Modified-Since header has been added by this filter
+  _Bool revalidation_mode:1; // If-Modified-Since header has been added by this filter
   nxe_ostream data_in;
   nxe_istream data_out;
   time_t expires_time;
@@ -93,6 +93,7 @@ typedef struct fc_filter_data {
 static void fc_store_abort(fc_filter_data* fcdata);
 
 static int fc_store_begin(fc_filter_data* fcdata) {
+  assert(!fcdata->fd);
   fcdata->fd=open(fcdata->tmp_fpath, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
   if (fcdata->fd==-1) {
     nxweb_log_error("fc_store_begin(): can't create cache file %s; could be open by another request", fcdata->tmp_fpath);
@@ -161,20 +162,28 @@ static int fc_store_begin(fc_filter_data* fcdata) {
 }
 
 static int fc_read_header(fc_filter_data* fcdata) {
-  fc_file_header* hdr=&fcdata->hdr;
+  if (fcdata->fd && fcdata->fd!=-1) {
+    assert(fcdata->hdr.header_size==FC_HEADER_SIZE);
+    if (lseek(fcdata->fd, FC_HEADER_SIZE, SEEK_SET)==-1) {
+      nxweb_log_error("fc_read_header(): can't lseek cache file %s", fcdata->cache_fpath);
+      return -1;
+    }
+    return 0;
+  }
   fcdata->fd=open(fcdata->cache_fpath, O_RDONLY);
   if (fcdata->fd==-1) {
-    nxweb_log_error("fc_read(): can't open cache file %s", fcdata->cache_fpath);
+    nxweb_log_error("fc_read_header(): can't open cache file %s", fcdata->cache_fpath);
     return -1;
   }
+  fc_file_header* hdr=&fcdata->hdr;
   if (read(fcdata->fd, hdr, FC_HEADER_SIZE)!=FC_HEADER_SIZE) {
-    nxweb_log_error("fc_read(): can't read header from cache file %s", fcdata->cache_fpath);
+    nxweb_log_error("fc_read_header(): can't read header from cache file %s", fcdata->cache_fpath);
     close(fcdata->fd);
     fcdata->fd=0;
     return -1;
   }
   if (hdr->signature!=NXFC_SIGNATURE || hdr->header_size!=FC_HEADER_SIZE) {
-    nxweb_log_error("fc_read(): wrong header in cache file %s; trying to delete it", fcdata->cache_fpath);
+    nxweb_log_error("fc_read_header(): wrong header in cache file %s; trying to delete it", fcdata->cache_fpath);
     unlink(fcdata->cache_fpath); // try to clean up corrupt file
     close(fcdata->fd);
     fcdata->fd=0;
@@ -228,6 +237,8 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
   resp->sendfile_offset=hdr->content_offset.offs;
   resp->sendfile_end=resp->sendfile_offset+resp->content_length;
   resp->mtype=0;
+  resp->chunked_encoding=0;
+  resp->chunked_autoencode=0;
 
   fcdata->fd=0; // don't auto-close twice
   return 0;
@@ -254,6 +265,7 @@ static int fc_store_close(fc_filter_data* fcdata) {
   if (rename(fcdata->tmp_fpath, fcdata->cache_fpath)==-1) {
     nxweb_log_error("fc_store_close(): can't rename %s cache file into %s", fcdata->tmp_fpath, fcdata->cache_fpath);
     unlink(fcdata->tmp_fpath);
+    fcdata->tmp_fpath=0;
     return -1;
   }
   struct utimbuf ut={.actime=fcdata->expires_time, .modtime=fcdata->expires_time};
@@ -264,6 +276,7 @@ static int fc_store_close(fc_filter_data* fcdata) {
 static void fc_store_abort(fc_filter_data* fcdata) {
   close(fcdata->fd);
   unlink(fcdata->tmp_fpath);
+  fcdata->tmp_fpath=0;
   fcdata->fd=-1;
 }
 
@@ -365,8 +378,8 @@ void _nxweb_fc_finalize(fc_filter_data* fcdata) {
     nxe_disconnect_streams(fcdata->data_in.pair, &fcdata->data_in);
   if (fcdata->fd && fcdata->fd!=-1) {
     close(fcdata->fd);
-    unlink(fcdata->tmp_fpath);
   }
+  if (fcdata->tmp_fpath) unlink(fcdata->tmp_fpath);
 }
 
 static nxweb_filter_data* fc_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
@@ -392,8 +405,9 @@ static void fc_build_cache_fpath(nxb_buffer* nxb, fc_filter_data* fcdata, const 
   fcdata->cache_fpath=nxb_finish_stream(nxb, 0);
 }
 
-static nxweb_result fc_serve(fc_filter_data* fcdata, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_result fc_serve(fc_filter_data* fcdata, nxweb_http_request* req, nxweb_http_response* resp, time_t cur_time) {
   if (fc_read_header(fcdata)==-1) return NXWEB_NEXT; // no valid cached content
+  /*
   if (req->if_modified_since && fcdata->hdr.last_modified.tim<=req->if_modified_since) {
     close(fcdata->fd);
     fcdata->fd=0;
@@ -405,9 +419,10 @@ static nxweb_result fc_serve(fc_filter_data* fcdata, nxweb_http_request* req, nx
     resp->etag=0;
     resp->max_age=0;
     resp->cache_control="must-revalidate";
-    resp->expires=fcdata->cache_finfo.st_mtime;
+    resp->expires=fcdata->cache_finfo.st_mtime>cur_time? fcdata->cache_finfo.st_mtime : 0;
     return NXWEB_OK;
   }
+  */
   if (fc_read_data(fcdata, resp)==-1) return NXWEB_NEXT; // no valid cached content
   resp->content=0;
   resp->content_out=0; // reset content_out
@@ -415,23 +430,19 @@ static nxweb_result fc_serve(fc_filter_data* fcdata, nxweb_http_request* req, nx
   resp->etag=0;
   resp->max_age=0;
   resp->cache_control="must-revalidate";
-  resp->expires=fcdata->cache_finfo.st_mtime;
+  resp->expires=fcdata->cache_finfo.st_mtime>cur_time? fcdata->cache_finfo.st_mtime : 0;
   return NXWEB_OK;
 }
 
-static nxweb_result fc_revalidate(fc_filter_data* fcdata, nxweb_http_request* req) {
-  nxweb_log_error("revalidating cache file %s for uri %s", fcdata->cache_fpath, req->uri);
-  fc_file_header* hdr=&fcdata->hdr;
+static nxweb_result fc_initiate_revalidation(fc_filter_data* fcdata, nxweb_http_request* req) {
+  nxweb_log_info("revalidating cache file %s for uri %s", fcdata->cache_fpath, req->uri);
   if (fc_read_header(fcdata)==-1) {
     return NXWEB_ERROR;
   }
-  close(fcdata->fd);
-  fcdata->fd=0;
+  fc_file_header* hdr=&fcdata->hdr;
   fcdata->if_modified_since_original=req->if_modified_since;
-  if (req->if_modified_since!=hdr->last_modified.tim) {
-    req->if_modified_since=hdr->last_modified.tim;
-    fcdata->added_ims=1;
-  }
+  req->if_modified_since=hdr->last_modified.tim;
+  fcdata->revalidation_mode=1;
   return NXWEB_REVALIDATE;
 }
 
@@ -439,10 +450,10 @@ nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* con
   fc_build_cache_fpath(req->nxb, fcdata, cache_key);
   if (stat(fcdata->cache_fpath, &fcdata->cache_finfo)==-1) return NXWEB_NEXT; // no cached content
   if (fcdata->cache_finfo.st_mtime<check_time) { // cache expired
-    return fc_revalidate(fcdata, req);
+    return fc_initiate_revalidation(fcdata, req);
   }
   else { // cache valid & not expired
-    return fc_serve(fcdata, req, resp);
+    return fc_serve(fcdata, req, resp, check_time);
   }
 }
 
@@ -451,47 +462,53 @@ static nxweb_result fc_serve_from_cache(struct nxweb_http_server_connection* con
 }
 
 nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, fc_filter_data* fcdata) {
-  // if 'not modified' and added_ims flag set => use cached version
+
+  if (!fcdata->revalidation_mode) return NXWEB_NEXT; // go ahead with do_filter()
+
+  // when in revalidation_mode and 'not modified' flag set OR gateway timeout => use cached version
+
+  req->if_modified_since=fcdata->if_modified_since_original; // restore if_modified_since
+
   time_t cur_time=nxe_get_current_http_time(conn->tdata->loop);
+
   if (resp->status_code==304) {
-    if (fcdata->added_ims) {
-      req->if_modified_since=fcdata->if_modified_since_original;
-      time_t expires_time=0;
-      // check new max_age & expires headers if present
-      if (resp->max_age) {
-        expires_time=cur_time+resp->max_age; // note: max_age could be -1, which is OK
-      }
-      else if (resp->expires) {
-        expires_time=resp->expires;
-      }
-      if (fc_serve(fcdata, req, resp)!=NXWEB_OK) {
-        nxweb_send_http_error(resp, 500, "Internal Server Error");
-        return NXWEB_ERROR;
-      }
-      if (!expires_time) {
-        if (fcdata->hdr.max_age.tim) { // use previous max_age if was set
-          expires_time=cur_time+fcdata->hdr.max_age.tim; // note: max_age could be -1, which is OK
-        }
-      }
-      if (expires_time) { // have new expires time
-        struct utimbuf ut={.actime=expires_time, .modtime=expires_time};
-        utime(fcdata->cache_fpath, &ut);
-        resp->expires=expires_time;
+    time_t expires_time=0;
+    // check new max_age & expires headers if present
+    if (resp->max_age) {
+      expires_time=cur_time+resp->max_age; // note: max_age could be -1, which is OK
+    }
+    else if (resp->expires) {
+      expires_time=resp->expires;
+    }
+    if (fc_serve(fcdata, req, resp, cur_time)!=NXWEB_OK) {
+      nxweb_send_http_error(resp, 500, "Internal Server Error");
+      return NXWEB_ERROR;
+    }
+    if (!expires_time) {
+      if (fcdata->hdr.max_age.tim) { // use previous max_age if was set
+        expires_time=cur_time+fcdata->hdr.max_age.tim; // note: max_age could be -1, which is OK
       }
     }
-    return NXWEB_OK;
+    if (expires_time) { // have new expires time
+      struct utimbuf ut={.actime=expires_time, .modtime=expires_time};
+      utime(fcdata->cache_fpath, &ut);
+      resp->expires=expires_time;
+    }
   }
   else if (resp->status_code/100==5) { // backend error => use cached data
-    if (fcdata->cache_finfo.st_mtime) { // cache file exists?
-      if (fcdata->added_ims) req->if_modified_since=fcdata->if_modified_since_original;
-      if (fc_serve(fcdata, req, resp)!=NXWEB_OK) {
-        nxweb_send_http_error(resp, 500, "Internal Server Error");
-        return NXWEB_ERROR;
-      }
-      return NXWEB_OK;
+    if (fc_serve(fcdata, req, resp, cur_time)!=NXWEB_OK) {
+      nxweb_send_http_error(resp, 500, "Internal Server Error");
+      return NXWEB_ERROR;
     }
   }
-  return NXWEB_NEXT; // means continue do_filter
+  else {
+    if (fcdata->fd && fcdata->fd!=-1) {
+      close(fcdata->fd);
+      fcdata->fd=0;
+    }
+    return NXWEB_NEXT;
+  }
+  return NXWEB_OK;
 }
 
 nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, fc_filter_data* fcdata) {
@@ -513,6 +530,11 @@ nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_ht
   }
   else {
     return NXWEB_NEXT;
+  }
+
+  if (fcdata->hdr.header_size && fcdata->hdr.last_modified.tim==resp->last_modified) {
+    nxweb_log_info("nothing new to store in %s", fcdata->cache_fpath);
+    return NXWEB_OK;
   }
 
   fcdata->tmp_fpath=nxb_alloc_obj(req->nxb, strlen(fcdata->cache_fpath)+4+1);

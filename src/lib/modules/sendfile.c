@@ -53,6 +53,7 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
     return NXWEB_NEXT;
   }
   resp->cache_key=fpath;
+  resp->sendfile_path=fpath;
 
   resp->mtype=nxweb_get_mime_type_by_ext(fpath);
   if (resp->mtype) {
@@ -65,7 +66,7 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
 static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
-  const char* fpath=resp->cache_key;
+  const char* fpath=resp->sendfile_path;
   assert(fpath);
   struct stat* finfo=&resp->sendfile_info;
 
@@ -102,6 +103,11 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
     nxweb_log_error("sendfile: [%s] stat() was OK, but open() failed", fpath);
     nxweb_send_http_error(resp, 500, "Internal Server Error");
     return NXWEB_ERROR;
+  }
+
+  if (S_ISVTX & finfo->st_mode) { // sTicky bit (use chmod +t filename to set)
+    resp->templates_on=1; // activate templates processing
+    // NOTE content type still depends on extension
   }
 
   nxweb_start_sending_response(conn, resp);

@@ -75,8 +75,10 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
     int i;
     nxweb_filter* filter;
     nxweb_filter_data* fdata;
-    for (i=0; i<handler->num_filters; i++) {
-      filter=handler->filters[i];
+    nxweb_filter** filters=handler->filters;
+    const int num_filters=handler->num_filters;
+    for (i=0; i<num_filters; i++) {
+      filter=filters[i];
       assert(filter->init);
       req->filter_data[i]=filter->init(conn, req, resp);
     }
@@ -127,9 +129,10 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           cache_key=fdata->cache_key;
           assert(cache_key && *cache_key);
         }
+        resp->cache_key=cache_key;
       }
       if (handler->cache) {
-        nxweb_result res=nxweb_cache_try(conn, resp, cache_key, req->if_modified_since, 0);
+        nxweb_result res=nxweb_cache_try(conn, resp, resp->cache_key, req->if_modified_since, 0);
         if (res==NXWEB_OK) {
           conn->hsp.cls->start_sending_response(&conn->hsp, resp);
           return NXWEB_OK;
@@ -162,8 +165,12 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
               for (i++; i<conn->handler->num_filters; i++) {
                 filter=handler->filters[i];
                 nxweb_filter_data* fdata1=req->filter_data[i];
-                if (fdata1 && !fdata1->bypass && filter->do_filter)
-                  filter->do_filter(conn, req, resp, fdata1);
+                if (fdata1 && !fdata1->bypass && filter->do_filter) {
+                  if (filter->do_filter(conn, req, resp, fdata1)==NXWEB_DELAY) {
+                    resp->run_filter_idx=i+1; // resume from next filter
+                    return NXWEB_OK;
+                  }
+                }
               }
               if (handler->cache) {
                 nxweb_cache_store_response(conn, resp);
@@ -322,7 +329,7 @@ static void nxweb_http_server_connection_worker_complete_on_message(nxe_subscrib
   __sync_synchronize(); // full memory barrier
   assert(conn->hsp._resp.content && conn->hsp._resp.content_length);
   nxweb_start_sending_response(conn, &conn->hsp._resp);
-  if (cnt) nxweb_log_error("job not done in %ld steps", cnt);
+  if (cnt) nxweb_log_warning("job not done in %ld steps", cnt);
 }
 
 /*
@@ -371,7 +378,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_server_config.request_dispatcher(conn, req, resp);
     if (!conn->handler) conn->handler=&_nxweb_default_handler;
 
-    if (conn->hsp.state==HSP_SENDING_HEADERS) return; // one of callbacks has already started sending headers
+    if (conn->hsp.state==HSP_SENDING_HEADERS || resp->run_filter_idx) return; // one of callbacks has already started sending response
 
     nxweb_handler* h=conn->handler;
     nxweb_handler_flags flags=h->flags;
@@ -467,29 +474,30 @@ void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http
 
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
-  _Bool delay_start=0;
   if (conn->handler && conn->handler->num_filters) {
     // run filters
     int i;
     nxweb_http_request* req=&conn->hsp.req;
     nxweb_filter* filter;
-    nxweb_filter** pfilter=conn->handler->filters;
-    for (i=0; i<conn->handler->num_filters; i++, pfilter++) {
-      filter=*pfilter;
-      nxweb_filter_data* fdata=req->filter_data[i];
+    nxweb_filter_data* fdata;
+    nxweb_filter** filters=conn->handler->filters;
+    const int num_filters=conn->handler->num_filters;
+    for (i=resp->run_filter_idx; i<num_filters; i++) {
+      filter=filters[i];
+      fdata=req->filter_data[i];
       if (fdata && !fdata->bypass && filter->do_filter) {
-        filter->do_filter(conn, req, resp, fdata);
-        if (fdata->delay_start) delay_start=1;
+        if (filter->do_filter(conn, req, resp, fdata)==NXWEB_DELAY) {
+          resp->run_filter_idx=i+1; // resume from next filter
+          return;
+        }
       }
     }
   }
 
-  if (!delay_start) {
-    if (conn->handler && conn->handler->cache) {
-      nxweb_cache_store_response(conn, resp);
-    }
-    conn->hsp.cls->start_sending_response(&conn->hsp, resp);
+  if (conn->handler && conn->handler->cache) {
+    nxweb_cache_store_response(conn, resp);
   }
+  conn->hsp.cls->start_sending_response(&conn->hsp, resp);
 }
 
 static void nxweb_http_server_connection_init(nxweb_http_server_connection* conn, nxweb_net_thread_data* tdata, int lconf_idx) {

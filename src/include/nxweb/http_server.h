@@ -38,6 +38,7 @@ typedef enum nxweb_result {
   NXWEB_OK=0,
   NXWEB_NEXT=1,
   NXWEB_ASYNC=2,
+  NXWEB_DELAY=3,
   NXWEB_ERROR=-1,
   NXWEB_REVALIDATE=-2,
   NXWEB_MISS=-3
@@ -67,7 +68,6 @@ typedef struct nxweb_filter_data {
   const char* cache_key;
   struct fc_filter_data* fcache;
   unsigned bypass:1;
-  unsigned delay_start:1;
 } nxweb_filter_data;
 
 typedef struct nxweb_filter {

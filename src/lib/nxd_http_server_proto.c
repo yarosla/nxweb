@@ -51,9 +51,10 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
     int i;
     nxweb_filter* filter;
     nxweb_filter_data* fdata;
-    nxweb_filter** pfilter=conn->handler->filters;
-    for (i=0; i<conn->handler->num_filters; i++, pfilter++) {
-      filter=*pfilter;
+    nxweb_filter** filters=conn->handler->filters;
+    const int num_filters=conn->handler->num_filters;
+    for (i=0; i<num_filters; i++) {
+      filter=filters[i];
       fdata=req->filter_data[i];
       if (fdata && filter->finalize)
         filter->finalize(conn, req, resp, fdata);
@@ -540,7 +541,11 @@ void nxweb_reset_content_out(nxweb_http_response* resp) {
   resp->content=0;
   resp->content_length=0;
   resp->sendfile_path=0;
+  if (resp->sendfile_fd) close(resp->sendfile_fd);
   resp->sendfile_fd=0;
+  resp->chunked_autoencode=0;
+  resp->chunked_encoding=0;
+  resp->gzip_encoded=0;
 }
 
 static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
@@ -554,6 +559,17 @@ static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* 
   nxe_loop* loop=hsp->data_in.super.loop;
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hsp->timer_read);
   if (!resp->nxb) resp->nxb=hsp->nxb;
+
+  assert(!resp->chunked_autoencode || (resp->chunked_autoencode && resp->content_length==-1));
+
+  if (req->if_modified_since && resp->last_modified
+      && resp->last_modified<=req->if_modified_since
+      && resp->status_code!=304) {
+    nxweb_log_info("responding with 304 Not Modified for %s", req->uri);
+    nxweb_reset_content_out(resp);
+    resp->status_code=304;
+    resp->status="Not Modified";
+  }
 
   if (resp->chunked_autoencode) _nxweb_encode_chunked_init(&resp->cestate);
 

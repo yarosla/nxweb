@@ -747,8 +747,8 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
 
   _Bool must_not_have_body=(resp->status_code==304 || resp->status_code==204 || resp->status_code==205);
   if (must_not_have_body) {
-    if (resp->content_length) nxweb_log_error("content_length specified for response that must not contain entity body");
-    if (resp->gzip_encoded) nxweb_log_error("gzip encoding specified for response that must not contain entity body");
+    if (resp->content_length) nxweb_log_warning("content_length specified for response that must not contain entity body");
+    if (resp->gzip_encoded) nxweb_log_warning("gzip encoding specified for response that must not contain entity body");
   }
 
   nxb_make_room(nxb, 200);
@@ -932,10 +932,9 @@ int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* f
   }
 
   // if no finfo provided by the caller, get it here
-  struct stat _finfo;
-  if (!finfo) {
-    if (stat(fpath, &_finfo)==-1) return -1;
-    finfo=&_finfo;
+  if (!finfo || !finfo->st_ino) {
+    if (stat(fpath, &resp->sendfile_info)==-1) return -1;
+    finfo=&resp->sendfile_info;
   }
   if (S_ISDIR(finfo->st_mode)) {
     return -2;
@@ -1446,6 +1445,7 @@ int nxweb_remove_dots_from_uri_path(char* path) { // returns 0=OK
             }
             // cut last path segment from dst
             while ((--dst)[-1] != '/');
+            src+=3;
             continue;
           }
           break;
@@ -1456,7 +1456,7 @@ int nxweb_remove_dots_from_uri_path(char* path) { // returns 0=OK
     while (*src && *src!='/') {
       *dst++=*src++;
     }
-    *dst++=*src++;
+    if (!(*dst++=*src++)) break;
   }
   return 0;
 }

@@ -75,13 +75,12 @@ static void tf_check_complete(tf_filter_data* tfdata) {
     nxweb_http_response* resp=tfdata->conn->hsp.resp;
 
     resp->last_modified=tfdata->last_modified;
-    if (req->if_modified_since && resp->last_modified<=req->if_modified_since) {
+    if (req->if_modified_since && resp->last_modified && resp->last_modified<=req->if_modified_since) {
+      nxweb_reset_content_out(resp);
       resp->status_code=304;
       resp->status="Not Modified";
-      nxweb_reset_content_out(resp);
-      nxd_http_server_proto_setup_content_out(&tfdata->conn->hsp, resp);
     }
-    tfdata->conn->hsp.cls->start_sending_response(&tfdata->conn->hsp, tfdata->conn->hsp.resp);
+    nxweb_start_sending_response(tfdata->conn, resp);
   }
 }
 
@@ -176,7 +175,7 @@ static void tf_on_subrequest_ready(nxe_data data) {
   }
   else {
     // subrequest error
-    nxweb_log_error("subrequest failed: %s%s", subconn->hsp.req.host, subconn->hsp.req.uri);
+    nxweb_log_warning("subrequest failed: %s%s", subconn->hsp.req.host, subconn->hsp.req.uri);
     tfdata->ctx.files_pending--;
     tf_check_complete(tfdata);
   }
@@ -248,6 +247,8 @@ static nxweb_result tf_do_filter(struct nxweb_http_server_connection* conn, nxwe
     }
   }
 
+  resp->templates_on=0; // clear it for other filters following in chain
+
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
   tfdata->conn=conn;
@@ -274,9 +275,8 @@ static nxweb_result tf_do_filter(struct nxweb_http_server_connection* conn, nxwe
 
   tfdata->cs=cs;
   tfdata->last_modified=resp->last_modified;
-  tfdata->fdata.delay_start=1;
 
-  return NXWEB_OK;
+  return NXWEB_DELAY; // don't start sending; wait for all subrequests complete, so we can calculate last_modified
 }
 
 nxweb_filter templates_filter={.name="templates", .init=tf_init, .finalize=tf_finalize,

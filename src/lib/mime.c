@@ -39,10 +39,10 @@ static const nxweb_mime_type const mime_types[] = {
   // enabling gzip or ssi filter on it might significantly affect your server's performance
   {"htm", "text/html", 1, .gzippable=1, .ssi_on=0}, // default mime type
   {"html", "text/html", 1, .gzippable=1},
-  {"shtml", "text/html", 1, .gzippable=0, .ssi_on=1},
-  {"shtm", "text/html", 1, .gzippable=0, .ssi_on=1},
-  {"thtml", "text/html", 1, .gzippable=0, .templates_on=1},
-  {"thtm", "text/html", 1, .gzippable=0, .templates_on=1},
+  {"shtml", "text/html", 1, .gzippable=1, .ssi_on=1},
+  {"shtm", "text/html", 1, .gzippable=1, .ssi_on=1},
+  {"thtml", "text/html", 1, .gzippable=1, .templates_on=1},
+  {"thtm", "text/html", 1, .gzippable=1, .templates_on=1},
   {"txt", "text/plain", 1, .gzippable=1},
   {"c", "text/plain", 1, .gzippable=1},
   {"h", "text/plain", 1, .gzippable=1},

@@ -259,13 +259,13 @@ static nxweb_filter_data* gzip_init(struct nxweb_http_server_connection* conn, n
   gdata->rb.data_in.super.cls.os_cls=&gzip_data_in_class;
   gdata->rb.data_in.ready=1;
   // gdata->rb.data_out.ready=1;
-  gdata->fdata.fcache=_nxweb_fc_create(req->nxb, conn->handler->gzip_dir);
+  if (conn->handler->gzip_dir) gdata->fdata.fcache=_nxweb_fc_create(req->nxb, conn->handler->gzip_dir);
   return &gdata->fdata;
 }
 
 static void gzip_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   gzip_filter_data* gdata=(gzip_filter_data*)fdata;
-  _nxweb_fc_finalize(fdata->fcache);
+  if (fdata->fcache) _nxweb_fc_finalize(fdata->fcache);
   if (gdata->rb.data_out.pair)
     nxe_disconnect_streams(&gdata->rb.data_out, gdata->rb.data_out.pair);
   if (gdata->rb.data_in.pair)

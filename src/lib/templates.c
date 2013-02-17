@@ -201,7 +201,7 @@ static const char* nxt_resolve_uri(nxt_context* ctx, const char* cur_uri, const 
   memcpy(buf, cur_uri, base_len);
   strcpy(buf+base_len, new_uri);
   if (nxweb_remove_dots_from_uri_path(buf)) { // invalid path
-    nxweb_log_error("template error: invalid path resolving %s from %s", new_uri, cur_uri);
+    nxweb_log_error("template error: invalid path %s resolving %s from %s", buf, new_uri, cur_uri);
     return 0;
   }
   return buf;
@@ -347,7 +347,7 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
   // debug print out
   nxt_block* blk;
   for (blk=file->first_block; blk; blk=blk->next) {
-    nxweb_log_error("BLOCK %s: %.*s", ctx->block_names[blk->id].name, blk->value? blk->value->text_len:1, blk->value? blk->value->text:"-");
+    nxweb_log_info("BLOCK %s: %.*s", ctx->block_names[blk->id].name, blk->value? blk->value->text_len:1, blk->value? blk->value->text:"-");
   }
 #endif
 

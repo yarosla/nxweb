@@ -378,28 +378,28 @@ static void timer_keep_alive_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)timer-offsetof(nxd_http_client_proto, timer_keep_alive));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_KEEP_ALIVE_TIMEOUT);
-  nxweb_log_error("client connection %p keep-alive timeout", hcp);
+  nxweb_log_info("client connection %p keep-alive timeout", hcp);
 }
 
 static void timer_read_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)timer-offsetof(nxd_http_client_proto, timer_read));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_READ_TIMEOUT);
-  nxweb_log_error("client connection %p read timeout", hcp);
+  nxweb_log_warning("client connection %p read timeout", hcp);
 }
 
 static void timer_write_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)timer-offsetof(nxd_http_client_proto, timer_write));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_WRITE_TIMEOUT);
-  nxweb_log_error("client connection %p write timeout", hcp);
+  nxweb_log_warning("client connection %p write timeout", hcp);
 }
 
 static void timer_100_continue_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)timer-offsetof(nxd_http_client_proto, timer_100_continue));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_100CONTINUE_TIMEOUT);
-  nxweb_log_error("client connection %p 100-continue timeout", hcp);
+  nxweb_log_warning("client connection %p 100-continue timeout", hcp);
 }
 
 static const nxe_ostream_class data_in_class={.do_read=data_in_do_read};

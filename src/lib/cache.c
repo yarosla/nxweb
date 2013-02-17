@@ -143,7 +143,7 @@ nxweb_result nxweb_cache_try(nxweb_http_server_connection* conn, nxweb_http_resp
     nxweb_cache_rec* rec=alignhash_value(_nxweb_cache, ci);
     if (rec->last_modified==revalidated_mtime) {
       rec->expires_time=loop_time+NXWEB_DEFAULT_CACHED_TIME;
-      nxweb_log_error("revalidated %s in cache", key);
+      nxweb_log_info("revalidated %s in memcache", key);
     }
     if (loop_time <= rec->expires_time) {
       if (rec!=_nxweb_cache_head) {
@@ -197,9 +197,10 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
       && alignhash_size(_nxweb_cache)<NXWEB_MAX_CACHED_ITEMS+16) {
 
     const char* fpath=resp->sendfile_path;
-    if (nxweb_cache_try(conn, resp, fpath, 0, resp->last_modified)!=NXWEB_MISS) return NXWEB_OK;
+    const char* key=resp->cache_key;
+    if (nxweb_cache_try(conn, resp, key, 0, resp->last_modified)!=NXWEB_MISS) return NXWEB_OK;
 
-    nxweb_cache_rec* rec=nx_calloc(sizeof(nxweb_cache_rec)+resp->content_length+1+strlen(fpath)+1);
+    nxweb_cache_rec* rec=nx_calloc(sizeof(nxweb_cache_rec)+resp->content_length+1+strlen(key)+1);
 
     rec->expires_time=loop_time+NXWEB_DEFAULT_CACHED_TIME;
     rec->last_modified=resp->last_modified;
@@ -220,12 +221,13 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
     resp->content=ptr;
     ptr+=resp->content_length;
     *ptr++='\0';
-    strcpy(ptr, fpath);
+    strcpy(ptr, key);
+    key=ptr;
 
     int ret=0;
     ah_iter_t ci;
     pthread_mutex_lock(&_nxweb_cache_mutex);
-    ci=alignhash_set(nxweb_cache, _nxweb_cache, ptr, &ret);
+    ci=alignhash_set(nxweb_cache, _nxweb_cache, key, &ret);
     if (ci!=alignhash_end(_nxweb_cache)) {
       if (ret!=AH_INS_ERR) {
         alignhash_value(_nxweb_cache, ci)=rec;
@@ -233,7 +235,7 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
         rec->ref_count++;
         cache_check_size();
         pthread_mutex_unlock(&_nxweb_cache_mutex);
-        nxweb_log_error("cached %s", ptr);
+        nxweb_log_info("memcached %s", key);
         conn->hsp.req_data=rec;
         assert(!conn->hsp.req_finalize);
         conn->hsp.req_finalize=cache_rec_unref;
