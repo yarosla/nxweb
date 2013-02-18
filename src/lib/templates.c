@@ -25,10 +25,11 @@
 //#define MISSING_BLOCK_STUB "<!--[missing block]-->"
 #define MISSING_BLOCK_STUB ""
 
-void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader) {
+void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader, nxe_data loader_data) {
   memset(ctx, 0, sizeof(*ctx));
   ctx->nxb=nxb;
   ctx->load=loader;
+  ctx->loader_data=loader_data;
 }
 
 static enum nxt_cmd nxt_parse_cmd(char* buf, int buf_len, char** args) {

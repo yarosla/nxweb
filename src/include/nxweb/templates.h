@@ -63,6 +63,7 @@ typedef int (*nxt_loader)(struct nxt_context* ctx, const char* uri, struct nxt_f
 typedef struct nxt_context {
   struct nxt_file* start_file;
   nxt_loader load; // function to make subrequests
+  nxe_data loader_data;
   nxb_buffer* nxb;
   nxt_block_name block_names[NXT_MAX_BLOCKS];
   int next_free_block_id;
@@ -97,7 +98,7 @@ typedef struct nxt_block {
   struct nxt_block* next; // within file
 } nxt_block;
 
-void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader);
+void nxt_init(nxt_context* ctx, nxb_buffer* nxb, nxt_loader loader, nxe_data loader_data);
 int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
 nxt_file* nxt_file_create(nxt_context* ctx, const char* uri);
 int nxt_parse_file(nxt_file* file, char* buf, int buf_len);

@@ -23,7 +23,8 @@ syntax: regexp
 ^build/
 ^dist/
 ^test/
-callgrind\.
+callgrind\.out\.
+massif\.out\.
 _strace
 ^core
 ^\.dep\.inc$

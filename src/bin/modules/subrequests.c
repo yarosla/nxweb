@@ -70,7 +70,7 @@ static nxweb_result tmpl_on_request(nxweb_http_server_connection* conn, nxweb_ht
   const char* tmpl="{% extends \"ttt\"%} {% block title %}The Very {% parent %}{% endblock %}";
   tmpl=nxb_copy_obj(req->nxb, tmpl, strlen(tmpl)+1);
   nxt_context ctx;
-  nxt_init(&ctx, req->nxb, tmpl_load);
+  nxt_init(&ctx, req->nxb, tmpl_load, (nxe_data)0);
   nxt_parse(&ctx, req->uri, (char*)tmpl, strlen(tmpl));
   nxt_merge(&ctx);
   resp->content=nxt_serialize(&ctx);

@@ -33,11 +33,11 @@ typedef struct tf_buffer {
 
 typedef struct tf_filter_data {
   nxweb_filter_data fdata;
-  tf_buffer tfb;
+  tf_buffer* tfb;
   nxweb_composite_stream* cs;
   int input_fd;
   time_t last_modified;
-  nxt_context ctx;
+  nxt_context* ctx;
   nxweb_http_server_connection* conn;
 } tf_filter_data;
 
@@ -63,7 +63,7 @@ static const char tfb_key; // variable's address only matters
 #define TFB_KEY ((nxe_data)&tfb_key)
 
 static void tf_check_complete(tf_filter_data* tfdata) {
-  nxt_context* ctx=&tfdata->ctx;
+  nxt_context* ctx=tfdata->ctx;
   if (nxt_is_complete(ctx)) {
     // merge
     nxt_merge(ctx);
@@ -109,7 +109,7 @@ static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int
     nxe_ostream_unset_ready(os);
 
     tf_filter_data* tfdata=tfb->tfdata;
-    nxt_context* ctx=&tfdata->ctx;
+    nxt_context* ctx=tfdata->ctx;
     if (tfb->overflow) {
       nxweb_log_error("MAX_TEMPLATE_SIZE exceeded");
       nxb_unfinish_stream(tfb->nxb);
@@ -176,7 +176,7 @@ static void tf_on_subrequest_ready(nxe_data data) {
   else {
     // subrequest error
     nxweb_log_warning("subrequest failed: %s%s", subconn->hsp.req.host, subconn->hsp.req.uri);
-    tfdata->ctx.files_pending--;
+    tfdata->ctx->files_pending--;
     tf_check_complete(tfdata);
   }
 }
@@ -187,7 +187,7 @@ static void tf_subreq_finalize(nxweb_http_server_connection* conn, nxweb_http_re
 }
 
 static int tf_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_block* dst_block) { // function to make subrequests
-  tf_filter_data* tfdata=OBJ_PTR_FROM_FLD_PTR(tf_filter_data, ctx, ctx);
+  tf_filter_data* tfdata=ctx->loader_data.ptr;
   tf_buffer* tfb=nxb_calloc_obj(ctx->nxb, sizeof(tf_buffer));
   if (dst_block) {
     // nxweb_log_error("including file %s", uri);
@@ -212,7 +212,7 @@ static nxweb_filter_data* tf_init(struct nxweb_http_server_connection* conn, nxw
 
 static void tf_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   tf_filter_data* tfdata=(tf_filter_data*)fdata;
-  if (tfdata->tfb.data_in.pair) nxe_disconnect_streams(tfdata->tfb.data_in.pair, &tfdata->tfb.data_in);
+  if (tfdata->tfb && tfdata->tfb->data_in.pair) nxe_disconnect_streams(tfdata->tfb->data_in.pair, &tfdata->tfb->data_in);
   if (tfdata->input_fd) {
     close(tfdata->input_fd);
     tfdata->input_fd=0;
@@ -252,12 +252,14 @@ static nxweb_result tf_do_filter(struct nxweb_http_server_connection* conn, nxwe
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
   tfdata->conn=conn;
-  nxt_init(&tfdata->ctx, req->nxb, tf_load);
-  tf_buffer_init(&tfdata->tfb, req->nxb, tfdata, nxt_file_create(&tfdata->ctx, req->uri), 0);
+  tfdata->ctx=nxb_alloc_obj(req->nxb, sizeof(nxt_context));
+  nxt_init(tfdata->ctx, req->nxb, tf_load, (nxe_data)(void*)tfdata);
+  tfdata->tfb=nxb_calloc_obj(req->nxb, sizeof(tf_buffer));
+  tf_buffer_init(tfdata->tfb, req->nxb, tfdata, nxt_file_create(tfdata->ctx, req->uri), 0);
 
   // attach content_out to tf_buffer
-  if (resp->content_length>0) tf_buffer_make_room(&tfdata->tfb, min(MAX_TEMPLATE_SIZE, resp->content_length));
-  nxe_connect_streams(conn->tdata->loop, resp->content_out, &tfdata->tfb.data_in);
+  if (resp->content_length>0) tf_buffer_make_room(tfdata->tfb, min(MAX_TEMPLATE_SIZE, resp->content_length));
+  nxe_connect_streams(conn->tdata->loop, resp->content_out, &tfdata->tfb->data_in);
 
   // replace content_out with composite stream
   nxweb_composite_stream* cs=nxweb_composite_stream_init(conn, req);
