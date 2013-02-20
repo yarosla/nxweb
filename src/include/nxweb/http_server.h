@@ -72,12 +72,12 @@ typedef struct nxweb_filter_data {
 
 typedef struct nxweb_filter {
   const char* name;
-  nxweb_filter_data* (*init)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
-  const char* (*decode_uri)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri);
-  nxweb_result (*translate_cache_key)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key);
-  nxweb_result (*serve_from_cache)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time);
-  nxweb_result (*do_filter)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
-  void (*finalize)(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  nxweb_filter_data* (*init)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+  const char* (*decode_uri)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri);
+  nxweb_result (*translate_cache_key)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key);
+  nxweb_result (*serve_from_cache)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time);
+  nxweb_result (*do_filter)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  void (*finalize)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
 } nxweb_filter;
 
 struct fc_filter_data* _nxweb_fc_create(nxb_buffer* nxb, const char* cache_dir);
@@ -99,13 +99,7 @@ typedef struct nxweb_handler {
   const char* dir;
   const char* charset;
   const char* index_file;
-  const char* gzip_dir;
-  const char* file_cache_dir;
-  const char* img_dir;
-  const char* key;
-  const char* font;
-  const struct nxweb_image_filter_cmd* allowed_cmds;
-  _Bool cache:1;
+  _Bool memcache:1;
   _Bool proxy_copy_host:1;
   int idx;
   struct nxweb_handler* next;
@@ -138,6 +132,8 @@ typedef struct nxweb_http_server_listening_socket {
   nxe_subscriber listen_sub;
 } nxweb_http_server_listening_socket;
 
+#define NXWEB_ACCESS_LOG_BLOCK_SIZE 32768
+
 typedef struct nxweb_net_thread_data {
   pthread_t thread_id;
   uint8_t thread_num; // up to 256 net threads
@@ -151,6 +147,11 @@ typedef struct nxweb_net_thread_data {
   nxp_pool* free_conn_pool;
   nxp_pool* free_conn_nxb_pool;
   nxp_pool* free_rbuf_pool;
+
+  char* access_log_block;
+  int access_log_block_avail;
+  char* access_log_block_ptr;
+
   nxd_http_proxy_pool proxy_pool[NXWEB_MAX_PROXY_POOLS];
 } nxweb_net_thread_data __attribute__ ((aligned(64)));
 
@@ -172,6 +173,7 @@ typedef struct nxweb_http_server_connection {
   _Bool secure:1;
   _Bool response_ready:1;
   _Bool subrequest_failed:1;
+  uint64_t uid; // unique connection id
   struct nxweb_http_server_connection* parent;
   struct nxweb_http_server_connection* subrequests;
   struct nxweb_http_server_connection* next;
@@ -203,6 +205,9 @@ struct nxweb_server_config {
   nxweb_handler* handler_list;
   nxweb_module* module_list;
   char* work_dir;
+  const char* access_log_fpath;
+  int access_log_fd;
+  pthread_mutex_t access_log_start_mux;
 };
 
 typedef struct nxweb_image_filter_cmd {
@@ -237,6 +242,8 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           _nxweb_register_module(&_nxweb_ ## _name ## _module); \
         }
 
+// Old-style (pre 3.2) handler setup macros:
+
 #define NXWEB_HANDLER(_name, _prefix, ...) \
         static nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=_prefix, ## __VA_ARGS__}; \
         static void _nxweb_pre_load_handler_ ## _name() __attribute__ ((constructor)); \
@@ -250,6 +257,20 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         static void _nxweb_pre_load_handler_ ## _name() { \
           _nxweb_register_handler(&_nxweb_ ## _name ## _handler, (_base)); \
         }
+
+// New style (3.2+) setup macros (use inside server_config() callback function):
+
+#define NXWEB_HANDLER_SETUP(_name, _prefix, _base, ...) \
+        nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
+        _nxweb_register_handler(&_nxweb_ ## _name ## _handler, (_base))
+
+#define NXWEB_SENDFILE_SETUP(_name, _prefix, ...) \
+        nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
+        _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_sendfile_handler)
+
+#define NXWEB_PROXY_SETUP(_name, _prefix, ...) \
+        nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
+        _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_http_proxy_handler)
 
 void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http_response* resp);
 
@@ -274,8 +295,6 @@ static inline uint64_t nxweb_generate_unique_id() {
 
 nxweb_result nxweb_cache_try(nxweb_http_server_connection* conn, nxweb_http_response* resp, const char* key, time_t if_modified_since, time_t revalidated_mtime);
 nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxweb_http_response* resp);
-
-extern nxweb_handler nxweb_http_proxy_handler;
 
 #ifdef	__cplusplus
 }

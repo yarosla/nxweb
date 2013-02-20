@@ -1,0 +1,32 @@
+{
+   nxweb_file_cache_filter_setup
+   Memcheck:Leak
+   fun:memalign
+   fun:nxweb_file_cache_filter_setup
+   ...
+   fun:server_config
+}
+{
+   nxweb_draw_filter_setup
+   Memcheck:Leak
+   fun:memalign
+   fun:nxweb_draw_filter_setup
+   ...
+   fun:server_config
+}
+{
+   nxweb_gzip_filter_setup
+   Memcheck:Leak
+   fun:memalign
+   fun:nxweb_gzip_filter_setup
+   ...
+   fun:server_config
+}
+{
+   nxweb_image_filter_setup
+   Memcheck:Leak
+   fun:memalign
+   fun:nxweb_image_filter_setup
+   ...
+   fun:server_config
+}

@@ -39,6 +39,11 @@ static void on_shutdown() {
 NXWEB_MODULE(draw_filter, .on_server_startup=on_startup, .on_server_shutdown=on_shutdown);
 
 
+typedef struct nxweb_filter_draw {
+  nxweb_filter base;
+  const char* font_file;
+} nxweb_filter_draw;
+
 typedef struct draw_filter_data {
   nxweb_filter_data fdata;
   unsigned char* blob;
@@ -46,12 +51,12 @@ typedef struct draw_filter_data {
 } draw_filter_data;
 
 
-static nxweb_filter_data* draw_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_filter_data* draw_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(draw_filter_data));
   return fdata;
 }
 
-static void draw_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static void draw_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   draw_filter_data* dfdata=(draw_filter_data*)fdata;
   if (dfdata->blob) {
     MagickRelinquishMemory(dfdata->blob);
@@ -79,7 +84,7 @@ static void set_rotate_affine(AffineMatrix* affine, double degrees, double tx, d
   affine->ty=ty;
 }
 
-static nxweb_result draw_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static nxweb_result draw_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   nxweb_http_header* h=nxweb_remove_response_header(resp, "X-NXWEB-Draw");
   if (!h) {
@@ -124,7 +129,7 @@ static nxweb_result draw_do_filter(struct nxweb_http_server_connection* conn, nx
     MagickCompositeImage(bg, rect, XorCompositeOp, 0, 0);
   }
   ClearDrawingWand(d_wand);
-  if (conn->handler->font) DrawSetFont(d_wand, conn->handler->font);
+  if (((nxweb_filter_draw*)filter)->font_file) DrawSetFont(d_wand, ((nxweb_filter_draw*)filter)->font_file);
   DrawSetFontSize(d_wand, 30);
   DrawSetFillColor(d_wand, p_black);
   char t[2];
@@ -167,5 +172,12 @@ static nxweb_result draw_do_filter(struct nxweb_http_server_connection* conn, nx
   return NXWEB_OK;
 }
 
-nxweb_filter draw_filter={.name="draw", .init=draw_init, .finalize=draw_finalize,
-        .do_filter=draw_do_filter};
+static nxweb_filter_draw draw_filter={.base={.name="draw", .init=draw_init, .finalize=draw_finalize,
+        .do_filter=draw_do_filter}};
+
+nxweb_filter* nxweb_draw_filter_setup(const char* font_file) {
+  nxweb_filter_draw* f=nx_alloc(sizeof(nxweb_filter_draw)); // NOTE this will never be freed
+  *f=draw_filter;
+  f->font_file=font_file;
+  return (nxweb_filter*)f;
+}

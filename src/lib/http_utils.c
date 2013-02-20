@@ -36,7 +36,7 @@ static const char* WEEK_DAY[]={"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 static const char* MONTH[]={"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 int nxweb_format_http_time(char* buf, struct tm* tm) {
-  // eg. Tue, 24 Jan 2012 13:05:54 GMT (29 chars)
+  // eg. Tue, 24 Jan 2012 13:05:54 GMT (max 29 chars)
   char* p=buf;
   char num[16];
   strcpy(p, WEEK_DAY[tm->tm_wday]);
@@ -162,6 +162,31 @@ time_t nxweb_parse_http_time(const char* str) { // must be GMT
   time_t t=mktime(&tm) - timezone;
   if (t==-1) return 0;
   return t;
+}
+
+int nxweb_format_iso8601_time(char* buf, struct tm* tm) { // ISO 8601
+  // eg. 2012-01-24T13:05:54 (19 chars)
+  char* p=buf;
+  uint_to_decimal_string_zeropad(tm->tm_year+1900, p, 4, 0);
+  p+=4;
+  *p++='-';
+  uint_to_decimal_string_zeropad(tm->tm_mon+1, p, 2, 0);
+  p+=2;
+  *p++='-';
+  uint_to_decimal_string_zeropad(tm->tm_mday, p, 2, 0);
+  p+=2;
+  *p++='T';
+  uint_to_decimal_string_zeropad(tm->tm_hour, p, 2, 0);
+  p+=2;
+  *p++=':';
+  uint_to_decimal_string_zeropad(tm->tm_min, p, 2, 0);
+  p+=2;
+  *p++=':';
+  uint_to_decimal_string_zeropad(tm->tm_sec, p, 2, 0);
+  p+=2;
+  *p='\0';
+  assert(p-buf==19);
+  return p-buf;
 }
 
 

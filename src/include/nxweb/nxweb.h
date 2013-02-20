@@ -88,6 +88,13 @@ typedef struct nxweb_http_request_data {
   struct nxweb_http_request_data* next;
 } nxweb_http_request_data;
 
+typedef struct nxweb_log_fragment {
+  struct nxweb_log_fragment* prev;
+  int type;
+  int length;
+  char content[];
+} nxweb_log_fragment;
+
 typedef struct nxweb_http_request {
 
   nxb_buffer* nxb; // use this for per-request memory allocation
@@ -134,13 +141,14 @@ typedef struct nxweb_http_request {
   nxweb_http_cookie* cookies;
 
   struct nxweb_http_request* parent_req; // for subrequests
-  uint64_t uid;
+  uint64_t uid; // unique request id
 
   struct nxweb_filter_data* filter_data[NXWEB_MAX_FILTERS];
 
   nxweb_chunked_decoder_state cdstate;
 
   nxweb_http_request_data* data_chain;
+  nxweb_log_fragment* access_log;
 
 } nxweb_http_request;
 
@@ -386,7 +394,8 @@ int nxweb_send_file(nxweb_http_response *resp, char* fpath, const struct stat* f
         off_t offset, size_t size, const nxweb_mime_type* mtype, const char* charset); // finfo and mtype could be null => autodetect
 void nxweb_send_data(nxweb_http_response *resp, const void* data, size_t size, const char* content_type);
 
-int nxweb_format_http_time(char* buf, struct tm* tm);
+int nxweb_format_http_time(char* buf, struct tm* tm); // eg. Tue, 24 Jan 2012 13:05:54 GMT
+int nxweb_format_iso8601_time(char* buf, struct tm* tm); // YYYY-MM-DDTHH:MM:SS
 time_t nxweb_parse_http_time(const char* str);
 int nxweb_remove_dots_from_uri_path(char* path);
 
@@ -419,6 +428,12 @@ void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const 
 void nxweb_composite_stream_start(nxweb_composite_stream* cs, nxweb_http_response* resp);
 void nxweb_composite_stream_close(nxweb_composite_stream* cs); // call this right after appending last node
 
+void nxweb_access_log_restart(); // specify access log file path in nxweb_server_config.access_log_fpath
+void nxweb_access_log_stop();
+void nxweb_access_log_thread_flush(); // flush net_thread's access log
+void nxweb_access_log_add_frag(nxweb_http_request* req, nxweb_log_fragment* frag); // collect info to log
+void nxweb_access_log_write(nxweb_http_request* req); // write request's log record to thread's buffer
+
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);
 int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_of_headers);
@@ -439,16 +454,21 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
 void _nxb_append_escape_url(nxb_buffer* nxb, const char* url);
 void _nxb_append_encode_file_path(nxb_buffer* nxb, const char* path);
 
+// built-in handlers:
+extern nxweb_handler nxweb_http_proxy_handler;
+extern nxweb_handler nxweb_sendfile_handler;
+
+// built-in filters:
+nxweb_filter* nxweb_file_cache_filter_setup(const char* cache_dir);
 #ifdef WITH_ZLIB
-extern nxweb_filter gzip_filter;
+nxweb_filter* nxweb_gzip_filter_setup(int compression_level, const char* cache_dir);
 #endif
 #ifdef WITH_IMAGEMAGICK
-extern nxweb_filter image_filter;
-extern nxweb_filter draw_filter;
+nxweb_filter* nxweb_image_filter_setup(const char* cache_dir, nxweb_image_filter_cmd* allowed_cmds, const char* sign_key);
+nxweb_filter* nxweb_draw_filter_setup(const char* font_file);
 #endif
 extern nxweb_filter ssi_filter;
 extern nxweb_filter templates_filter;
-extern nxweb_filter file_cache_filter;
 
 #include "templates.h"
 

@@ -91,6 +91,13 @@
      _a < _b ? _a : _b; })
 #endif
 
+typedef struct nxweb_filter_image {
+  nxweb_filter base;
+  const char* cache_dir;
+  nxweb_image_filter_cmd* allowed_cmds;
+  const char* sign_key;
+} nxweb_filter_image;
+
 /**
  * Only commands listed below will be allowed (to protect from DoS).
  * Arbitrary command can also be executed if signed by QUERY_STRING.
@@ -463,12 +470,12 @@ typedef struct img_filter_data {
   nxweb_image_filter_cmd cmd;
 } img_filter_data;
 
-static nxweb_filter_data* img_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_filter_data* img_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(img_filter_data));
   return fdata;
 }
 
-static const char* img_decode_uri(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri) {
+static const char* img_decode_uri(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri) {
   img_filter_data* ifdata=(img_filter_data*)fdata;
   char* uri_copy=nxb_copy_obj(req->nxb, uri, strlen(uri)+1);
   decode_cmd(uri_copy, &ifdata->cmd, req->nxb);
@@ -479,7 +486,7 @@ static const char* img_decode_uri(struct nxweb_http_server_connection* conn, nxw
   return uri_copy;
 }
 
-static nxweb_result img_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* cache_key) {
+static nxweb_result img_translate_cache_key(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* cache_key) {
   img_filter_data* ifdata=(img_filter_data*)fdata;
   if (!ifdata->cmd.cmd_string) {
     fdata->cache_key=cache_key;
@@ -495,16 +502,16 @@ static nxweb_result img_translate_cache_key(struct nxweb_http_server_connection*
   return NXWEB_OK;
 }
 
-static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   img_filter_data* ifdata=(img_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   assert(fdata->cache_key);
   assert(resp->sendfile_path);
   assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
 
-  assert(conn->handler->img_dir);
+  assert(((nxweb_filter_image*)filter)->cache_dir);
   nxb_buffer* nxb=req->nxb;
-  nxb_append_str(nxb, conn->handler->img_dir);
+  nxb_append_str(nxb, ((nxweb_filter_image*)filter)->cache_dir);
   const char* cache_key=ifdata->fdata.cache_key;
   if (cache_key[0]=='.' && cache_key[1]=='.' && cache_key[2]=='/') cache_key+=2; // avoid going up dir tree
   if (*cache_key!='/') nxb_append_char(nxb, '/');
@@ -529,7 +536,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
   if (stat(fpath, &finfo)==-1 || finfo.st_mtime!=resp->sendfile_info.st_mtime) {
     if (ifdata->cmd.cmd) {
       // check if cmd is allowed
-      const nxweb_image_filter_cmd* ac=conn->handler->allowed_cmds? conn->handler->allowed_cmds : allowed_cmds;
+      const nxweb_image_filter_cmd* ac=((nxweb_filter_image*)filter)->allowed_cmds;
       _Bool allowed=0;
       while (ac->cmd) {
         if (ifdata->cmd.cmd==ac->cmd && ifdata->cmd.width==ac->width && ifdata->cmd.height==ac->height
@@ -543,7 +550,7 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
       }
       if (!allowed && ifdata->cmd.query_string) {
         char signature[41];
-        sha1sign(ifdata->cmd.uri_path, strlen(ifdata->cmd.uri_path), conn->handler->key? conn->handler->key : CMD_SIGN_SECRET_KEY, signature);
+        sha1sign(ifdata->cmd.uri_path, strlen(ifdata->cmd.uri_path), ((nxweb_filter_image*)filter)->sign_key, signature);
         if (!strcmp(ifdata->cmd.query_string, signature)) allowed=1;
         else nxweb_log_warning("img cmd not allowed: path=%s sha1sign=%s query_string=%s", ifdata->cmd.uri_path, signature, ifdata->cmd.query_string);
       }
@@ -615,6 +622,15 @@ static nxweb_result img_do_filter(struct nxweb_http_server_connection* conn, nxw
   return NXWEB_OK;
 }
 
-nxweb_filter image_filter={.name="image", .init=img_init, .translate_cache_key=img_translate_cache_key,
-        .decode_uri=img_decode_uri, .do_filter=img_do_filter};
+static nxweb_filter_image image_filter={.base={.name="image", .init=img_init, .translate_cache_key=img_translate_cache_key,
+        .decode_uri=img_decode_uri, .do_filter=img_do_filter},
+        .allowed_cmds=allowed_cmds, .sign_key=CMD_SIGN_SECRET_KEY};
 
+nxweb_filter* nxweb_image_filter_setup(const char* cache_dir, nxweb_image_filter_cmd* allowed_cmds, const char* sign_key) {
+  nxweb_filter_image* f=nx_alloc(sizeof(nxweb_filter_image)); // NOTE this will never be freed
+  *f=image_filter;
+  f->cache_dir=cache_dir;
+  if (allowed_cmds) f->allowed_cmds=allowed_cmds;
+  if (sign_key) f->sign_key=sign_key;
+  return (nxweb_filter*)f;
+}

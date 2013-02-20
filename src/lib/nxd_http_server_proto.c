@@ -29,14 +29,17 @@ static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* 
 
 void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
   // this could be called more than once, be ready for it
+
+  nxweb_http_request_data* rdata=hsp->req.data_chain;
+  nxweb_http_request* req=&hsp->req;
+  nxweb_http_response* resp=hsp->resp;
+  nxweb_access_log_write(req);
+
   if (hsp->req_finalize) {
     hsp->req_finalize(hsp, hsp->req_data);
     hsp->req_finalize=0; // call no more
     hsp->req_data=0;
   }
-  nxweb_http_request_data* rdata=hsp->req.data_chain;
-  nxweb_http_request* req=&hsp->req;
-  nxweb_http_response* resp=hsp->resp;
   // it is not very good that we access higher level (connection) object here but...
   nxweb_http_server_connection* conn=(nxweb_http_server_connection*)((char*)hsp-offsetof(nxweb_http_server_connection, hsp));
   while (rdata) {
@@ -57,7 +60,7 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
       filter=filters[i];
       fdata=req->filter_data[i];
       if (fdata && filter->finalize)
-        filter->finalize(conn, req, resp, fdata);
+        filter->finalize(filter, conn, req, resp, fdata);
       req->filter_data[i]=0; // call no more
     }
   }

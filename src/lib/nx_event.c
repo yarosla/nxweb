@@ -550,6 +550,7 @@ time_t nxe_get_current_http_time(nxe_loop* loop) {
     time(&loop->http_time);
     loop->last_http_time=loop->current_time;
     loop->http_time_str[0]='\0';
+    loop->iso8601_time_str[0]='\0';
   }
   return loop->http_time;
 }
@@ -562,4 +563,14 @@ const char* nxe_get_current_http_time_str(nxe_loop* loop) {
     nxweb_format_http_time(loop->http_time_str, &tm);
   }
   return loop->http_time_str;
+}
+
+const char* nxe_get_current_iso8601_time_str(nxe_loop* loop) {
+  nxe_get_current_http_time(loop);
+  if (!loop->iso8601_time_str[0]) {
+    struct tm tm;
+    localtime_r(&loop->http_time, &tm);
+    nxweb_format_iso8601_time(loop->iso8601_time_str, &tm);
+  }
+  return loop->iso8601_time_str;
 }

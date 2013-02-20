@@ -195,12 +195,12 @@ char* ssi_buffer_get_result(ssi_buffer* ssib, int* size) {
 }
 
 
-static nxweb_filter_data* ssi_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_filter_data* ssi_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(ssi_filter_data));
   return fdata;
 }
 
-static void ssi_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static void ssi_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   ssi_filter_data* sfdata=(ssi_filter_data*)fdata;
   if (sfdata->ssib.data_in.pair) nxe_disconnect_streams(sfdata->ssib.data_in.pair, &sfdata->ssib.data_in);
   if (sfdata->input_fd) {
@@ -209,13 +209,13 @@ static void ssi_finalize(struct nxweb_http_server_connection* conn, nxweb_http_r
   }
 }
 
-static nxweb_result ssi_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len) {
+static nxweb_result ssi_translate_cache_key(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key, int root_len) {
   // ssi result does not depend on request options other than basic ones
   // fdata->cache_key=key; // just store it
   return NXWEB_OK;
 }
 
-static nxweb_result ssi_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static nxweb_result ssi_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   ssi_filter_data* sfdata=(ssi_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
 

@@ -28,8 +28,12 @@
 
 #include <zlib.h>
 
-// compression level is between 0 and 9: 1 gives best speed, 9 gives best compression, 0 gives no compression at all
-#define GZIP_COMPRESSION_LEVEL 4
+typedef struct nxweb_filter_gzip {
+  nxweb_filter base;
+  // compression level is between 0 and 9: 1 gives best speed, 9 gives best compression, 0 gives no compression at all
+  int compression_level;
+  const char* cache_dir;
+} nxweb_filter_gzip;
 
 typedef struct gzip_filter_data {
   nxweb_filter_data fdata;
@@ -38,7 +42,7 @@ typedef struct gzip_filter_data {
   int input_fd;
 } gzip_filter_data;
 
-static nxweb_result gzip_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
+static nxweb_result gzip_translate_cache_key(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
   /* if filter's behavior (and therefore response content) depends
    * on some request parameters other than handler took care of (host, uri, etc.)
    * then we should add corresponding variations to cache key here.
@@ -229,7 +233,10 @@ static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, 
       zs->avail_in=size;
       int flush=*flags&NXEF_EOF? Z_FINISH : Z_SYNC_FLUSH;
       deflate_result=deflate(zs, flush);
-      assert((flush==Z_FINISH && (deflate_result==Z_STREAM_END || deflate_result==Z_OK)) || (flush==Z_SYNC_FLUSH && deflate_result==Z_OK));
+      if (!((flush==Z_FINISH && (deflate_result==Z_STREAM_END || deflate_result==Z_OK)) || (flush==Z_SYNC_FLUSH && deflate_result==Z_OK))) {
+        nxweb_log_warning("gzip-deflate unexpected: flush=%d, deflate_result=%d, avail_in=%d/%d, avail_out=%d/%d",
+                          flush, deflate_result, (int)zs->avail_in, (int)size, (int)zs->avail_out, (int)size_avail);
+      }
       bytes_sent=size - zs->avail_in;
       nxd_rbuffer_write(rb, size_avail - zs->avail_out);
     }
@@ -251,7 +258,7 @@ static const nxe_istream_class gzip_data_out_class={.do_write=gzip_data_out_do_w
 static const nxe_ostream_class gzip_data_in_class={.write=gzip_data_in_write /*, .sendfile=gzip_data_in_write_or_sendfile*/ };
 
 
-static nxweb_filter_data* gzip_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_filter_data* gzip_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->accept_gzip_encoding) return 0; // bypass
   gzip_filter_data* gdata=nxb_calloc_obj(req->nxb, sizeof(gzip_filter_data));
   gdata->rb.data_out.super.cls.is_cls=&gzip_data_out_class;
@@ -259,11 +266,11 @@ static nxweb_filter_data* gzip_init(struct nxweb_http_server_connection* conn, n
   gdata->rb.data_in.super.cls.os_cls=&gzip_data_in_class;
   gdata->rb.data_in.ready=1;
   // gdata->rb.data_out.ready=1;
-  if (conn->handler->gzip_dir) gdata->fdata.fcache=_nxweb_fc_create(req->nxb, conn->handler->gzip_dir);
+  if (((nxweb_filter_gzip*)filter)->cache_dir) gdata->fdata.fcache=_nxweb_fc_create(req->nxb, ((nxweb_filter_gzip*)filter)->cache_dir);
   return &gdata->fdata;
 }
 
-static void gzip_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static void gzip_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   gzip_filter_data* gdata=(gzip_filter_data*)fdata;
   if (fdata->fcache) _nxweb_fc_finalize(fdata->fcache);
   if (gdata->rb.data_out.pair)
@@ -273,11 +280,11 @@ static void gzip_finalize(struct nxweb_http_server_connection* conn, nxweb_http_
   if (gdata->input_fd) close(gdata->input_fd);
 }
 
-static nxweb_result gzip_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
+static nxweb_result gzip_serve_from_cache(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
   return _nxweb_fc_serve_from_cache(conn, req, resp, fdata->cache_key, fdata->fcache, check_time);
 }
 
-static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   gzip_filter_data* gdata=(gzip_filter_data*)fdata;
   nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);
   if (r!=NXWEB_NEXT) return r;
@@ -293,13 +300,13 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
   }
 
   // do gzip
-  nxweb_log_error("gzipping %s", fdata->cache_key);
+  nxweb_log_info("gzipping %s", fdata->cache_key);
   nxd_rbuffer_init_ptr(&gdata->rb, nxb_alloc_obj(req->nxb, 16384), 16384);
   gdata->zs.zalloc=myalloc;
   gdata->zs.zfree=myfree;
   gdata->zs.opaque=Z_NULL;
   gdata->zs.next_in=Z_NULL;
-  if (deflateInit2(&gdata->zs, GZIP_COMPRESSION_LEVEL, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY)!=Z_OK) { // level 0-9
+  if (deflateInit2(&gdata->zs, ((nxweb_filter_gzip*)filter)->compression_level, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY)!=Z_OK) { // level 0-9
     nxweb_log_error("deflateInit2() failed in gzip_do_filter()");
     return NXWEB_ERROR;
   }
@@ -322,5 +329,16 @@ static nxweb_result gzip_do_filter(struct nxweb_http_server_connection* conn, nx
   return _nxweb_fc_store(conn, req, resp, fdata->fcache);
 }
 
-nxweb_filter gzip_filter={.name="gzip", .init=gzip_init, .finalize=gzip_finalize, .translate_cache_key=gzip_translate_cache_key,
-        .serve_from_cache=gzip_serve_from_cache, .do_filter=gzip_do_filter};
+static nxweb_filter_gzip gzip_filter={.base={.name="gzip", .init=gzip_init, .finalize=gzip_finalize,
+        .translate_cache_key=gzip_translate_cache_key,
+        .serve_from_cache=gzip_serve_from_cache, .do_filter=gzip_do_filter},
+        .compression_level=4, .cache_dir=0};
+
+// compression level is between 0 and 9: 1 gives best speed, 9 gives best compression, 0 gives no compression at all
+nxweb_filter* nxweb_gzip_filter_setup(int compression_level, const char* cache_dir) {
+  nxweb_filter_gzip* f=nx_alloc(sizeof(nxweb_filter_gzip)); // NOTE this will never be freed
+  *f=gzip_filter;
+  f->compression_level=compression_level;
+  f->cache_dir=cache_dir;
+  return (nxweb_filter*)f;
+}

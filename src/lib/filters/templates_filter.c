@@ -204,13 +204,13 @@ static int tf_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_bl
   if (dst_file) subreq->templates_no_parse=1;
 }
 
-static nxweb_filter_data* tf_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_filter_data* tf_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (req->templates_no_parse) return 0; // bypass
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(tf_filter_data));
   return fdata;
 }
 
-static void tf_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static void tf_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   tf_filter_data* tfdata=(tf_filter_data*)fdata;
   if (tfdata->tfb && tfdata->tfb->data_in.pair) nxe_disconnect_streams(tfdata->tfb->data_in.pair, &tfdata->tfb->data_in);
   if (tfdata->input_fd) {
@@ -219,7 +219,7 @@ static void tf_finalize(struct nxweb_http_server_connection* conn, nxweb_http_re
   }
 }
 
-static nxweb_result tf_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
+static nxweb_result tf_translate_cache_key(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
   int key_len=strlen(key);
   char* tf_key=nxb_alloc_obj(req->nxb, key_len+5+1);
   memcpy(tf_key, key, key_len);
@@ -228,7 +228,7 @@ static nxweb_result tf_translate_cache_key(struct nxweb_http_server_connection* 
   return NXWEB_OK;
 }
 
-static nxweb_result tf_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static nxweb_result tf_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   tf_filter_data* tfdata=(tf_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
 

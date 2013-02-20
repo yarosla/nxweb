@@ -32,6 +32,17 @@ int nxweb_run_daemon(const char* work_dir, const char* log_file, const char* pid
 int nxweb_run_normal(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)());
 int nxweb_drop_privileges(const char* group_name, const char* user_name);
 
+typedef struct nxweb_main_args_t {
+  int port;
+  int ssl_port;
+  const char* group_name;
+  const char* user_name;
+} nxweb_main_args_t;
+
+extern nxweb_main_args_t nxweb_main_args;
+
+int nxweb_main_stub(int argc, char** argv, void (*server_main)());
+
 void nxweb_die(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 void nxweb_log_warning(const char* fmt, ...) __attribute__((format (printf, 1, 2)));

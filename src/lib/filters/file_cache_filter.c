@@ -33,6 +33,11 @@
 
 #define NXFC_SIGNATURE (0x6366786e)
 
+typedef struct nxweb_filter_file_cache {
+  nxweb_filter base;
+  const char* cache_dir;
+} nxweb_filter_file_cache;
+
 typedef union nxf_data {
   int i;
   long l;
@@ -366,6 +371,7 @@ void _nxweb_fc_init(fc_filter_data* fcdata, const char* cache_dir) {
 }
 
 fc_filter_data* _nxweb_fc_create(nxb_buffer* nxb, const char* cache_dir) {
+  assert(cache_dir);
   fc_filter_data* fcdata=nxb_calloc_obj(nxb, sizeof(fc_filter_data));
   _nxweb_fc_init(fcdata, cache_dir);
   return fcdata;
@@ -382,17 +388,17 @@ void _nxweb_fc_finalize(fc_filter_data* fcdata) {
   if (fcdata->tmp_fpath) unlink(fcdata->tmp_fpath);
 }
 
-static nxweb_filter_data* fc_init(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+static nxweb_filter_data* fc_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_filter_data));
-  fdata->fcache=_nxweb_fc_create(req->nxb, conn->handler->file_cache_dir);
+  fdata->fcache=_nxweb_fc_create(req->nxb, ((nxweb_filter_file_cache*)filter)->cache_dir);
   return fdata;
 }
 
-static void fc_finalize(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static void fc_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   _nxweb_fc_finalize(fdata->fcache);
 }
 
-static nxweb_result fc_translate_cache_key(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
+static nxweb_result fc_translate_cache_key(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
   fdata->cache_key=key; // just store it
 }
 
@@ -447,8 +453,19 @@ static nxweb_result fc_initiate_revalidation(fc_filter_data* fcdata, nxweb_http_
 }
 
 nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, const char* cache_key, fc_filter_data* fcdata, time_t check_time) {
+  if (!cache_key) return NXWEB_NEXT;
   fc_build_cache_fpath(req->nxb, fcdata, cache_key);
-  if (stat(fcdata->cache_fpath, &fcdata->cache_finfo)==-1) return NXWEB_NEXT; // no cached content
+  if (stat(fcdata->cache_fpath, &fcdata->cache_finfo)==-1) {
+    if (req->if_modified_since) {
+      // content not cached although it must be
+      // remove if_modified_since
+      req->if_modified_since=0;
+      return NXWEB_NEXT;
+    }
+    else {
+      return NXWEB_NEXT; // no cached content
+    }
+  }
   if (fcdata->cache_finfo.st_mtime<check_time) { // cache expired
     return fc_initiate_revalidation(fcdata, req);
   }
@@ -457,7 +474,7 @@ nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* con
   }
 }
 
-static nxweb_result fc_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
+static nxweb_result fc_serve_from_cache(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
   return _nxweb_fc_serve_from_cache(conn, req, resp, fdata->cache_key, fdata->fcache, check_time);
 }
 
@@ -512,6 +529,7 @@ nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxw
 }
 
 nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, fc_filter_data* fcdata) {
+  if (!fcdata->cache_fpath) return NXWEB_OK; // no cache key
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
   if (resp->no_cache) return NXWEB_OK;
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
@@ -553,12 +571,19 @@ nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_ht
   return NXWEB_OK;
 }
 
-static nxweb_result fc_do_filter(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+static nxweb_result fc_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);
   if (r!=NXWEB_NEXT) return r;
   return _nxweb_fc_store(conn, req, resp, fdata->fcache);
 }
 
-nxweb_filter file_cache_filter={.name="file_cache", .init=fc_init, .finalize=fc_finalize,
+static nxweb_filter_file_cache file_cache_filter={.base={.name="file_cache", .init=fc_init, .finalize=fc_finalize,
         .translate_cache_key=fc_translate_cache_key,
-        .serve_from_cache=fc_serve_from_cache, .do_filter=fc_do_filter};
+        .serve_from_cache=fc_serve_from_cache, .do_filter=fc_do_filter}};
+
+nxweb_filter* nxweb_file_cache_filter_setup(const char* cache_dir) {
+  nxweb_filter_file_cache* f=nx_alloc(sizeof(nxweb_filter_file_cache)); // NOTE this will never be freed
+  *f=file_cache_filter;
+  f->cache_dir=cache_dir;
+  return (nxweb_filter*)f;
+}

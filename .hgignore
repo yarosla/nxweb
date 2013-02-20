@@ -3,6 +3,7 @@ syntax: regexp
 ^obj/
 ^error\.log$
 ^nxweb_error_log$
+^nxweb_access_log$
 ^nxweb\.pid$
 ^nxweb\.layout$
 ^www/root/benchmark/

@@ -93,6 +93,7 @@ int nxd_http_proxy_connect(nxd_http_proxy* hpx, nxe_loop* loop, const char* host
   nxe_subscribe(loop, &hpx->sock.fs.data_error, &hpx->hcp.data_error);
   nxe_connect_streams(loop, &hpx->sock.fs.data_is, &hpx->hcp.data_in);
   nxe_connect_streams(loop, &hpx->hcp.data_out, &hpx->sock.fs.data_os);
+  hpx->uid=nxweb_generate_unique_id();
   return 0;
 }
 

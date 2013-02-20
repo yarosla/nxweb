@@ -334,6 +334,7 @@ typedef struct nxd_http_proxy {
   nxd_http_client_proto hcp;
   nxe_subscriber events_sub; // for idle monitoring, etc.
   struct nxd_http_proxy_pool* pool;
+  uint64_t uid;
   struct nxd_http_proxy* prev; // used by http_proxy_pool pool
   struct nxd_http_proxy* next;
 } nxd_http_proxy;
