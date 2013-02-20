@@ -161,10 +161,11 @@ void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nx
   nxb_append_char(nxb, ' ');
   nxb_append_str(nxb, req->uri);
   nxb_append_char(nxb, ' ');
-  nxb_append(nxb, "{{ua:", 5);
-  if (!req->parent_req && req->user_agent) nxb_append_str(nxb, req->user_agent); // do not repeat for subrequests
-  nxb_append(nxb, "}}", 2);
-  nxb_append_char(nxb, ' ');
+  if (!req->parent_req && req->user_agent) { // do not repeat UA for subrequests
+    nxb_append(nxb, "{{ua:", 5);
+    nxb_append_str(nxb, req->user_agent);
+    nxb_append(nxb, "}} ", 3);
+  }
   nxb_append_char(nxb, '[');
   if (req->if_modified_since) nxb_append(nxb, "Im", 2);
   if (req->accept_gzip_encoding) nxb_append(nxb, "Ag", 2);

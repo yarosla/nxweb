@@ -341,8 +341,12 @@ static inline const char* nxweb_get_request_cookie(nxweb_http_request *req, cons
   return req->cookies? nx_simple_map_get(req->cookies, name) : 0;
 }
 
-static inline int nxweb_url_prefix_match(const char* url, const char* prefix, int prefix_len) {
-  return !strncmp(url, prefix, prefix_len) && (!url[prefix_len] || url[prefix_len]=='/' || url[prefix_len]=='?' || url[prefix_len]==';');
+static inline int nxweb_url_prefix_match(const char* url, int url_len, const char* prefix, int prefix_len) {
+  if (url_len<prefix_len) return 0;
+  char endc=url[prefix_len];
+  if (endc && endc!='/' && endc!='?' && endc!=';') return 0;
+  if (url[1]!=prefix[1]) return 0;
+  return !strncmp(url, prefix, prefix_len);
 }
 
 static inline int nxweb_vhost_match(const char* host, int host_len, const char* vhost_suffix, int vhost_suffix_len) {

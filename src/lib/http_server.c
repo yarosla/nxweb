@@ -69,6 +69,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
   // since nxweb_select_handler() could be called several times
   // make sure all changed fields returned to initial state
   time_t if_modified_since_original=req->if_modified_since; // save original value
+  const char* uri_original=req->uri;
 
   const int num_filters=handler->num_filters;
   nxweb_filter** filters=handler->filters;
@@ -89,10 +90,14 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
       if (!fdata || fdata->bypass) continue;
       filter=filters[i];
       if (!filter->decode_uri) continue;
-      uri=filter->decode_uri(filter, conn, req, resp, req->filter_data[i], uri);
+      uri=filter->decode_uri(filter, conn, req, resp, req->filter_data[i], uri); // should return the same uri if unchanged
     }
-    req->uri=uri;
-    assert(!handler->prefix_len || nxweb_url_prefix_match(req->uri, handler->prefix, handler->prefix_len)); // ensure it still matches
+    if (req->uri!=uri) { // uri changed
+      if (handler->prefix_len && !nxweb_url_prefix_match(uri, strlen(uri), handler->prefix, handler->prefix_len)) { // ensure it still matches
+        nxweb_log_error("uri %s doesn't match prefix %s after decode", uri, handler->prefix);
+      }
+      req->uri=uri;
+    }
   }
   req->path_info=req->uri+handler->prefix_len;
 
@@ -197,6 +202,7 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
   if (handler->on_select) r=handler->on_select(conn, req, resp);
   if (r!=NXWEB_OK) {
     // restore saved fields
+    req->uri=uri_original;
     req->if_modified_since=if_modified_since_original;
     // reset changed fields
     conn->handler=0;
@@ -224,9 +230,10 @@ nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* con
   else {
     host_len=0;
   }
+  int uri_len=strlen(uri);
   while (h) {
     if (!h->vhost_len || (host_len && nxweb_vhost_match(host, host_len, h->vhost, h->vhost_len))) {
-      if (!h->prefix_len || nxweb_url_prefix_match(uri, h->prefix, h->prefix_len)) {
+      if (!h->prefix_len || nxweb_url_prefix_match(uri, uri_len, h->prefix, h->prefix_len)) {
         nxweb_result res=nxweb_select_handler(conn, req, resp, h, h->param);
         if (res!=NXWEB_NEXT) {
           if (res==NXWEB_ERROR) {
@@ -275,6 +282,12 @@ void _nxweb_register_module(nxweb_module* module) {
 
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
   handler->prefix_len=handler->prefix? strlen(handler->prefix) : 0;
+  if (handler->prefix_len) {
+    if (handler->prefix[0]!='/') {
+      nxweb_log_error("handler's prefix must start with '/'; handler=%s with prefix=%s not allowed", handler->name, handler->prefix);
+      exit(1);
+    }
+  }
   handler->vhost_len=handler->vhost? strlen(handler->vhost) : 0;
   if (base) {
     if (!handler->on_generate_cache_key) handler->on_generate_cache_key=base->on_generate_cache_key;
