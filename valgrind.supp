@@ -30,3 +30,17 @@
    ...
    fun:server_config
 }
+{
+   libdjvulibre
+   Memcheck:Leak
+   fun:_Znwm
+   fun:miniexp_symbol
+   obj:/usr/lib/x86_64-linux-gnu/libdjvulibre.so.21.4.0
+}
+{
+   libdjvulibre
+   Memcheck:Leak
+   fun:_Znam
+   fun:miniexp_symbol
+   obj:/usr/lib/x86_64-linux-gnu/libdjvulibre.so.21.4.0
+}

@@ -149,6 +149,7 @@ typedef struct nxweb_http_request {
 
   nxweb_http_request_data* data_chain;
   nxweb_log_fragment* access_log;
+  nxe_time_t received_time;
 
 } nxweb_http_request;
 
@@ -200,6 +201,8 @@ typedef struct nxweb_http_response {
   struct stat sendfile_info;
 
   nxe_istream* content_out;
+
+  nxe_size_t bytes_sent;
 
 } nxweb_http_response;
 
@@ -433,6 +436,9 @@ void nxweb_access_log_stop();
 void nxweb_access_log_thread_flush(); // flush net_thread's access log
 void nxweb_access_log_add_frag(nxweb_http_request* req, nxweb_log_fragment* frag); // collect info to log
 void nxweb_access_log_write(nxweb_http_request* req); // write request's log record to thread's buffer
+void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nxweb_http_request* req);
+void nxweb_access_log_on_request_complete(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+void nxweb_access_log_on_proxy_response(nxweb_http_request* req, nxd_http_proxy* hpx, nxweb_http_response* proxy_resp);
 
 // Internal use only:
 char* _nxweb_find_end_of_http_headers(char* buf, int len, char** start_of_body);

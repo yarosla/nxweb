@@ -459,6 +459,7 @@ nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* con
     if (req->if_modified_since) {
       // content not cached although it must be
       // remove if_modified_since
+      fcdata->if_modified_since_original=req->if_modified_since;
       req->if_modified_since=0;
       return NXWEB_NEXT;
     }
@@ -480,11 +481,13 @@ static nxweb_result fc_serve_from_cache(nxweb_filter* filter, nxweb_http_server_
 
 nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, fc_filter_data* fcdata) {
 
+  if (fcdata->if_modified_since_original) req->if_modified_since=fcdata->if_modified_since_original; // restore if_modified_since
+
   if (!fcdata->revalidation_mode) return NXWEB_NEXT; // go ahead with do_filter()
 
   // when in revalidation_mode and 'not modified' flag set OR gateway timeout => use cached version
 
-  req->if_modified_since=fcdata->if_modified_since_original; // restore if_modified_since
+  req->if_modified_since=fcdata->if_modified_since_original; // restore if_modified_since even if it was zero
 
   time_t cur_time=nxe_get_current_http_time(conn->tdata->loop);
 

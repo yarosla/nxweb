@@ -148,11 +148,9 @@ void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nx
   nxb_append_char(nxb, ' ');
   if (req->parent_req) {
     nxb_append_uint_hex_zeropad(nxb, req->parent_req->uid, 16);
-    nxb_append_char(nxb, ' ');
   }
   else {
     nxb_append_str(nxb, conn->remote_addr); // do not repeat for subrequests
-    nxb_append_char(nxb, ' ');
   }
   nxb_append_char(nxb, ' ');
   nxb_append_str(nxb, req->method);
@@ -163,16 +161,57 @@ void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nx
   nxb_append_char(nxb, ' ');
   nxb_append_str(nxb, req->uri);
   nxb_append_char(nxb, ' ');
-  nxb_append(nxb, "{{", 2);
+  nxb_append(nxb, "{{ua:", 5);
   if (!req->parent_req && req->user_agent) nxb_append_str(nxb, req->user_agent); // do not repeat for subrequests
   nxb_append(nxb, "}}", 2);
   nxb_append_char(nxb, ' ');
-  if (req->if_modified_since) nxb_append(nxb, "If", 2);
+  nxb_append_char(nxb, '[');
+  if (req->if_modified_since) nxb_append(nxb, "Im", 2);
   if (req->accept_gzip_encoding) nxb_append(nxb, "Ag", 2);
   if (req->templates_no_parse) nxb_append(nxb, "Nt", 2);
+  nxb_append_char(nxb, ']');
+
+  BUILD_FRAG_END;
+}
+
+void nxweb_access_log_on_request_complete(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  BUILD_FRAG_BEGIN;
+
+  nxb_append_uint(nxb, resp->status_code? resp->status_code : 200);
   nxb_append_char(nxb, ' ');
+  nxb_append_uint(nxb, resp->bytes_sent);
+  nxb_append(nxb, "b ", 2);
+  nxe_time_t t=nxweb_get_loop_time(conn);
+  nxb_append_uint(nxb, (t - req->received_time + 500)/1000); // round to milliseconds
+  nxb_append(nxb, "ms ", 3);
+  nxb_append_str(nxb, conn->handler && conn->handler->name? conn->handler->name : "(null)");
   nxb_append_char(nxb, ' ');
+  nxb_append_char(nxb, '[');
+  if (resp->gzip_encoded) nxb_append(nxb, "Gz", 2);
+  if (resp->content_length<0) nxb_append(nxb, "Ch", 2); // chunked encoding
+  if (resp->last_modified) nxb_append(nxb, "Lm", 2);
+  nxb_append_char(nxb, ']');
+
+  BUILD_FRAG_END;
+}
+
+void nxweb_access_log_on_proxy_response(nxweb_http_request* req, nxd_http_proxy* hpx, nxweb_http_response* proxy_resp) {
+  BUILD_FRAG_BEGIN;
+
+  nxb_append(nxb, "{{px:", 5);
+  nxb_append_uint_hex_zeropad(nxb, hpx->uid, 16);
   nxb_append_char(nxb, ' ');
+  nxb_append_uint(nxb, hpx->pool->conn_count);
+  nxb_append_char(nxb, '/');
+  nxb_append_uint(nxb, hpx->pool->conn_count_max);
+  nxb_append_char(nxb, ' ');
+  nxb_append_uint(nxb, proxy_resp->status_code);
+  nxb_append_char(nxb, ' ');
+  nxb_append_char(nxb, '[');
+  if (proxy_resp->content_length<0) nxb_append(nxb, "Ch", 2); // chunked encoding
+  if (proxy_resp->last_modified) nxb_append(nxb, "Lm", 2);
+  nxb_append_char(nxb, ']');
+  nxb_append(nxb, "}}", 2);
 
   BUILD_FRAG_END;
 }

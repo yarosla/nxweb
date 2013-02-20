@@ -76,7 +76,7 @@ static void tf_check_complete(tf_filter_data* tfdata) {
 
     resp->last_modified=tfdata->last_modified;
     if (req->if_modified_since && resp->last_modified && resp->last_modified<=req->if_modified_since) {
-      nxweb_reset_content_out(resp);
+      nxweb_reset_content_out(&tfdata->conn->hsp, resp);
       resp->status_code=304;
       resp->status="Not Modified";
     }

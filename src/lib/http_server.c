@@ -375,6 +375,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
   nxweb_http_response* resp=&conn->hsp._resp;
   if (data.i==NXD_HSP_REQUEST_RECEIVED) {
     assert(nxweb_server_config.request_dispatcher);
+    req->received_time=nxweb_get_loop_time(conn);
     nxweb_access_log_on_request_received(conn, req);
     nxweb_server_config.request_dispatcher(conn, req, resp);
     if (!conn->handler) conn->handler=&_nxweb_default_handler;
