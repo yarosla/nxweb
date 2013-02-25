@@ -201,6 +201,19 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
   nxweb_result r=NXWEB_OK;
   if (handler->on_select) r=handler->on_select(conn, req, resp);
   if (r!=NXWEB_OK) {
+    if (num_filters) {
+      // filters have been initialized => finalize them
+      int i;
+      nxweb_filter* filter;
+      nxweb_filter_data* fdata;
+      for (i=0; i<num_filters; i++) {
+        filter=filters[i];
+        fdata=req->filter_data[i];
+        if (fdata && filter->finalize)
+          filter->finalize(filter, conn, req, resp, fdata);
+        req->filter_data[i]=0; // call no more
+      }
+    }
     // restore saved fields
     req->uri=uri_original;
     req->if_modified_since=if_modified_since_original;
@@ -331,7 +344,12 @@ void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
 
 static void invoke_request_handler_in_worker(void* ptr) {
   nxweb_http_server_connection* conn=ptr;
-  conn->handler->on_request(conn, &conn->hsp.req, &conn->hsp._resp);
+  if (conn && conn->handler && conn->handler->on_request) {
+    conn->handler->on_request(conn, &conn->hsp.req, &conn->hsp._resp);
+  }
+  else {
+    nxweb_log_error("invalid conn handler reached worker");
+  }
 }
 
 static void nxweb_http_server_connection_worker_complete_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
@@ -340,7 +358,6 @@ static void nxweb_http_server_connection_worker_complete_on_message(nxe_subscrib
   long cnt=0;
   while (!conn->worker_job_done) cnt++;
   __sync_synchronize(); // full memory barrier
-  assert(conn->hsp._resp.content && conn->hsp._resp.content_length);
   nxweb_start_sending_response(conn, &conn->hsp._resp);
   if (cnt) nxweb_log_warning("job not done in %ld steps", cnt);
 }

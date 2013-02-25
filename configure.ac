@@ -22,6 +22,8 @@ AM_INIT_AUTOMAKE
 AC_PROG_CC([gcc])
 AC_PROG_LIBTOOL
 
+m4_include([m4/m4_ax_python_devel.m4])
+
 AC_CANONICAL_HOST
 case $host_os in
   linux*)
@@ -77,6 +79,21 @@ then
 fi
 AM_CONDITIONAL([WITH_ZLIB], [test $with_zlib = "yes"])
 
+AC_ARG_WITH(python, AS_HELP_STRING([--with-python], [add python support]), , with_python="no")
+if test $with_python != "no"
+then
+  AX_PYTHON_DEVEL()
+  if test $pythonexists = "yes"
+  then
+    AC_DEFINE([WITH_PYTHON], [1], [Use Python])
+    echo "PYTHON_CPPFLAGS=${PYTHON_CPPFLAGS}"
+    echo "PYTHON_LDFLAGS=${PYTHON_LDFLAGS}"
+    echo "PYTHON_EXTRA_LIBS=${PYTHON_EXTRA_LIBS}"
+    echo "PYTHON_EXTRA_LDFLAGS=${PYTHON_EXTRA_LDFLAGS}"
+  fi
+fi
+AM_CONDITIONAL([WITH_PYTHON], [test $pythonexists = "yes"])
+
 AC_CHECK_FUNC(register_printf_specifier, AC_DEFINE([USE_REGISTER_PRINTF_SPECIFIER], [1], [Use register_printf_specifier() instead of register_printf_function()]))
 
 AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread")
@@ -97,5 +114,6 @@ AC_MSG_NOTICE([Summary of build options:
   SSL support:        $with_gnutls
   ImageMagick:        $with_imagemagick
   GZIP compression:   $with_zlib
+  Python exists:      $pythonexists
   Shared lib version: $NXWEB_LIB_VERSION_INFO
 ])

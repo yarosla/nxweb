@@ -31,16 +31,27 @@
    fun:server_config
 }
 {
-   libdjvulibre
+   libdjvulibre-1
    Memcheck:Leak
    fun:_Znwm
    fun:miniexp_symbol
    obj:/usr/lib/x86_64-linux-gnu/libdjvulibre.so.21.4.0
 }
 {
-   libdjvulibre
+   libdjvulibre-2
    Memcheck:Leak
    fun:_Znam
    fun:miniexp_symbol
    obj:/usr/lib/x86_64-linux-gnu/libdjvulibre.so.21.4.0
+}
+{
+   libpython2.7-1
+   Memcheck:Leak
+   obj:/usr/lib/libpython2.7.so.1.0
+}
+{
+   libpython2.7-2
+   Memcheck:Leak
+   ...
+   obj:/usr/lib/libpython2.7.so.1.0
 }
