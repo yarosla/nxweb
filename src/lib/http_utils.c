@@ -734,6 +734,33 @@ void nxweb_add_response_header(nxweb_http_response* resp, const char* name, cons
   resp->headers=nx_simple_map_add(resp->headers, header);
 }
 
+void nxweb_add_response_header_safe(nxweb_http_response* resp, const char* name, const char* value) {
+  int header_name_id=identify_http_header(name, strlen(name));
+  switch (header_name_id) {
+    case NXWEB_HTTP_CONTENT_TYPE: resp->content_type=value; break;
+    case NXWEB_HTTP_CONTENT_LENGTH: /* skip */ break;
+    case NXWEB_HTTP_TRANSFER_ENCODING: /* skip */ break;
+    case NXWEB_HTTP_CONNECTION: /* skip */ break;
+    case NXWEB_HTTP_KEEP_ALIVE: /* skip */ break;
+    case NXWEB_HTTP_X_NXWEB_SSI: resp->ssi_on=!nx_strcasecmp(value, "ON"); break;
+    case NXWEB_HTTP_X_NXWEB_TEMPLATES: resp->templates_on=!nx_strcasecmp(value, "ON"); break;
+    case NXWEB_HTTP_DATE: /* skip */ break;
+    case NXWEB_HTTP_LAST_MODIFIED: resp->last_modified=nxweb_parse_http_time(value); break;
+    case NXWEB_HTTP_EXPIRES: resp->expires=nxweb_parse_http_time(value); break;
+    case NXWEB_HTTP_CACHE_CONTROL: resp->cache_control=value; break;
+    case NXWEB_HTTP_ETAG: resp->etag=value; break;
+    default:
+      {
+        nxb_buffer* nxb=resp->nxb;
+        nx_simple_map_entry* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
+        header->name=nxb_copy_str(nxb, name);
+        header->value=nxb_copy_str(nxb, value);
+        resp->headers=nx_simple_map_add(resp->headers, header);
+        break;
+      }
+  }
+}
+
 void _nxweb_add_extra_response_headers(nxb_buffer* nxb, nxweb_http_header *headers) {
   nx_simple_map_entry* itr;
   const char* name;

@@ -63,6 +63,10 @@ static inline void* nxb_copy_obj(nxb_buffer* nxb, const void* src, int size) {
   return obj;
 }
 
+static inline void* nxb_copy_str(nxb_buffer* nxb, const void* src) {
+  return nxb_copy_obj(nxb, src, strlen(src)+1);
+}
+
 static inline char* nxb_finish_stream(nxb_buffer* nxb, int* size) {
   if (size) *size=nxb->ptr - nxb->base;
   char* obj=nxb->base;

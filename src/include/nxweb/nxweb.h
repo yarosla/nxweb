@@ -234,6 +234,18 @@ static inline void nx_strntolower(char* dst, const char* src, int len) { // dst=
   while (len-- && (*dst++=nx_tolower(*src++))) ;
 }
 
+static inline char nx_toupper(char c) {
+  return c>='a' && c<='z' ? c-('a'-'A') : c;
+}
+
+static inline void nx_strtoupper(char* dst, const char* src) { // dst==src is OK for inplace tolower
+  while ((*dst++=nx_toupper(*src++))) ;
+}
+
+static inline void nx_strntoupper(char* dst, const char* src, int len) { // dst==src is OK for inplace tolower
+  while (len-- && (*dst++=nx_toupper(*src++))) ;
+}
+
 static inline int nx_strcasecmp(const char* s1, const char* s2) {
   const unsigned char* p1=(const unsigned char*)s1;
   const unsigned char* p2=(const unsigned char*)s2;
@@ -371,6 +383,7 @@ void nxweb_set_response_status(nxweb_http_response* resp, int code, const char* 
 void nxweb_set_response_content_type(nxweb_http_response* resp, const char* content_type);
 void nxweb_set_response_charset(nxweb_http_response* resp, const char* charset);
 void nxweb_add_response_header(nxweb_http_response* resp, const char* name, const char* value);
+void nxweb_add_response_header_safe(nxweb_http_response* resp, const char* name, const char* value);
 
 static inline void nxweb_response_make_room(nxweb_http_response* resp, int min_size) {
   nxb_make_room(resp->nxb, min_size);

@@ -63,3 +63,6 @@ _strace
 ^src/lib/nxweb\.pc$
 ^ssl/Makefile$
 .*\.sublime-\w+$
+^python/bottle
+^python/cherrypy
+^python/flask

@@ -466,7 +466,9 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     if (h->on_post_data_complete) h->on_post_data_complete(conn, req, resp);
     else {
       if (conn->hsp.cls->get_request_body_out_pair(&conn->hsp)==&conn->ib.data_in) {
-        req->content=nxd_ibuffer_get_result(&conn->ib, 0);
+        int size;
+        req->content=nxd_ibuffer_get_result(&conn->ib, &size);
+        assert(req->content_received==size);
       }
     }
     invoke_request_handler(conn, req, resp, h, flags);
