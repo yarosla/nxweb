@@ -35,6 +35,9 @@ cd nxweb-***
 ./configure --with-imagemagick=/install-prefix-of-imagemagick
   Specify ImageMagick location explicitly.
 
+./configure --with-python
+  This will configure NXWEB with Python WSGI support. python-devel package is required.
+
 ./configure --prefix=/path-to-install
   This is how you can change NXWEB binary, includes, and libraries install location.
 
