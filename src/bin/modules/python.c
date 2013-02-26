@@ -233,4 +233,4 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
 
 nxweb_handler python_handler={.on_request=python_on_request, .flags=NXWEB_HANDLE_ANY|NXWEB_INWORKER};
 
-NXWEB_SET_HANDLER(python, "/py", &python_handler, .priority=1000, .uri="/pyapp");
+NXWEB_SET_HANDLER(python, "/py", &python_handler, .priority=1000, /*.uri="/pyapp"*/);

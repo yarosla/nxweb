@@ -1,14 +1,23 @@
 import sys
 import io
-import hello
 
+import hello
 WSGI_APP=hello.ping_app
+
+# Django sample setup:
+# import os
+# PROJECT_PATH=os.path.abspath(os.path.dirname(__file__))
+# sys.path.append(os.path.join(PROJECT_PATH, 'mysite'))
+# import mysite.wsgi
+# WSGI_APP=mysite.wsgi.application
 
 def _nxweb_on_request(environ):
   try:
     environ['wsgi.version']=(1, 0)
     if 'nxweb.req.content' in environ:
       environ['wsgi.input']=io.BytesIO(environ.get('nxweb.req.content', ''))
+    else:
+      environ['wsgi.input']=None
     environ['wsgi.errors']=sys.stderr
     environ['wsgi.multithread']=True
     environ['wsgi.multiprocess']=False

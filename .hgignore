@@ -8,6 +8,7 @@ syntax: regexp
 ^nxweb\.layout$
 ^www/root/benchmark/
 ^www/root/httptest
+^www/root/static
 ^cache/
 ^www/cache/
 ^experimental/
@@ -66,3 +67,4 @@ _strace
 ^python/bottle
 ^python/cherrypy
 ^python/flask
+^python/mysite/
