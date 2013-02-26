@@ -96,8 +96,8 @@ AM_CONDITIONAL([WITH_PYTHON], [test $pythonexists = "yes"])
 
 AC_CHECK_FUNC(register_printf_specifier, AC_DEFINE([USE_REGISTER_PRINTF_SPECIFIER], [1], [Use register_printf_specifier() instead of register_printf_function()]))
 
-AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread")
-AC_SUBST(NXWEB_EXT_CFLAGS, "$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS")
+AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread $PYTHON_LDFLAGS")
+AC_SUBST(NXWEB_EXT_CFLAGS, "$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS $PYTHON_CPPFLAGS")
 
 AC_SUBST(NXWEB_LIB_VERSION_INFO, "0:0:0")
 
@@ -114,6 +114,6 @@ AC_MSG_NOTICE([Summary of build options:
   SSL support:        $with_gnutls
   ImageMagick:        $with_imagemagick
   GZIP compression:   $with_zlib
-  Python exists:      $pythonexists
+  Python integration: $pythonexists
   Shared lib version: $NXWEB_LIB_VERSION_INFO
 ])

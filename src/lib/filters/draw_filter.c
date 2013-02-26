@@ -21,9 +21,6 @@
 
 #include <math.h>
 
-#define MAGICKCORE_QUANTUM_DEPTH 16
-#define MAGICKCORE_HDRI_ENABLE 0
-
 #include <wand/MagickWand.h>
 
 

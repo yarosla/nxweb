@@ -12068,9 +12068,9 @@ $as_echo "#define USE_REGISTER_PRINTF_SPECIFIER 1" >>confdefs.h
 fi
 
 
-NXWEB_EXT_LIBS="$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread"
+NXWEB_EXT_LIBS="$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread $PYTHON_LDFLAGS"
 
-NXWEB_EXT_CFLAGS="$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS"
+NXWEB_EXT_CFLAGS="$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS $PYTHON_CPPFLAGS"
 
 
 NXWEB_LIB_VERSION_INFO="0:0:0"
@@ -14467,7 +14467,7 @@ fi
   SSL support:        $with_gnutls
   ImageMagick:        $with_imagemagick
   GZIP compression:   $with_zlib
-  Python exists:      $pythonexists
+  Python integration: $pythonexists
   Shared lib version: $NXWEB_LIB_VERSION_INFO
 " >&5
 $as_echo "$as_me: Summary of build options:
@@ -14480,6 +14480,6 @@ $as_echo "$as_me: Summary of build options:
   SSL support:        $with_gnutls
   ImageMagick:        $with_imagemagick
   GZIP compression:   $with_zlib
-  Python exists:      $pythonexists
+  Python integration: $pythonexists
   Shared lib version: $NXWEB_LIB_VERSION_INFO
 " >&6;}

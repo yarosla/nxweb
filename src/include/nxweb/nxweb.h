@@ -480,6 +480,9 @@ void _nxb_append_encode_file_path(nxb_buffer* nxb, const char* path);
 // built-in handlers:
 extern nxweb_handler nxweb_http_proxy_handler;
 extern nxweb_handler nxweb_sendfile_handler;
+#ifdef WITH_PYTHON
+extern nxweb_handler nxweb_python_handler;
+#endif
 
 // built-in filters:
 nxweb_filter* nxweb_file_cache_filter_setup(const char* cache_dir);

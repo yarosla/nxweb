@@ -123,6 +123,12 @@ static void server_config() {
 #endif
          });
 
+#ifdef WITH_PYTHON
+  NXWEB_PYTHON_SETUP(python, "/py", .priority=950000,
+        .filters={
+            nxweb_file_cache_filter_setup("www/cache/python"), &templates_filter, &ssi_filter
+         });
+#endif
 
   // set error log verbosity: INFO=most verbose, WARNING, ERROR, NONE
   nxweb_error_log_level=NXWEB_LOG_INFO;

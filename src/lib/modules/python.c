@@ -231,6 +231,16 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
   return NXWEB_OK;
 }
 
-nxweb_handler python_handler={.on_request=python_on_request, .flags=NXWEB_HANDLE_ANY|NXWEB_INWORKER};
+static nxweb_result python_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
+  _nxb_append_encode_file_path(req->nxb, req->host);
+  if (conn->secure) nxb_append_str(req->nxb, "_s");
+  _nxb_append_encode_file_path(req->nxb, req->uri);
+  nxb_append_char(req->nxb, '\0');
+  resp->cache_key=nxb_finish_stream(req->nxb, 0);
+  return NXWEB_OK;
+}
 
-NXWEB_SET_HANDLER(python, "/py", &python_handler, .priority=1000, /*.uri="/pyapp"*/);
+nxweb_handler nxweb_python_handler={.on_request=python_on_request,
+        .on_generate_cache_key=python_generate_cache_key,
+        .flags=NXWEB_HANDLE_ANY|NXWEB_INWORKER};

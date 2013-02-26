@@ -272,6 +272,12 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
         _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_http_proxy_handler)
 
+#ifdef WITH_PYTHON
+#define NXWEB_PYTHON_SETUP(_name, _prefix, ...) \
+        nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
+        _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_python_handler)
+#endif
+
 void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http_response* resp);
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good);

@@ -225,6 +225,11 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
     resp->mtype=0;
     resp->content_type=0;
     resp->content_charset=0;
+    resp->sendfile_path=0;
+    if (resp->sendfile_fd>0) {
+      close(resp->sendfile_fd);
+    }
+    resp->sendfile_fd=0;
     if (resp->sendfile_info.st_ino) memset(&resp->sendfile_info, 0, sizeof(resp->sendfile_info));
   }
   return r;

@@ -32,6 +32,11 @@ libnxweb_la_SOURCES += filters/image_filter.c
 libnxweb_la_SOURCES += filters/draw_filter.c
 endif
 
+if WITH_PYTHON
+libnxweb_la_SOURCES += modules/python.c
+AM_CFLAGS += $(PYTHON_CPPFLAGS)
+endif
+
 libnxweb_la_LDFLAGS = -version-info $(NXWEB_LIB_VERSION_INFO)
 
 # Pkg-config script.
