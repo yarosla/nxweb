@@ -3,6 +3,7 @@ import io
 
 import hello
 WSGI_APP=hello.ping_app
+# WSGI_APP=hello.hello_world_app
 
 # Django sample setup:
 # import os

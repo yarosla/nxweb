@@ -42,12 +42,22 @@ nxweb_main_args_t nxweb_main_args={
 static void server_config() {
 
   // Bind listening interfaces:
-  char host_and_port[32];
-  snprintf(host_and_port, sizeof(host_and_port), ":%d", nxweb_main_args.port);
+  char host_and_port[64];
+  if (nxweb_main_args.listening_interface_ip) {
+    snprintf(host_and_port, sizeof(host_and_port), "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.port);
+  }
+  else {
+    snprintf(host_and_port, sizeof(host_and_port), ":%d", nxweb_main_args.port);
+  }
   if (nxweb_listen(host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
 #ifdef WITH_SSL
-  char ssl_host_and_port[32];
-  snprintf(ssl_host_and_port, sizeof(ssl_host_and_port), ":%d", nxweb_main_args.ssl_port);
+  char ssl_host_and_port[64];
+  if (nxweb_main_args.listening_interface_ip) {
+    snprintf(ssl_host_and_port, sizeof(ssl_host_and_port), "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.ssl_port);
+  }
+  else {
+    snprintf(ssl_host_and_port, sizeof(ssl_host_and_port), ":%d", nxweb_main_args.ssl_port);
+  }
   if (nxweb_listen_ssl(ssl_host_and_port, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
 #endif // WITH_SSL
 

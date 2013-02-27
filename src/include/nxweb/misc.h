@@ -37,6 +37,7 @@ typedef struct nxweb_main_args_t {
   int ssl_port;
   const char* group_name;
   const char* user_name;
+  const char* listening_interface_ip;
 } nxweb_main_args_t;
 
 extern nxweb_main_args_t nxweb_main_args;

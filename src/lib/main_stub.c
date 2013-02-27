@@ -34,6 +34,7 @@ static void show_help(void) {
           " -p file  set pid file        (default: nxweb.pid)\n"
           " -u user  set process uid\n"
           " -g group set process gid\n"
+          " -I ip    set http interface IP address\n"
           " -P port  set http port\n"
 #ifdef WITH_SSL
           " -S port  set https port\n"
@@ -54,7 +55,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file="nxweb.pid";
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:P:S:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:I:P:S:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -90,16 +91,19 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
       case 'g':
         nxweb_main_args.group_name=optarg;
         break;
+      case 'I':
+        nxweb_main_args.listening_interface_ip=optarg;
+        break;
       case 'P':
         nxweb_main_args.port=atoi(optarg);
-        if (nxweb_main_args.port<=0) {
+        if (nxweb_main_args.port<=0 || nxweb_main_args.port>65536) {
           fprintf(stderr, "invalid port: %s\n\n", optarg);
           return EXIT_FAILURE;
         }
         break;
       case 'S':
         nxweb_main_args.ssl_port=atoi(optarg);
-        if (nxweb_main_args.ssl_port<=0) {
+        if (nxweb_main_args.ssl_port<=0 ||  nxweb_main_args.ssl_port>65536) {
           fprintf(stderr, "invalid ssl port: %s\n\n", optarg);
           return EXIT_FAILURE;
         }
