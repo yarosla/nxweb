@@ -464,12 +464,18 @@ static void sha1sign(const char* str, unsigned str_len, const char* key, char* r
 
 typedef struct img_filter_data {
   nxweb_filter_data fdata;
+  nxd_fbuffer fb;
   nxweb_image_filter_cmd cmd;
 } img_filter_data;
 
 static nxweb_filter_data* img_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(img_filter_data));
   return fdata;
+}
+
+static void img_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+  img_filter_data* ifdata=(img_filter_data*)fdata;
+  nxd_fbuffer_finalize(&ifdata->fb);
 }
 
 static const char* img_decode_uri(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* uri) {
@@ -614,12 +620,22 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   resp->sendfile_end=
   resp->content_length=resp->sendfile_info.st_size;
   resp->last_modified=resp->sendfile_info.st_mtime;
-  resp->content_out=0; // reset content_out
   resp->content=0;
+
+  resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
+  if (resp->sendfile_fd!=-1) {
+    nxd_fbuffer_init(&ifdata->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+    resp->content_out=&ifdata->fb.data_out;
+  }
+  else {
+    nxweb_log_error("nxd_http_server_proto_start_sending_response(): can't open %s", resp->sendfile_path);
+  }
+
   return NXWEB_OK;
 }
 
-static nxweb_filter_image image_filter={.base={.name="image", .init=img_init, .translate_cache_key=img_translate_cache_key,
+static nxweb_filter_image image_filter={.base={.name="image", .init=img_init, .finalize=img_finalize,
+        .translate_cache_key=img_translate_cache_key,
         .decode_uri=img_decode_uri, .do_filter=img_do_filter},
         .allowed_cmds=allowed_cmds, .sign_key=CMD_SIGN_SECRET_KEY};
 

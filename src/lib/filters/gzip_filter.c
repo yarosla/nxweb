@@ -300,6 +300,20 @@ static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_conne
     return NXWEB_NEXT;
   }
 
+  nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
+
+  if (resp->content_length>=0 && resp->content_length<100) {
+    // too small to gzip
+    nxweb_log_info("not gzipping %s as it is too small (%d bytes)", fdata->cache_key, (int)resp->content_length);
+    return NXWEB_NEXT;
+  }
+
+  if (!resp->content_out) {
+    // must be empty file
+    nxweb_log_error("not gzipping %s as it has no content_out", fdata->cache_key);
+    return NXWEB_NEXT;
+  }
+
   // do gzip
   nxweb_log_info("gzipping %s", fdata->cache_key);
   nxd_rbuffer_init_ptr(&gdata->rb, nxb_alloc_obj(req->nxb, 16384), 16384);
@@ -312,7 +326,6 @@ static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_conne
     return NXWEB_ERROR;
   }
 
-  nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
   nxe_connect_streams(conn->tdata->loop, resp->content_out, &gdata->rb.data_in);
   resp->content_out=&gdata->rb.data_out;
   resp->gzip_encoded=1;

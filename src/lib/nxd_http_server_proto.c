@@ -465,21 +465,21 @@ static void timer_keep_alive_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)timer-offsetof(nxd_http_server_proto, timer_keep_alive));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_KEEP_ALIVE_TIMEOUT);
-  nxweb_log_error("connection %p keep-alive timeout", hsp);
+  nxweb_log_info("connection %p keep-alive timeout", hsp);
 }
 
 static void timer_read_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)timer-offsetof(nxd_http_server_proto, timer_read));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_READ_TIMEOUT);
-  nxweb_log_error("connection %p read timeout", hsp);
+  nxweb_log_warning("connection %p read timeout", hsp);
 }
 
 static void timer_write_on_timeout(nxe_timer* timer, nxe_data data) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)timer-offsetof(nxd_http_server_proto, timer_write));
   //nxe_loop* loop=sub->super.loop;
   nxe_publish(&hsp->events_pub, (nxe_data)NXD_HSP_WRITE_TIMEOUT);
-  nxweb_log_error("connection %p write timeout", hsp);
+  nxweb_log_warning("connection %p write timeout", hsp);
 }
 
 static const nxe_ostream_class data_in_class={.do_read=data_in_do_read};
@@ -529,8 +529,7 @@ void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_h
   }
   else if (resp->sendfile_fd && resp->content_length>0) {
     assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
-    if (hsp->fb.fd)
-      nxd_fbuffer_finalize(&hsp->fb);
+    assert(!hsp->fb.fd); // must not setup fbuffer twice
     nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
     resp->content_out=&hsp->fb.data_out;
   }
@@ -538,8 +537,7 @@ void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_h
     resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
     if (resp->sendfile_fd!=-1) {
       assert(resp->sendfile_end - resp->sendfile_offset == resp->content_length);
-      if (hsp->fb.fd)
-        nxd_fbuffer_finalize(&hsp->fb);
+      assert(!hsp->fb.fd); // must not setup fbuffer twice
       nxd_fbuffer_init(&hsp->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
       resp->content_out=&hsp->fb.data_out;
     }

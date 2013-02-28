@@ -45,6 +45,7 @@ typedef struct draw_filter_data {
   nxweb_filter_data fdata;
   unsigned char* blob;
   int input_fd;
+  nxd_obuffer ob;
 } draw_filter_data;
 
 
@@ -155,9 +156,10 @@ static nxweb_result draw_do_filter(nxweb_filter* filter, nxweb_http_server_conne
   resp->content_type="image/png";
   resp->content_length=blob_size;
   resp->content=blob;
+  nxd_obuffer_init(&dfdata->ob, resp->content, resp->content_length);
+  resp->content_out=&dfdata->ob.data_out;
 
   // reset previous response content
-  resp->content_out=0;
   resp->sendfile_path=0;
   if (resp->sendfile_fd) {
     // save it to close on finalize

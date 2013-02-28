@@ -36,7 +36,9 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
-struct nxweb_server_config nxweb_server_config;
+struct nxweb_server_config nxweb_server_config={
+  .shutdown_timeout=5
+};
 
 static pthread_t main_thread_id=0;
 
@@ -494,7 +496,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     conn->handler=0;
     conn->handler_param=(nxe_data)0;
     if (conn->hsp.headers_bytes_received) {
-      nxweb_log_error("conn %p error: i=%d errno=%d state=%d rc=%d br=%d", conn, data.i, errno, conn->hsp.state, conn->hsp.request_count, conn->hsp.headers_bytes_received);
+      nxweb_log_warning("conn %p error: i=%d errno=%d state=%d rc=%d br=%d", conn, data.i, errno, conn->hsp.state, conn->hsp.request_count, conn->hsp.headers_bytes_received);
     }
     if (!conn->hsp.headers_bytes_received && (data.i==NXE_RDHUP || data.i==NXE_HUP || data.i==NXE_RDCLOSED)) {
       // normal close
@@ -600,7 +602,7 @@ void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, i
   conn->hsp.cls->finalize(&conn->hsp);
   if (conn->sock.cls) conn->sock.cls->finalize((nxd_socket*)&conn->sock, good);
   nxp_free(conn->tdata->free_conn_pool, conn);
-  //if (!__sync_sub_and_fetch(&num_connections, 1)) nxweb_log_error("all connections closed");
+  //if (!__sync_sub_and_fetch(&num_connections, 1)) nxweb_log_info("all connections closed");
 }
 
 nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri) {
@@ -801,7 +803,7 @@ static void on_sigterm(int sig) {
 
     nxe_trigger_eventfd(&tdata->shutdown_efs);
   }
-  alarm(5); // make sure we terminate via SIGALRM if some connections do not close in 5 seconds
+  alarm(nxweb_server_config.shutdown_timeout); // make sure we terminate via SIGALRM if some connections do not close in 5 seconds
 }
 
 static void on_sigalrm(int sig) {

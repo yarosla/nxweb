@@ -204,6 +204,7 @@ struct nxweb_server_config {
   nxweb_handler_callback request_dispatcher;
   nxweb_handler* handler_list;
   nxweb_module* module_list;
+  int shutdown_timeout; // time in secs to close up after SIGTERM
   char* work_dir;
   const char* access_log_fpath;
   int access_log_fd;

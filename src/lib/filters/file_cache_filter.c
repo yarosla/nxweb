@@ -91,6 +91,8 @@ typedef struct fc_filter_data {
   char* tmp_fpath;
   nxweb_http_response* resp;
   struct stat cache_finfo;
+  int input_fd;
+  nxd_fbuffer fb;
   fc_file_header hdr;
 } fc_filter_data;
 
@@ -238,6 +240,7 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
 
   resp->sendfile_info=finfo;
   resp->sendfile_path=fcdata->cache_fpath;
+  fcdata->input_fd=resp->sendfile_fd; // save to close on finalize
   resp->sendfile_fd=fd; // shall auto-close
   resp->sendfile_offset=hdr->content_offset.offs;
   resp->sendfile_end=resp->sendfile_offset+resp->content_length;
@@ -245,7 +248,18 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
   resp->chunked_encoding=0;
   resp->chunked_autoencode=0;
 
+  resp->content=0;
+  // override cache control
+  resp->etag=0;
+  resp->max_age=0;
+  resp->cache_control="must-revalidate";
+  resp->expires=fcdata->cache_finfo.st_mtime;
+
   fcdata->fd=0; // don't auto-close twice
+
+  nxd_fbuffer_init(&fcdata->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
+  resp->content_out=&fcdata->fb.data_out;
+
   return 0;
 
   E2:
@@ -385,6 +399,10 @@ void _nxweb_fc_finalize(fc_filter_data* fcdata) {
   if (fcdata->fd && fcdata->fd!=-1) {
     close(fcdata->fd);
   }
+  nxd_fbuffer_finalize(&fcdata->fb);
+  if (fcdata->input_fd && fcdata->input_fd!=-1) {
+    close(fcdata->input_fd);
+  }
   if (fcdata->tmp_fpath) unlink(fcdata->tmp_fpath);
 }
 
@@ -430,13 +448,7 @@ static nxweb_result fc_serve(fc_filter_data* fcdata, nxweb_http_request* req, nx
   }
   */
   if (fc_read_data(fcdata, resp)==-1) return NXWEB_NEXT; // no valid cached content
-  resp->content=0;
-  resp->content_out=0; // reset content_out
-  // override cache control
-  resp->etag=0;
-  resp->max_age=0;
-  resp->cache_control="must-revalidate";
-  resp->expires=fcdata->cache_finfo.st_mtime>cur_time? fcdata->cache_finfo.st_mtime : 0;
+  if (resp->expires<=cur_time) resp->expires=0;
   return NXWEB_OK;
 }
 
