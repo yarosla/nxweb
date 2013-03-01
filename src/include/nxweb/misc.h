@@ -20,6 +20,10 @@
 #ifndef MISC_H_INCLUDED
 #define MISC_H_INCLUDED
 
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -107,5 +111,9 @@ static inline char* uint_to_hex_string_zeropad(unsigned long n, char* buf, int n
   }
   return buf;
 }
+
+#ifdef	__cplusplus
+}
+#endif
 
 #endif // MISC_H_INCLUDED
