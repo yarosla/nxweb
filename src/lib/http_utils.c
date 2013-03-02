@@ -747,7 +747,30 @@ void nxweb_add_response_header_safe(nxweb_http_response* resp, const char* name,
     case NXWEB_HTTP_DATE: /* skip */ break;
     case NXWEB_HTTP_LAST_MODIFIED: resp->last_modified=nxweb_parse_http_time(value); break;
     case NXWEB_HTTP_EXPIRES: resp->expires=nxweb_parse_http_time(value); break;
-    case NXWEB_HTTP_CACHE_CONTROL: resp->cache_control=value; break;
+    case NXWEB_HTTP_CACHE_CONTROL:
+      resp->cache_control=value;
+      if (*resp->cache_control) {
+        char* p1=nxb_copy_str(resp->nxb, resp->cache_control);
+        char *p, *name, *value;
+        while (p1) {
+          p=strchr(p1, ',');
+          if (p) *p++='\0';
+          while (*p1 && (unsigned char)*p1<=SPACE) p1++;
+          name=p1;
+          value=strchr(p1, '=');
+          if (value) {
+            *value++='\0';
+            value=nxweb_trunc_space(value);
+          }
+          if (!nx_strcasecmp(name, "no-cache")) resp->no_cache=1;
+          else if (!nx_strcasecmp(name, "max-age") && value) {
+            if (value[0]=='0' && !value[1]) resp->max_age=-1;
+            else resp->max_age=atol(value);
+          }
+          p1=p;
+        }
+      }
+      break;
     case NXWEB_HTTP_ETAG: resp->etag=value; break;
     default:
       {

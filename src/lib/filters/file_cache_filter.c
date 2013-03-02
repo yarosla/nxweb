@@ -506,10 +506,10 @@ nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxw
   if (resp->status_code==304) {
     time_t expires_time=0;
     // check new max_age & expires headers if present
-    if (resp->max_age) {
-      expires_time=cur_time+resp->max_age; // note: max_age could be -1, which is OK
+    if (resp->max_age>0) {
+      expires_time=cur_time+resp->max_age;
     }
-    else if (resp->expires) {
+    else if (resp->expires && resp->expires > cur_time) {
       expires_time=resp->expires;
     }
     if (fc_serve(fcdata, req, resp, cur_time)!=NXWEB_OK) {
@@ -517,8 +517,8 @@ nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxw
       return NXWEB_ERROR;
     }
     if (!expires_time) {
-      if (fcdata->hdr.max_age.tim) { // use previous max_age if was set
-        expires_time=cur_time+fcdata->hdr.max_age.tim; // note: max_age could be -1, which is OK
+      if (fcdata->hdr.max_age.tim>0) { // use previous max_age if was set
+        expires_time=cur_time+fcdata->hdr.max_age.tim;
       }
     }
     if (expires_time) { // have new expires time
