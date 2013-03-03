@@ -23,7 +23,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-}
 
 #include <string.h>
 #include <stdarg.h>
