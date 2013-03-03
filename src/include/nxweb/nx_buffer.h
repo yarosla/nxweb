@@ -20,6 +20,11 @@
 #ifndef NX_BUFFER_H_INCLUDED
 #define NX_BUFFER_H_INCLUDED
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+}
+
 #include <string.h>
 #include <stdarg.h>
 #include <assert.h>
@@ -168,4 +173,7 @@ static inline void nxb_resize_fast(nxb_buffer* nxb, int size) {
 }
 
 
+#ifdef __cplusplus
+}
+#endif
 #endif // NX_BUFFER_H_INCLUDED
