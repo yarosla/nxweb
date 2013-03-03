@@ -68,3 +68,4 @@ _strace
 ^python/cherrypy
 ^python/flask
 ^python/mysite/
+^fupl-\d+$

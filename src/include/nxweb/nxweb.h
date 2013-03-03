@@ -113,6 +113,7 @@ typedef struct nxweb_http_request {
   unsigned sending_100_continue:1;
   unsigned x_forwarded_ssl:1;
   unsigned templates_no_parse:1;
+  unsigned buffering_to_memory:1;
 
   // Parsed HTTP request info:
   const char* method;

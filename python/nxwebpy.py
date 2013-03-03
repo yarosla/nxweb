@@ -1,9 +1,11 @@
 import sys
 import io
+import os
 
 import hello
-WSGI_APP=hello.ping_app
+# WSGI_APP=hello.ping_app
 # WSGI_APP=hello.hello_world_app
+WSGI_APP=hello.file_upload_app
 
 # Django sample setup:
 # import os
@@ -16,7 +18,9 @@ def _nxweb_on_request(environ):
   try:
     environ['wsgi.version']=(1, 0)
     if 'nxweb.req.content' in environ:
-      environ['wsgi.input']=io.BytesIO(environ.get('nxweb.req.content', ''))
+      environ['wsgi.input']=io.BytesIO(environ['nxweb.req.content'])
+    elif 'nxweb.req.content_fd' in environ:
+      environ['wsgi.input']=os.fdopen(environ['nxweb.req.content_fd'], 'r')
     else:
       environ['wsgi.input']=None
     environ['wsgi.errors']=sys.stderr

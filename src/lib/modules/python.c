@@ -54,7 +54,10 @@ static int on_startup() {
   // save a pointer to the main PyThreadState object
   py_main_thread_state=PyThreadState_Get();
   py_module=PyImport_Import(py_module_name);
-  assert(py_module && PyModule_Check(py_module));
+  if (!py_module || !PyModule_Check(py_module)) {
+    fprintf(stderr, "can't load python module %s; check for parse errors\n", MODULE_NAME);
+    exit(0);
+  }
   Py_DECREF(py_module_name);
   py_nxweb_on_request_func=PyObject_GetAttrString(py_module, FUNC_NAME);
   assert(py_nxweb_on_request_func && PyCallable_Check(py_nxweb_on_request_func));
@@ -74,6 +77,68 @@ static void on_shutdown() {
 }
 
 NXWEB_MODULE(python, .on_server_startup=on_startup, .on_server_shutdown=on_shutdown);
+
+#define NXWEB_MAX_PYTHON_UPLOAD_SIZE 50000000
+
+static const char python_handler_key; // variable's address only matters
+#define PYTHON_HANDLER_KEY ((nxe_data)&python_handler_key)
+
+static void python_request_data_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxe_data data) {
+  nxd_fwbuffer* fwb=data.ptr;
+  if (fwb && fwb->fd) {
+    // close temp upload file
+    close(fwb->fd);
+    fwb->fd=0;
+  }
+}
+
+static nxweb_result python_on_post_data(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (req->content_length>0 && req->content_length<NXWEB_MAX_REQUEST_BODY_SIZE) {
+    // fallback to default in-memory buffering
+    return NXWEB_NEXT;
+  }
+  if (!conn->handler->dir) {
+    nxweb_log_warning("python handler temp upload file dir not set => skipping file buffering for %s", req->uri);
+    return NXWEB_NEXT;
+  }
+  nxe_ssize_t upload_size_limit=conn->handler->size? conn->handler->size : NXWEB_MAX_PYTHON_UPLOAD_SIZE;
+  if (req->content_length > upload_size_limit) {
+    nxweb_send_http_error(resp, 413, "Request Entity Too Large");
+    resp->keep_alive=0; // close connection
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_OK;
+  }
+  char* fname_template=nxb_alloc_obj(req->nxb, strlen(conn->handler->dir)+sizeof("/py_upload_tmp_XXXXXX")+1);
+  strcat(strcpy(fname_template, conn->handler->dir), "/py_upload_tmp_XXXXXX");
+  if (nxweb_mkpath(fname_template, 0755)==-1) {
+    nxweb_log_error("can't create path to temp upload file %s; check permissions", fname_template);
+    nxweb_send_http_error(resp, 500, "Internal Server Error");
+    resp->keep_alive=0; // close connection
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_OK;
+  }
+  int fd=mkstemp(fname_template);
+  if (fd==-1) {
+    nxweb_log_error("can't open (mkstemp()) temp upload file for %s", req->uri);
+    nxweb_send_http_error(resp, 500, "Internal Server Error");
+    resp->keep_alive=0; // close connection
+    nxweb_start_sending_response(conn, resp);
+    return NXWEB_OK;
+  }
+  unlink(fname_template); // auto-delete on close()
+  nxd_fwbuffer* fwb=nxb_alloc_obj(req->nxb, sizeof(nxd_fwbuffer));
+  nxweb_set_request_data(req, PYTHON_HANDLER_KEY, (nxe_data)(void*)fwb, python_request_data_finalize);
+  nxd_fwbuffer_init(fwb, fd, upload_size_limit);
+  conn->hsp.cls->connect_request_body_out(&conn->hsp, &fwb->data_in);
+  conn->hsp.cls->start_receiving_request_body(&conn->hsp);
+  return NXWEB_OK;
+}
+
+static nxweb_result python_on_post_data_complete(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  // nothing to do here
+  // keep temp file open
+  return NXWEB_OK;
+}
 
 
 static inline void dict_set(PyObject* dict, const char* key, PyObject* val) {
@@ -103,6 +168,33 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
   }
   const char* host_port=req->host? strchr(req->host, ':') : 0;
 
+  int content_fd=0;
+
+  if (req->content_length) {
+    nxd_fwbuffer* fwb=nxweb_get_request_data(req, PYTHON_HANDLER_KEY).ptr;
+
+    if (fwb) {
+      if (fwb->error || fwb->size > fwb->max_size) {
+        nxweb_send_http_error(resp, 413, "Request Entity Too Large"); // most likely cause
+        return NXWEB_ERROR;
+      }
+      else if (req->content_received!=fwb->size) {
+        nxweb_log_error("content_received does not match upload stored size for %s", req->uri);
+        nxweb_send_http_error(resp, 500, "Internal Server Error");
+        return NXWEB_ERROR;
+      }
+      else {
+        content_fd=fwb->fd;
+        if (lseek(content_fd, 0, SEEK_SET)==-1) {
+          nxweb_log_error("can't lseek() temp upload file for %s", req->uri);
+          nxweb_send_http_error(resp, 500, "Internal Server Error");
+          return NXWEB_ERROR;
+        }
+      }
+    }
+  }
+
+
   PyGILState_STATE gstate=PyGILState_Ensure();
 
   PyObject* py_func_args=PyTuple_New(1);
@@ -121,7 +213,7 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
   dict_set(py_environ, "QUERY_STRING", PyString_FromString(query_string? query_string : ""));
   dict_set(py_environ, "REMOTE_ADDR", PyString_FromString(conn->remote_addr));
   dict_set(py_environ, "CONTENT_TYPE", PyString_FromString(req->content_type? req->content_type : ""));
-  dict_set(py_environ, "CONTENT_LENGTH", PyInt_FromLong(req->content_length>0? req->content_length : req->content_received));
+  dict_set(py_environ, "CONTENT_LENGTH", PyInt_FromLong(req->content_received));
   if (req->cookie) dict_set(py_environ, "HTTP_COOKIE", PyString_FromString(req->cookie));
   if (req->host) dict_set(py_environ, "HTTP_HOST", PyString_FromString(req->host));
   if (req->user_agent) dict_set(py_environ, "HTTP_USER_AGENT", PyString_FromString(req->user_agent));
@@ -147,7 +239,14 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
 
   dict_set(py_environ, "wsgi.url_scheme", PyString_FromString(conn->secure? "https" : "http"));
 
-  if (req->content_length) dict_set(py_environ, "nxweb.req.content", PyByteArray_FromStringAndSize(req->content? req->content : "", req->content_received));
+  if (req->content_length) {
+    if (content_fd) {
+      dict_set(py_environ, "nxweb.req.content_fd", PyInt_FromLong(content_fd));
+    }
+    else {
+      dict_set(py_environ, "nxweb.req.content", PyByteArray_FromStringAndSize(req->content? req->content : "", req->content_received));
+    }
+  }
   if (req->if_modified_since) dict_set(py_environ, "nxweb.req.if_modified_since", PyLong_FromLong(req->if_modified_since));
   dict_set(py_environ, "nxweb.req.uid", PyLong_FromLong(req->uid));
   if (req->parent_req) {
@@ -243,4 +342,6 @@ static nxweb_result python_generate_cache_key(nxweb_http_server_connection* conn
 
 nxweb_handler nxweb_python_handler={.on_request=python_on_request,
         .on_generate_cache_key=python_generate_cache_key,
+        .on_post_data=python_on_post_data,
+        //.on_post_data_complete=python_on_post_data_complete,
         .flags=NXWEB_HANDLE_ANY|NXWEB_INWORKER};

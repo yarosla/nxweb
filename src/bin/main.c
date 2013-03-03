@@ -135,6 +135,7 @@ static void server_config() {
 
 #ifdef WITH_PYTHON
   NXWEB_PYTHON_SETUP(python, "/py", .priority=950000,
+        .dir="www/cache/upload_temp", .size=50000000, // file upload 50Mb size limit
         .filters={
             nxweb_file_cache_filter_setup("www/cache/python"), &templates_filter, &ssi_filter
          });

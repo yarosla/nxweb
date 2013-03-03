@@ -1,5 +1,6 @@
-from cgi import parse_qs, escape
+from cgi import parse_qs, escape, FieldStorage
 import time
+import shutil
 
 def ping_app(environ, start_response):
     status = '200 OK'
@@ -18,11 +19,42 @@ def hello_world_app(environ, start_response):
     subject=escape(parameters['subject'][0])
   else:
     subject='World'
-  start_response('200 OK', [('Content-Type', 'text/plain')])
+  start_response('200 OK', [('Content-Type', 'text/plain;charset=utf-8')])
   result='Hello, %(subject)s!\n' % {'subject': subject}
   for key, value in iter(sorted(environ.iteritems())):
     result+=key+'='+str(value)+'\n'
-  if environ.get('CONTENT_LENGTH', 0):
+  content_length=environ.get('CONTENT_LENGTH', 0)
+  if content_length and content_length<100:
     result+='bytes read='+environ['wsgi.input'].read()
   # environ['wsgi.errors'].write(result+'\n')
+  return [result]
+
+def file_upload_app(environ, start_response):
+  result=''
+  if environ['REQUEST_METHOD'].upper()=='POST':
+    start_response('200 OK', [('Content-Type', 'text/plain;charset=utf-8')])
+    try:
+      fs=FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True, strict_parsing=True)
+      if fs.list:
+        count=0
+        for item in fs.list:
+          if item.filename:
+            count+=1
+            result+='%s: file; %s, %s, %s, %r\n' % (item.name, item.filename, item.type, item.disposition, item.file)
+            with open('fupl-'+str(count), 'w') as fdst:
+              shutil.copyfileobj(item.file, fdst, 8192)
+            if hasattr(item.file, 'close'):
+              item.file.close()
+          else:
+            result+='%s: value; %s\n' % (item.name, item.value)
+    except Exception as e:
+      result='multipart data parse failure: '+repr(e)
+  else:
+    start_response('200 OK', [('Content-Type', 'text/html;charset=utf-8')])
+    result='''
+      <form action="/py" method="post" enctype="multipart/form-data">
+        Category:       <input type="text" name="category" />
+        Select file(s): <input type="file" name="upload" multiple />
+        <input type="submit" value="Start upload!" />
+      </form>'''
   return [result]

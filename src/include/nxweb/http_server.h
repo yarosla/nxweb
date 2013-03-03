@@ -94,14 +94,18 @@ typedef struct nxweb_handler {
   int vhost_len;
   int priority;
   nxweb_handler_flags flags;
+
+  // various handler parameters
   nxe_data param;
   const char* uri;
   const char* dir;
   const char* charset;
   const char* index_file;
+  nxe_ssize_t size;
   _Bool memcache:1;
   _Bool proxy_copy_host:1;
   int idx;
+
   struct nxweb_handler* next;
   nxweb_filter* filters[NXWEB_MAX_FILTERS];
   int num_filters;

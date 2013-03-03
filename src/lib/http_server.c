@@ -447,19 +447,18 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
 
     if (req->content_length) {
       if (h->on_post_data) h->on_post_data(conn, req, resp);
-      else {
-        if (!conn->hsp.cls->get_request_body_out_pair(&conn->hsp)) { // stream not connected
-          if (req->content_length>NXWEB_MAX_REQUEST_BODY_SIZE) {
-            nxweb_send_http_error(resp, 413, "Request Entity Too Large");
-            resp->keep_alive=0; // close connection
-            nxweb_start_sending_response(conn, resp);
-            return;
-          }
-          nxe_loop* loop=conn->tdata->loop;
-          nxd_ibuffer_init(&conn->ib, conn->hsp.nxb, req->content_length>0? req->content_length+1 : NXWEB_MAX_REQUEST_BODY_SIZE);
-          conn->hsp.cls->connect_request_body_out(&conn->hsp, &conn->ib.data_in);
-          conn->hsp.cls->start_receiving_request_body(&conn->hsp);
+      if (!conn->hsp.cls->get_request_body_out_pair(&conn->hsp)) { // stream still not connected
+        if (req->content_length>NXWEB_MAX_REQUEST_BODY_SIZE) {
+          nxweb_send_http_error(resp, 413, "Request Entity Too Large");
+          resp->keep_alive=0; // close connection
+          nxweb_start_sending_response(conn, resp);
+          return;
         }
+        nxe_loop* loop=conn->tdata->loop;
+        nxd_ibuffer_init(&conn->ib, conn->hsp.nxb, req->content_length>0? req->content_length+1 : NXWEB_MAX_REQUEST_BODY_SIZE);
+        conn->hsp.cls->connect_request_body_out(&conn->hsp, &conn->ib.data_in);
+        conn->hsp.cls->start_receiving_request_body(&conn->hsp);
+        req->buffering_to_memory=1;
       }
     }
     else {
@@ -471,12 +470,10 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_handler* h=conn->handler;
     nxweb_handler_flags flags=h->flags;
     if (h->on_post_data_complete) h->on_post_data_complete(conn, req, resp);
-    else {
-      if (conn->hsp.cls->get_request_body_out_pair(&conn->hsp)==&conn->ib.data_in) {
-        int size;
-        req->content=nxd_ibuffer_get_result(&conn->ib, &size);
-        assert(req->content_received==size);
-      }
+    if (req->buffering_to_memory && conn->hsp.cls->get_request_body_out_pair(&conn->hsp)==&conn->ib.data_in) {
+      int size;
+      req->content=nxd_ibuffer_get_result(&conn->ib, &size);
+      assert(req->content_received==size);
     }
     invoke_request_handler(conn, req, resp, h, flags);
   }
