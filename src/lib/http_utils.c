@@ -736,8 +736,9 @@ void nxweb_add_response_header(nxweb_http_response* resp, const char* name, cons
 
 void nxweb_add_response_header_safe(nxweb_http_response* resp, const char* name, const char* value) {
   int header_name_id=identify_http_header(name, strlen(name));
+  nxb_buffer* nxb=resp->nxb;
   switch (header_name_id) {
-    case NXWEB_HTTP_CONTENT_TYPE: resp->content_type=value; break;
+    case NXWEB_HTTP_CONTENT_TYPE: resp->content_type=nxb_copy_str(nxb, value); break;
     case NXWEB_HTTP_CONTENT_LENGTH: /* skip */ break;
     case NXWEB_HTTP_TRANSFER_ENCODING: /* skip */ break;
     case NXWEB_HTTP_CONNECTION: /* skip */ break;
@@ -748,33 +749,36 @@ void nxweb_add_response_header_safe(nxweb_http_response* resp, const char* name,
     case NXWEB_HTTP_LAST_MODIFIED: resp->last_modified=nxweb_parse_http_time(value); break;
     case NXWEB_HTTP_EXPIRES: resp->expires=nxweb_parse_http_time(value); break;
     case NXWEB_HTTP_CACHE_CONTROL:
-      resp->cache_control=value;
-      if (*resp->cache_control) {
-        char* p1=nxb_copy_str(resp->nxb, resp->cache_control);
-        char *p, *name, *value;
+      if (*value) {
+        char* p1=nxb_copy_str(nxb, value);
+        char *p, *cc_name, *cc_value;
+        _Bool dirty=0;
         while (p1) {
           p=strchr(p1, ',');
           if (p) *p++='\0';
           while (*p1 && (unsigned char)*p1<=SPACE) p1++;
-          name=p1;
-          value=strchr(p1, '=');
-          if (value) {
-            *value++='\0';
-            value=nxweb_trunc_space(value);
+          cc_name=p1;
+          cc_value=strchr(p1, '=');
+          if (cc_value) {
+            *cc_value++='\0';
+            cc_value=nxweb_trunc_space(cc_value);
           }
-          if (!nx_strcasecmp(name, "no-cache")) resp->no_cache=1;
-          else if (!nx_strcasecmp(name, "max-age") && value) {
-            if (value[0]=='0' && !value[1]) resp->max_age=-1;
-            else resp->max_age=atol(value);
+          if (!nx_strcasecmp(cc_name, "no-cache")) resp->no_cache=1;
+          else if (!nx_strcasecmp(cc_name, "max-age") && cc_value) {
+            if (cc_value[0]=='0' && !cc_value[1]) resp->max_age=-1;
+            else resp->max_age=atol(cc_value);
           }
+          else dirty=1;
           p1=p;
+        }
+        if (dirty) { // there is something we could not recognize
+          resp->cache_control=nxb_copy_str(nxb, value);
         }
       }
       break;
-    case NXWEB_HTTP_ETAG: resp->etag=value; break;
+    case NXWEB_HTTP_ETAG: resp->etag=nxb_copy_str(nxb, value); break;
     default:
       {
-        nxb_buffer* nxb=resp->nxb;
         nx_simple_map_entry* header=nxb_calloc_obj(nxb, sizeof(nxweb_http_header));
         header->name=nxb_copy_str(nxb, name);
         header->value=nxb_copy_str(nxb, value);

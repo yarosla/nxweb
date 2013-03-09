@@ -28,8 +28,10 @@ def _nxweb_on_request(environ):
     environ['wsgi.multiprocess']=False
     environ['wsgi.run_once']=False
     return _call_wsgi_application(WSGI_APP, environ)
-  except Exception as e:
-    return 'Error: '+repr(e)
+  except:
+    ei=sys.exc_info()
+    traceback.print_exception(*ei)
+    return repr(ei[1])+' see log for details'
 
 def _call_wsgi_application(app, environ):
   body_writer=io.BytesIO()

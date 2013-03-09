@@ -277,7 +277,7 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
       while (*p && *p==' ') p++;
       if (status_code>=200 && status_code<600 && *p) {
         resp->status_code=status_code;
-        resp->status=nxb_copy_obj(nxb, p, strlen(p)+1);
+        resp->status=nxb_copy_str(nxb, p);
       }
     }
 
