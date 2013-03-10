@@ -118,7 +118,7 @@ static nxweb_result draw_do_filter(nxweb_filter* filter, nxweb_http_server_conne
     w=((double)rand()/(double)RAND_MAX+1.0)*(double)height;
     set_rotate_affine(&affine, d, x, y);
 
-    MagickSetImageColor(rect, p_transparent);
+    //MagickSetImageColor(rect, p_transparent);
     ClearDrawingWand(d_wand);
     DrawSetFillColor(d_wand, p_black);
     DrawAffine(d_wand, &affine);
