@@ -15,6 +15,8 @@ WSGI_APP=hello.file_upload_app
 # WSGI_APP=mysite.wsgi.application
 
 # make stdout and stderr unbuffered
+sys.stdout.flush()
+sys.stderr.flush()
 sys.stdout=os.fdopen(sys.stdout.fileno(), 'w', 0)
 sys.stderr=os.fdopen(sys.stderr.fileno(), 'w', 0)
 
