@@ -309,18 +309,45 @@ static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd
     }
   }
 
-  if (size>0) {
+  if (size) {
     nxe_loop* loop=os->super.loop;
     if (!loop->batch_write_fd) {
       int fd=fs->fd;
       _nxweb_batch_write_begin(fd);
       loop->batch_write_fd=fd;
     }
+    nxe_ssize_t buffered_byte_sent=0;
+    if (ss->buffered_size) {
+      buffered_byte_sent=gnutls_record_send(ss->session, 0, 0); // flush buffered data
+      if (buffered_byte_sent != ss->buffered_size) {
+        if (buffered_byte_sent==GNUTLS_E_AGAIN) {
+          nxe_ostream_unset_ready(os);
+          nxweb_log_warning("gnutls_record_send() returned GNUTLS_E_AGAIN again");
+          return 0;
+        }
+        nxweb_log_warning("gnutls_record_send() can't flush buffered data %d", (int)buffered_byte_sent);
+        nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
+        return 0;
+      }
+      ss->buffered_size=0;
+      buffered_byte_sent=1; // one byte that has left (see below)
+      size--;
+      if (!size) return buffered_byte_sent;
+    }
     nxe_ssize_t bytes_sent=gnutls_record_send(ss->session, ptr.cptr, size);
     if (bytes_sent<0) {
       nxe_ostream_unset_ready(os);
-      if (bytes_sent!=GNUTLS_E_AGAIN) nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
-      return 0;
+      if (bytes_sent==GNUTLS_E_AGAIN) {
+        nxweb_log_info("gnutls_record_send() returned GNUTLS_E_AGAIN; %ld bytes buffered", size);
+        // GNUTLS buffers data provided to gnutls_record_send() so we can't change it anymore.
+        // Effectively is could be considered as "sent" but we still need to call
+        // gnutls_record_send() again to flush it out.
+        ss->buffered_size=size;
+        return buffered_byte_sent+ss->buffered_size-1; // pretend all sent except last byte
+      }
+      nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
+      nxweb_log_warning("gnutls_record_send() returned error %d", (int)bytes_sent);
+      return buffered_byte_sent; // +0
     }
 /*
     if (bytes_sent<size) {
@@ -331,7 +358,7 @@ static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd
       }
     }
 */
-    return bytes_sent;
+    return buffered_byte_sent+bytes_sent;
   }
   return 0;
 }

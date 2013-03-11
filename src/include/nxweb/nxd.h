@@ -57,6 +57,7 @@ typedef struct nxd_ssl_socket { // extends nxd_socket
   nxe_istream* saved_is;
   nxe_ostream* saved_os;
   gnutls_session_t session;
+  nxe_ssize_t buffered_size;
   _Bool handshake_started:1;
   _Bool handshake_complete:1;
   _Bool handshake_failed:1;

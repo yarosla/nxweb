@@ -14,6 +14,10 @@ WSGI_APP=hello.file_upload_app
 # import mysite.wsgi
 # WSGI_APP=mysite.wsgi.application
 
+# make stdout and stderr unbuffered
+sys.stdout=os.fdopen(sys.stdout.fileno(), 'w', 0)
+sys.stderr=os.fdopen(sys.stderr.fileno(), 'w', 0)
+
 def _nxweb_on_request(environ):
   try:
     environ['wsgi.version']=(1, 0)

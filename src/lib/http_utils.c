@@ -471,6 +471,8 @@ int _nxweb_parse_http_request(nxweb_http_request* req, char* headers, char* end_
   }
   req->headers=header_map;
 
+  if (!req->host || !*req->host) return -1; // host is required
+
   req->path_info=0;
   {
     const char* g;

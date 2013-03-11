@@ -157,7 +157,7 @@ void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nx
   nxb_append_char(nxb, '.');
   nxb_append_char(nxb, '0'+req->http11);
   nxb_append_char(nxb, ' ');
-  nxb_append_str(nxb, req->host);
+  nxb_append_str(nxb, req->host? req->host : "-");
   nxb_append_char(nxb, ' ');
   nxb_append_str(nxb, req->uri);
   nxb_append_char(nxb, ' ');

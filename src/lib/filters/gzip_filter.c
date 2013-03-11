@@ -234,8 +234,8 @@ static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, 
       int flush=*flags&NXEF_EOF? Z_FINISH : Z_SYNC_FLUSH;
       deflate_result=deflate(zs, flush);
       if (!((flush==Z_FINISH && (deflate_result==Z_STREAM_END || deflate_result==Z_OK)) || (flush==Z_SYNC_FLUSH && deflate_result==Z_OK))) {
-        nxweb_log_warning("gzip-deflate unexpected: flush=%d, deflate_result=%d, avail_in=%d/%d, avail_out=%d/%d, ptr=%p, size=%d",
-                          flush, deflate_result, (int)zs->avail_in, (int)size, (int)zs->avail_out, (int)size_avail, ptr.ptr, (int)size);
+        nxweb_log_warning("gzip-deflate unexpected: flush=%d, deflate_result=%d, avail_in=%d/%d, avail_out=%d/%d, ptr=%p, size=%d, rb.eof=%d",
+                          flush, deflate_result, (int)zs->avail_in, (int)size, (int)zs->avail_out, (int)size_avail, ptr.ptr, (int)size, (int)gdata->rb.eof);
         deflate_result=Z_STREAM_END; // force out of loop
       }
       bytes_sent=size - zs->avail_in;
