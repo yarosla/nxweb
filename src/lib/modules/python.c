@@ -68,6 +68,7 @@ static int on_startup() {
 
 static void on_shutdown() {
   // shut down the interpreter
+  nxweb_log_error("shutting down python");
   PyEval_AcquireLock();
   PyThreadState_Swap(py_main_thread_state);
   Py_XDECREF(py_nxweb_on_request_func);

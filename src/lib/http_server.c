@@ -974,5 +974,5 @@ void nxweb_run() {
 
   free(nxweb_server_config.work_dir);
 
-  nxweb_log_error("end of _nxweb_main()");
+  nxweb_log_error("end of nxweb_run()");
 }

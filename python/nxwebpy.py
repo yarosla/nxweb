@@ -14,12 +14,6 @@ WSGI_APP=hello.file_upload_app
 # import mysite.wsgi
 # WSGI_APP=mysite.wsgi.application
 
-# make stdout and stderr unbuffered
-sys.stdout.flush()
-sys.stderr.flush()
-sys.stdout=os.fdopen(sys.stdout.fileno(), 'w', 0)
-sys.stderr=os.fdopen(sys.stderr.fileno(), 'w', 0)
-
 def _nxweb_on_request(environ):
   try:
     environ['wsgi.version']=(1, 0)
@@ -53,3 +47,15 @@ def _call_wsgi_application(app, environ):
     if hasattr(app_iter, 'close'):
       app_iter.close()
   return status_headers[0], status_headers[1], body_writer.getvalue()
+
+def _disable_stdout_buffering():
+  # credit: http://stackoverflow.com/a/3678114/697313
+  sys.stdout.flush()
+  fileno=sys.stdout.fileno()
+  temp_fd=os.dup(fileno)
+  sys.stdout.close()
+  os.dup2(temp_fd, fileno)
+  os.close(temp_fd)
+  sys.stdout=os.fdopen(fileno, "w", 0)
+
+_disable_stdout_buffering()
