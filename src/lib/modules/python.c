@@ -249,12 +249,12 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
     }
   }
   if (req->if_modified_since) dict_set(py_environ, "nxweb.req.if_modified_since", PyLong_FromLong(req->if_modified_since));
-  dict_set(py_environ, "nxweb.req.uid", PyLong_FromLong(req->uid));
+  dict_set(py_environ, "nxweb.req.uid", PyLong_FromLongLong(req->uid));
   if (req->parent_req) {
     nxweb_http_request* preq=req->parent_req;
     while (preq->parent_req) preq=preq->parent_req; // find root request
     if (preq->uid) {
-      dict_set(py_environ, "nxweb.req.root_uid", PyLong_FromLong(preq->uid));
+      dict_set(py_environ, "nxweb.req.root_uid", PyLong_FromLongLong(preq->uid));
     }
   }
 

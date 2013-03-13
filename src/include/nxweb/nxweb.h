@@ -31,6 +31,8 @@
 #include "nxweb_config.h"
 
 #include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 #include "nx_buffer.h"
 #include "nx_file_reader.h"

@@ -28,7 +28,7 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
   //    %H - html-escape string
   //    %U - url-encode string
   nxweb_response_printf(resp, "<p>Received request:</p>\n<blockquote>"
-           "request_id=%016lx<br/>\n"
+           "request_id=%016" PRIx64 "<br/>\n"
            "remote_addr=%H<br/>\n"
            "method=%H<br/>\n"
            "uri=%H<br/>\n"

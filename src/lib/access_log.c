@@ -142,12 +142,12 @@ void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nx
 
   nxb_append_str(nxb, nxe_get_current_iso8601_time_str(_nxweb_net_thread_data->loop));
   nxb_append_char(nxb, ' ');
-  nxb_append_uint_hex_zeropad(nxb, conn->uid, 16);
+  nxb_append_uint64_hex_zeropad(nxb, conn->uid, 16);
   nxb_append_char(nxb, ' ');
-  nxb_append_uint_hex_zeropad(nxb, req->uid, 16);
+  nxb_append_uint64_hex_zeropad(nxb, req->uid, 16);
   nxb_append_char(nxb, ' ');
   if (req->parent_req) {
-    nxb_append_uint_hex_zeropad(nxb, req->parent_req->uid, 16);
+    nxb_append_uint64_hex_zeropad(nxb, req->parent_req->uid, 16);
   }
   else {
     nxb_append_str(nxb, conn->remote_addr); // do not repeat for subrequests
@@ -200,7 +200,7 @@ void nxweb_access_log_on_proxy_response(nxweb_http_request* req, nxd_http_proxy*
   BUILD_FRAG_BEGIN;
 
   nxb_append(nxb, "{{px:", 5);
-  nxb_append_uint_hex_zeropad(nxb, hpx->uid, 16);
+  nxb_append_uint64_hex_zeropad(nxb, hpx->uid, 16);
   nxb_append_char(nxb, ' ');
   nxb_append_uint(nxb, hpx->pool->conn_count);
   nxb_append_char(nxb, '/');

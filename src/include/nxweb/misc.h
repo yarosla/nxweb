@@ -24,6 +24,7 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -103,6 +104,16 @@ static inline char* uint_to_decimal_string_zeropad(unsigned long n, char* buf, i
 static inline char HEX_DIGIT(char n) { n&=0xf; return n<10? n+'0' : n-10+'A'; }
 
 static inline char* uint_to_hex_string_zeropad(unsigned long n, char* buf, int num_digits, int null_terminate) {
+  char* p=buf+num_digits;
+  if (null_terminate) *p='\0';
+  while (num_digits--) {
+    *--p=HEX_DIGIT(n);
+    n>>=4;
+  }
+  return buf;
+}
+
+static inline char* uint64_to_hex_string_zeropad(uint64_t n, char* buf, int num_digits, int null_terminate) {
   char* p=buf+num_digits;
   if (null_terminate) *p='\0';
   while (num_digits--) {

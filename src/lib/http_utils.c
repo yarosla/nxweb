@@ -1109,7 +1109,7 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
 
   if (req->uid) {
     nxb_append_str(nxb, "X-NXWEB-Request-ID: ");
-    nxb_append_uint_hex_zeropad(nxb, req->uid, 16);
+    nxb_append_uint64_hex_zeropad(nxb, req->uid, 16);
     nxb_append_str(nxb, "\r\n");
   }
 
@@ -1118,7 +1118,7 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
     while (preq->parent_req) preq=preq->parent_req; // find root request
     if (preq->uid) {
       nxb_append_str(nxb, "X-NXWEB-Root-Request-ID: ");
-      nxb_append_uint_hex_zeropad(nxb, preq->uid, 16);
+      nxb_append_uint64_hex_zeropad(nxb, preq->uid, 16);
       nxb_append_str(nxb, "\r\n");
     }
   }
