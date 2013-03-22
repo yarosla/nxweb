@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -180,10 +180,12 @@ void* nxb_alloc_obj(nxb_buffer* nxb, int size) {
 int nxb_printf_va(nxb_buffer* nxb, const char* fmt, va_list ap) {
   int room_size=nxb->end - nxb->ptr;
   int len=vsnprintf(nxb->ptr, room_size, fmt, ap);
+  if (len<0) return 0; // output error
   if (len>room_size) {
     if (nxb_realloc_chunk(nxb, len)) return 0;
     room_size=nxb->end - nxb->ptr;
-    vsnprintf(nxb->ptr, room_size, fmt, ap);
+    int len2=vsnprintf(nxb->ptr, room_size, fmt, ap);
+    assert(len2==len);
   }
   nxb->ptr+=len;
   return len;

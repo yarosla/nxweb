@@ -145,7 +145,7 @@ static void server_config() {
   nxweb_error_log_level=NXWEB_LOG_INFO;
 
   // Override default timers (if needed):
-  //nxweb_set_timeout(NXWEB_TIMER_KEEP_ALIVE, 120);
+  //nxweb_set_timeout(NXWEB_TIMER_KEEP_ALIVE, 120000000); // micro-seconds
 
   // Go!
   nxweb_run();
