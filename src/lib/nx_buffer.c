@@ -181,8 +181,8 @@ int nxb_printf_va(nxb_buffer* nxb, const char* fmt, va_list ap) {
   int room_size=nxb->end - nxb->ptr;
   int len=vsnprintf(nxb->ptr, room_size, fmt, ap);
   if (len<0) return 0; // output error
-  if (len>room_size) {
-    if (nxb_realloc_chunk(nxb, len)) return 0;
+  if (len>=room_size) {
+    if (nxb_realloc_chunk(nxb, len+1)) return 0; // need space for null-terminator
     room_size=nxb->end - nxb->ptr;
     int len2=vsnprintf(nxb->ptr, room_size, fmt, ap);
     assert(len2==len);
