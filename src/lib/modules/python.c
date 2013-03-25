@@ -43,6 +43,12 @@ static PyObject* py_module;
 static PyObject* py_nxweb_on_request_func;
 
 static int on_startup() {
+  struct stat fi;
+  if (stat(PROG_NAME, &fi)==-1) {
+    nxweb_log_error("%s is missing; skipping python initialization", PROG_NAME);
+    return 0;
+  }
+
   Py_SetProgramName((char*)PROG_NAME);
   // initialize thread support
   PyEval_InitThreads();
@@ -332,6 +338,7 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
 }
 
 static nxweb_result python_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  assert(py_module); // check if python initialized
   if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
   _nxb_append_encode_file_path(req->nxb, req->host);
   if (conn->secure) nxb_append_str(req->nxb, "_s");
