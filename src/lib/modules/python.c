@@ -73,6 +73,7 @@ static int on_startup() {
 }
 
 static void on_shutdown() {
+  if (!py_module) return; // not initialized
   // shut down the interpreter
   nxweb_log_error("shutting down python");
   PyEval_AcquireLock();
