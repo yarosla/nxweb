@@ -282,13 +282,15 @@ static void gzip_finalize(nxweb_filter* filter, nxweb_http_server_connection* co
 }
 
 static nxweb_result gzip_serve_from_cache(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
-  return _nxweb_fc_serve_from_cache(conn, req, resp, fdata->cache_key, fdata->fcache, check_time);
+  return fdata->fcache? _nxweb_fc_serve_from_cache(conn, req, resp, fdata->cache_key, fdata->fcache, check_time) : NXWEB_NEXT;
 }
 
 static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   gzip_filter_data* gdata=(gzip_filter_data*)fdata;
-  nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);
-  if (r!=NXWEB_NEXT) return r;
+  if (fdata->fcache) {
+    nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);
+    if (r!=NXWEB_NEXT) return r;
+  }
 
   if (resp->gzip_encoded) return NXWEB_NEXT;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
@@ -340,7 +342,7 @@ static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_conne
   resp->content_length=-1; // chunked encoding
   resp->chunked_autoencode=1;
 
-  return _nxweb_fc_store(conn, req, resp, fdata->fcache);
+  return fdata->fcache? _nxweb_fc_store(conn, req, resp, fdata->fcache) : NXWEB_OK;
 }
 
 static nxweb_filter_gzip gzip_filter={.base={.name="gzip", .init=gzip_init, .finalize=gzip_finalize,

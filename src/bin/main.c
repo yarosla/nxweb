@@ -88,7 +88,7 @@ static void server_config() {
   // This is sample handler (see modules/hello.c):
   NXWEB_HANDLER_SETUP(hello, "/hello", &hello_handler, .priority=1000, .filters={
   #ifdef WITH_ZLIB
-    nxweb_gzip_filter_setup(4, "www/cache/gzip/hello"),
+    nxweb_gzip_filter_setup(4, 0), // null cache_dir as we don't need caching
   #endif
   });
 
