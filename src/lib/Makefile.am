@@ -14,7 +14,7 @@ libnxweb_la_SOURCES = \
 	nx_event.c nx_file_reader.c nx_pool.c nx_workers.c \
 	http_subrequest.c templates.c access_log.c main_stub.c \
 	\
-	modules/http_proxy.c modules/sendfile.c \
+	modules/http_proxy.c modules/sendfile.c modules/host_redirect.c \
 	\
 	filters/ssi_filter.c \
 	filters/templates_filter.c \

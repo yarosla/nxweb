@@ -97,6 +97,7 @@ typedef struct nxweb_handler {
 
   // various handler parameters
   nxe_data param;
+  const char* host;
   const char* uri;
   const char* dir;
   const char* charset;
@@ -104,6 +105,8 @@ typedef struct nxweb_handler {
   nxe_ssize_t size;
   _Bool memcache:1;
   _Bool proxy_copy_host:1;
+  _Bool secure_only:1;
+  _Bool insecure_only:1;
   int idx;
 
   struct nxweb_handler* next;
