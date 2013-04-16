@@ -612,6 +612,7 @@ nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_serv
   //nxweb_http_server_connection_init(conn, tdata, lconf_idx);
   memset(conn, 0, sizeof(nxweb_http_server_connection));
   conn->uid=nxweb_generate_unique_id();
+  conn->secure=parent_conn->secure;
   conn->tdata=tdata;
   conn->parent=parent_conn;
   conn->next=parent_conn->subrequests;

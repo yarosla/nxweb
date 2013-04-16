@@ -20,6 +20,9 @@
 #include "nxweb/nxweb.h"
 
 static nxweb_result host_redirect_on_select(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (req->parent_req) // this is subrequest
+    return NXWEB_NEXT;
+
   const char* host_wanted=conn->handler->host;
   assert(host_wanted); // host must be set to desired host and port
 
