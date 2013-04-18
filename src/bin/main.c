@@ -101,7 +101,10 @@ static void server_config() {
   // This handler proxies requests to backend with index 1 (see proxy setup further below):
   NXWEB_PROXY_SETUP(backend2, "/backend2", .priority=10000, .idx=1, .uri="",
         .filters={
-            nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter
+            nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter,
+#ifdef WITH_ZLIB
+            nxweb_gzip_filter_setup(4, "www/cache/gzip"),
+#endif
          });
 
   // This is sample handler (see modules/upload.c):

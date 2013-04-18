@@ -179,7 +179,7 @@ void nxd_rbuffer_read(nxd_rbuffer* rb, int size) {
       if (rb->data_in.super.loop) nxe_ostream_set_ready(rb->data_in.super.loop, &rb->data_in);
       else rb->data_in.ready=1;
     }
-    if (rb->read_ptr==rb->write_ptr) { // nxd_rbuffer_is_empty(rb)
+    if (rb->read_ptr==rb->write_ptr && !rb->eof) { // nxd_rbuffer_is_empty(rb)
       //nxweb_log_error("rb->read_ptr==rb->write_ptr && !rb->eof => closing rb[%p].data_out", rb);
       if (rb->data_out.super.loop) nxe_istream_unset_ready(&rb->data_out);
       else rb->data_out.ready=0;
