@@ -170,8 +170,14 @@ static void tf_on_subrequest_ready(nxe_data data) {
       if (!resp->last_modified) tfdata->last_modified=0;
       else if (resp->last_modified > tfdata->last_modified) tfdata->last_modified=resp->last_modified;
     }
-    if (resp->content_length>0) tf_buffer_make_room(tfb, min(MAX_TEMPLATE_SIZE, resp->content_length));
-    nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &tfb->data_in);
+    if (resp->content_length==0) {
+      tfdata->ctx->files_pending--;
+      tf_check_complete(tfdata);
+    }
+    else {
+      if (resp->content_length>0) tf_buffer_make_room(tfb, min(MAX_TEMPLATE_SIZE, resp->content_length));
+      nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &tfb->data_in);
+    }
   }
   else {
     // subrequest error

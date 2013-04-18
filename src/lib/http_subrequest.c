@@ -83,7 +83,14 @@ static void nxweb_composite_stream_subrequest_on_response_ready(nxe_data data) {
   assert(csn);
   int status=subconn->hsp.resp->status_code;
   if (!subconn->subrequest_failed && (!status || status==200)) {
-    nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &csn->snode.data_in);
+    if (!subconn->hsp.resp->content_length) {
+      // connect zero-length stream
+      nxd_obuffer_init(&csn->buffer.ob, "", 0);
+      nxe_connect_streams(conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
+    }
+    else {
+      nxe_connect_streams(subconn->tdata->loop, subconn->hsp.resp->content_out, &csn->snode.data_in);
+    }
   }
   else {
     nxd_obuffer_init(&csn->buffer.ob, "<!--[ssi error]-->", sizeof("<!--[ssi error]-->")-1);
