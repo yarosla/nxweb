@@ -370,7 +370,7 @@ static void stream_event_deliver(nxe_event* evt) {
   nxe_ostream* os=evt->receiver.os;
   nxe_istream* is=os->pair;
   if (!is || !os) return; // not connected
-  int count=3;
+  int count=50;
   if (ISTREAM_CLASS(is)->do_write) {
     while (is->ready && os->ready && is==os->pair) {
       if (!count--) { // protect against dead loops
