@@ -144,6 +144,60 @@ static int locate_watermark(const char* fpath, int doc_root_len, char* wpath) {
   return 0; // not found
 }
 
+static void parse_crop_offset(const char* instr, size_t len, int* x, int *y) {
+  // offset format: "co:100,-120"
+  *x=*y=0;
+  if (!instr || len<6) return;
+  if (instr[0]!='c' || instr[1]!='o' || instr[2]!=':') return; // prefix "co:"
+  char buf[16];
+  len-=3;
+  if (len>sizeof(buf)-1) return;
+  strncpy(buf, instr+3, len);
+  buf[len]='\0';
+  char* p=buf;
+  while (*p!=',') {
+    if (!*p++) return;
+  }
+  *p++='\0';
+  if (!*p) return;
+  *x=atoi(buf);
+  *y=atoi(p);
+}
+
+static char* find_iptc_record(unsigned char* profile, size_t size, unsigned char record_id, unsigned char tag_id, size_t* len) {
+  unsigned char* p=profile;
+  unsigned char* end=p+size;
+  while (p+5<=end) {
+    if (*p++!=0x1c) break; // wrong marker; corrupted record
+    unsigned char rid=*p++;
+    unsigned char tid=*p++;
+    int sz=*p++;
+    sz=(sz<<8)|*p++;
+    if (sz&0x8000) { // extended tag
+      break; // not supported
+    }
+    if (p+sz>end) break; // overflow; corrupted record
+    if (rid==record_id && tid==tag_id) {
+      *len=sz;
+      return p;
+    }
+    p+=sz;
+  }
+  return 0;
+}
+
+static void find_crop_offset(MagickWand* image, int* x, int* y) {
+  *x=*y=0;
+  size_t len;
+  char* profile=MagickGetImageProfile(image, "iptc", &len);
+  if (profile) {
+    char* v=find_iptc_record(profile, len, 2, 0x28, &len); // "Iptc.Application2.SpecialInstructions"
+    if (v) {
+      parse_crop_offset(v, len, x, y);
+    }
+  }
+}
+
 static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, nxweb_image_filter_cmd* cmd) {
   int width=MagickGetImageWidth(image);
   int height=MagickGetImageHeight(image);
@@ -182,19 +236,49 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
       MagickResizeImage(image, width, height, LanczosFilter, 1);
       dirty=1;
     }
-    if (width!=max_width || height!=max_height) {
-      PixelWand* pwand=NewPixelWand();
-      char* format=MagickGetImageFormat(image); // returns "JPEG", "GIF", or "PNG"
-      _Bool supports_transparency=*format!='J'; // only JPEG does not support transparency
-      MagickRelinquishMemory(format);
-      PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
-      MagickSetImageBackgroundColor(image, pwand);
-      int offset_x=cmd->gravity_left? 0 : (cmd->gravity_right? -(max_width-width) : -(max_width-width)/2);
-      int offset_y=cmd->gravity_top? 0 : (cmd->gravity_bottom? -(max_height-height) : -(max_height-height)/2);
+    if (width!=max_width || height!=max_height) { // need to crop or extend
+      int crop_offset_x, crop_offset_y;
+      find_crop_offset(image, &crop_offset_x, &crop_offset_y);
+      if ((crop_offset_x || crop_offset_y) && scale<1.) {
+        crop_offset_x=round(scale*crop_offset_x);
+        crop_offset_y=round(scale*crop_offset_y);
+      }
+      if (cmd->gravity_left) crop_offset_x=-width;
+      else if (cmd->gravity_right) crop_offset_x=width;
+      if (cmd->gravity_top) crop_offset_y=-height;
+      else if (cmd->gravity_bottom) crop_offset_y=height;
+      PixelWand* pwand=0;
+      if (max_width>width || max_height>height) {
+        pwand=NewPixelWand();
+        char* format=MagickGetImageFormat(image); // returns "JPEG", "GIF", or "PNG"
+        _Bool supports_transparency=*format!='J'; // only JPEG does not support transparency
+        MagickRelinquishMemory(format);
+        PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
+        MagickSetImageBackgroundColor(image, pwand);
+      }
+      int offset_x, offset_y;
+      int cut_x=width-max_width;
+      if (cut_x<=0) {
+        offset_x=cut_x/2;
+      }
+      else {
+        offset_x=cut_x/2 + crop_offset_x;
+        if (offset_x<0) offset_x=0;
+        else if (offset_x>cut_x) offset_x=cut_x;
+      }
+      int cut_y=height-max_height;
+      if (cut_y<=0) {
+        offset_y=cut_y/2;
+      }
+      else {
+        offset_y=cut_y/2 + crop_offset_y;
+        if (offset_y<0) offset_y=0;
+        else if (offset_y>cut_y) offset_y=cut_y;
+      }
       MagickExtentImage(image, max_width, max_height, offset_x, offset_y);
       width=max_width;
       height=max_height;
-      DestroyPixelWand(pwand);
+      if (pwand) DestroyPixelWand(pwand);
       dirty=1;
     }
   }
@@ -580,10 +664,10 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
       nxweb_send_http_error(resp, 500, "Internal Server Error");
       return NXWEB_ERROR;
     }
-    MagickStripImage(image);
 
     if (process_cmd(resp->sendfile_path, conn->handler->dir? strlen(conn->handler->dir) : 0, image, &ifdata->cmd)) {
       nxweb_log_info("writing image file %s", fpath);
+      MagickStripImage(image);
       if (!MagickWriteImage(image, fpath)) {
         DestroyMagickWand(image);
         nxweb_log_error("MagickWriteImage(%s) failed", fpath);
