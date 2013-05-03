@@ -167,6 +167,7 @@ static void parse_crop_offset(const char* instr, size_t len, int* x, int *y) {
 static char* find_iptc_record(unsigned char* profile, size_t size, unsigned char record_id, unsigned char tag_id, size_t* len) {
   unsigned char* p=profile;
   unsigned char* end=p+size;
+  // http://www.iptc.org/std/IIM/4.1/specification/IIMV4.1.pdf
   while (p+5<=end) {
     if (*p++!=0x1c) break; // wrong marker; corrupted record
     unsigned char rid=*p++;
