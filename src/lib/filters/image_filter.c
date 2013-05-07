@@ -593,6 +593,7 @@ static nxweb_result img_translate_cache_key(nxweb_filter* filter, nxweb_http_ser
 static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   img_filter_data* ifdata=(img_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
+  if (resp->content_length<=0) return NXWEB_OK;
   assert(fdata->cache_key);
   assert(resp->sendfile_path);
   assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
