@@ -51,7 +51,6 @@ void nxd_socket_finalize(nxd_socket* ss, int good);
 typedef struct nxd_ssl_socket { // extends nxd_socket
   const nxd_socket_class* cls;
   nxe_fd_source fs;
-  nx_file_reader fr;
   nxe_istream handshake_stub_is;
   nxe_ostream handshake_stub_os;
   nxe_istream* saved_is;

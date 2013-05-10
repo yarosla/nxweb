@@ -214,7 +214,7 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
     if (hsp->resp_headers_ptr && *hsp->resp_headers_ptr) {
       int size=strlen(hsp->resp_headers_ptr);
       nxe_flags_t flags=NXEF_EOF;
-      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)hsp->resp_headers_ptr, size, &flags);
+      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)hsp->resp_headers_ptr, size, &flags);
       hsp->resp_headers_ptr+=bytes_sent;
       if (bytes_sent==size) {
         hsp->req.sending_100_continue=0;
@@ -238,7 +238,7 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
     if (hsp->resp_headers_ptr && *hsp->resp_headers_ptr) {
       int size=strlen(hsp->resp_headers_ptr);
       nxe_flags_t flags=NXEF_EOF;
-      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)hsp->resp_headers_ptr, size, &flags);
+      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)hsp->resp_headers_ptr, size, &flags);
       hsp->resp_headers_ptr+=bytes_sent;
       if (bytes_sent<size) return;
       hsp->resp_headers_ptr=0;
@@ -365,7 +365,7 @@ static nxe_size_t req_body_out_read(nxe_istream* is, nxe_ostream* os, void* ptr,
   return bytes_received;
 }
 
-static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)os-offsetof(nxd_http_server_proto, resp_body_in));
   nxe_loop* loop=os->super.loop;
   if (hsp->state!=HSP_SENDING_BODY) {
@@ -387,18 +387,12 @@ static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* 
           nxe_size_t send_size;
           nxe_flags_t cwf=*flags;
           if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &chunk_size, &send_ptr, &send_size, &cwf)) {
-            nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, (nxe_data)send_ptr, send_size, &cwf);
+            nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, 0, (nxe_data)send_ptr, send_size, &cwf);
             _nxweb_encode_chunked_advance(&hsp->resp->cestate, cbs);
             if (cbs!=send_size) skip=1;
           }
           if (!skip && chunk_size) {
-            if (fd) { // invoked as sendfile
-              assert(OSTREAM_CLASS(next_os)->sendfile);
-              bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, chunk_size, &cwf);
-            }
-            else {
-              bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, chunk_size, &cwf);
-            }
+            bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, fd, fr, ptr, chunk_size, &cwf);
             _nxweb_encode_chunked_advance(&hsp->resp->cestate, bytes_sent);
             if (bytes_sent!=chunk_size) skip=1;
           }
@@ -408,20 +402,14 @@ static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* 
             cwf=chunk_size==size? *flags : 0; // if it is EOF and whole size made into chunk then send final chunk
             nxe_size_t zero_size=0; // otherwise just send out chunk trailer "\r\n"
             if (_nxweb_encode_chunked_stream(&hsp->resp->cestate, &zero_size, &send_ptr, &send_size, &cwf)) {
-              nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, (nxe_data)send_ptr, send_size, &cwf);
+              nxe_ssize_t cbs=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, 0, (nxe_data)send_ptr, send_size, &cwf);
               _nxweb_encode_chunked_advance(&hsp->resp->cestate, cbs);
               if (cbs!=send_size) skip=1;
             }
           }
         }
         else {
-          if (fd) { // invoked as sendfile
-            assert(OSTREAM_CLASS(next_os)->sendfile);
-            bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &hsp->data_out, fd, ptr, size, &wflags);
-          }
-          else {
-            bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, 0, ptr, size, &wflags);
-          }
+          bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hsp->data_out, fd, fr, ptr, size, &wflags);
         }
       }
       if (!next_os->ready) {
@@ -486,7 +474,7 @@ static const nxe_ostream_class data_in_class={.do_read=data_in_do_read};
 static const nxe_istream_class data_out_class={.do_write=data_out_do_write};
 static const nxe_subscriber_class data_error_class={.on_message=data_error_on_message};
 static const nxe_istream_class req_body_out_class={.read=req_body_out_read};
-static const nxe_ostream_class resp_body_in_class={.write=resp_body_in_write_or_sendfile, .sendfile=resp_body_in_write_or_sendfile};
+static const nxe_ostream_class resp_body_in_class={.write=resp_body_in_write_or_sendfile};
 static const nxe_timer_class timer_keep_alive_class={.on_timeout=timer_keep_alive_on_timeout};
 static const nxe_timer_class timer_read_class={.on_timeout=timer_read_on_timeout};
 static const nxe_timer_class timer_write_class={.on_timeout=timer_write_on_timeout};

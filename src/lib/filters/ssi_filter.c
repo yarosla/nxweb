@@ -136,9 +136,10 @@ static int parse_text(ssi_buffer* ssib) {
   return 0;
 }
 
-static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   ssi_buffer* ssib=OBJ_PTR_FROM_FLD_PTR(ssi_buffer, data_in, os);
   //nxe_loop* loop=os->super.loop;
+  nxe_flags_t flags=*_flags;
   if (ssib->overflow) { // reached max_ssi_size
     // swallow input data
   }
@@ -147,6 +148,7 @@ static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, in
     if (ssib->data_size+wsize > MAX_SSI_SIZE) wsize=MAX_SSI_SIZE-ssib->data_size;
     assert(wsize>=0);
     if (wsize>0) {
+      nx_file_reader_to_mem_ptr(fd, fr, &ptr, &size, &flags);
       nxb_make_room(ssib->nxb, wsize);
       char* dptr=nxb_get_room(ssib->nxb, 0);
       memcpy(dptr, ptr.cptr, wsize);
@@ -158,13 +160,13 @@ static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, in
       }
     }
   }
-  if (*flags&NXEF_EOF) {
+  if (flags&NXEF_EOF) {
     nxe_ostream_unset_ready(os);
 
-    int size;
-    char* ptr=nxb_finish_stream(ssib->nxb, &size);
-    if (size) {
-      nxweb_composite_stream_append_bytes(ssib->cs, ptr, size);
+    int nbytes;
+    char* ptr=nxb_finish_stream(ssib->nxb, &nbytes);
+    if (nbytes) {
+      nxweb_composite_stream_append_bytes(ssib->cs, ptr, nbytes);
     }
     nxweb_composite_stream_close(ssib->cs);
   }

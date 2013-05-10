@@ -84,9 +84,10 @@ static void tf_check_complete(tf_filter_data* tfdata) {
   }
 }
 
-static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   tf_buffer* tfb=OBJ_PTR_FROM_FLD_PTR(tf_buffer, data_in, os);
   //nxe_loop* loop=os->super.loop;
+  nxe_flags_t flags=*_flags;
   if (tfb->overflow) { // reached max_tf_size
     // swallow input data
   }
@@ -95,6 +96,7 @@ static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int
     if (tfb->data_size+wsize > MAX_TEMPLATE_SIZE) wsize=MAX_TEMPLATE_SIZE-tfb->data_size;
     assert(wsize>=0);
     if (wsize>0) {
+      nx_file_reader_to_mem_ptr(fd, fr, &ptr, &size, &flags);
       nxb_make_room(tfb->nxb, wsize);
       char* dptr=nxb_get_room(tfb->nxb, 0);
       memcpy(dptr, ptr.cptr, wsize);
@@ -105,7 +107,7 @@ static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int
       }
     }
   }
-  if (*flags&NXEF_EOF) {
+  if (flags&NXEF_EOF) {
     nxe_ostream_unset_ready(os);
 
     tf_filter_data* tfdata=tfb->tfdata;

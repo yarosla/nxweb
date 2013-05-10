@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -27,6 +27,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "nx_alloc.h"
+#include "nx_event.h"
 
 #define NXFR_USE_MMAP
 #define NX_FILE_READER_MALLOC_SIZE (32768L)
@@ -51,6 +52,15 @@ static inline void nx_file_reader_init(nx_file_reader* fr) {
 
 void nx_file_reader_finalize(nx_file_reader* fr);
 const char* nx_file_reader_get_mbuf_ptr(nx_file_reader* fr, int fd, nxfr_size_t file_size, nxfr_size_t offset, nxfr_size_t* size);
+
+static inline void nx_file_reader_to_mem_ptr(int fd, nx_file_reader* fr, nxe_data* ptr, nxe_size_t* size, nxe_flags_t* flags) {
+  if (!fd) return;
+  nxfr_size_t fr_size;
+  const void* p=nx_file_reader_get_mbuf_ptr(fr, fd, ptr->offs+*size, ptr->offs, &fr_size);
+  if (fr_size!=*size) *flags&=~NXEF_EOF; // not EOF yet
+  *size=fr_size;
+  ptr->cptr=p;
+}
 
 
 #ifdef	__cplusplus

@@ -93,10 +93,10 @@ static void obuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   //nxe_loop* loop=is->super.loop;
   nxe_flags_t flags=NXEF_EOF;
   if (!ob->data_size) {
-    OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)0, 0, &flags);
+    OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)0, 0, &flags);
   }
   else {
-    int bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)(void*)ob->data_ptr, ob->data_size, &flags);
+    int bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)(void*)ob->data_ptr, ob->data_size, &flags);
     if (bytes_sent>0) {
       ob->data_ptr+=bytes_sent;
       ob->data_size-=bytes_sent;
@@ -151,7 +151,7 @@ static void rbuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   const void* ptr;
   nxe_flags_t flags=0;
   ptr=nxd_rbuffer_get_read_ptr(rb, &size, &flags);
-  nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
+  nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)ptr, size, &flags);
   if (bytes_sent>0) {
     nxd_rbuffer_read(rb, bytes_sent);
   }
@@ -210,31 +210,13 @@ static void fbuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxe_flags_t flags=NXEF_EOF;
   size_t size=fb->end - fb->offset;
 
-  if (OSTREAM_CLASS(os)->sendfile) { // os supports sendfile()
-    if (!size) { // EOF
-      OSTREAM_CLASS(os)->sendfile(os, is, fb->fd, (nxe_data)fb->offset, 0, &flags);
-    }
-    else {
-      nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->sendfile(os, is, fb->fd, (nxe_data)fb->offset, size, &flags);
-      if (bytes_sent>0) {
-        fb->offset+=bytes_sent;
-      }
-    }
+  if (!size) { // EOF
+    OSTREAM_CLASS(os)->write(os, is, fb->fd, &fb->fr, (nxe_data)fb->offset, 0, &flags);
   }
   else {
-    if (!size) { // EOF
-      OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)0, 0, &flags);
-    }
-    else {
-      nxfr_size_t fr_size=size;
-      const void* ptr=nx_file_reader_get_mbuf_ptr(&fb->fr, fb->fd, fb->end, fb->offset, &fr_size);
-      if (fr_size!=size) flags=0; // no EOF yet
-      if (ptr) {
-        nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, fr_size, &flags);
-        if (bytes_sent>0) {
-          fb->offset+=bytes_sent;
-        }
-      }
+    nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, fb->fd, &fb->fr, (nxe_data)fb->offset, size, &flags);
+    if (bytes_sent>0) {
+      fb->offset+=bytes_sent;
     }
   }
 }

@@ -298,7 +298,7 @@ static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* pt
   return 0;
 }
 
-static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   nxe_fd_source* fs=(nxe_fd_source*)((char*)os-offsetof(nxe_fd_source, data_os));
   nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)os-offsetof(nxe_fd_source, data_os)-offsetof(nxd_ssl_socket, fs));
 
@@ -309,6 +309,8 @@ static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd
     }
   }
 
+  nxe_flags_t flags=*_flags;
+  nx_file_reader_to_mem_ptr(fd, fr, &ptr, &size, &flags);
   if (size) {
     nxe_loop* loop=os->super.loop;
     if (!loop->batch_write_fd) {
@@ -363,55 +365,6 @@ static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd
   return 0;
 }
 
-static nxe_ssize_t sock_data_send_sendfile(nxe_ostream* os, nxe_istream* is, int sfd, nxe_data offset, size_t count, nxe_flags_t* flags) {
-  nxe_fd_source* fs=(nxe_fd_source*)((char*)os-offsetof(nxe_fd_source, data_os));
-  nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)os-offsetof(nxe_fd_source, data_os)-offsetof(nxd_ssl_socket, fs));
-
-  if (!ss->handshake_complete) {
-    if (do_handshake(ss)) {
-      nxe_ostream_unset_ready(os);
-      return 0;
-    }
-  }
-
-  if (count>0) {
-    nxe_loop* loop=os->super.loop;
-    int fd=fs->fd;
-    if (!loop->batch_write_fd) {
-      _nxweb_batch_write_begin(fd);
-      loop->batch_write_fd=fd;
-    }
-    const void* ptr;
-    nxfr_size_t size;
-    nxe_size_t file_size=offset.offs+count;
-    nxe_ssize_t total_bytes_sent=0;
-REPEAT:
-    ptr=nx_file_reader_get_mbuf_ptr(&ss->fr, sfd, file_size, offset.offs, &size);
-    if (!ptr) {
-      nxweb_log_error("ssl_sock_data_send_sendfile() file read failed %d", errno);
-      nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
-      return total_bytes_sent;
-    }
-    if (size) {
-      nxe_ssize_t bytes_sent=gnutls_record_send(ss->session, ptr, size);
-      //nxweb_log_error("ssl_sock_data_send_sendfile() os=%p bytes_sent=%ld out of %ld", os, bytes_sent, size);
-      if (bytes_sent<0) {
-        nxe_ostream_unset_ready(os);
-        if (bytes_sent!=GNUTLS_E_AGAIN) nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
-      }
-      else {
-        offset.offs+=bytes_sent;
-        total_bytes_sent+=bytes_sent;
-        //if (bytes_sent<size) nxe_ostream_unset_ready(os);
-        //else goto REPEAT;
-        goto REPEAT;
-      }
-    }
-    return total_bytes_sent;
-  }
-  return 0;
-}
-
 static void sock_data_send_shutdown(nxe_ostream* os) {
   //nxe_fd_source* fs=(nxe_fd_source*)((char*)os-offsetof(nxe_fd_source, data_os));
   nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)os-offsetof(nxe_fd_source, data_os)-offsetof(nxd_ssl_socket, fs));
@@ -420,7 +373,7 @@ static void sock_data_send_shutdown(nxe_ostream* os) {
 
 static const nxe_istream_class sock_data_recv_class={.read=sock_data_recv_read};
 static const nxe_ostream_class sock_data_send_class={.write=sock_data_send_write,
-        .shutdown=sock_data_send_shutdown, .sendfile=sock_data_send_sendfile};
+        .shutdown=sock_data_send_shutdown};
 
 static const nxe_istream_class handshake_stub_is_class={.do_write=handshake_stub_is_do_write};
 static const nxe_ostream_class handshake_stub_os_class={.do_read=handshake_stub_os_do_read};
@@ -498,7 +451,6 @@ void nxd_ssl_server_socket_init(nxd_ssl_socket* ss, gnutls_certificate_credentia
 void nxd_ssl_server_socket_finalize(nxd_ssl_socket* ss, int good) {
   if (ss->fs.data_is.super.loop) nxe_unregister_fd_source(&ss->fs); // this also disconnects streams and unsubscribes subscribers
   gnutls_deinit(ss->session);
-  nx_file_reader_finalize(&ss->fr);
   if (good) _nxweb_close_good_socket(ss->fs.fd);
   else _nxweb_close_bad_socket(ss->fs.fd);
 }

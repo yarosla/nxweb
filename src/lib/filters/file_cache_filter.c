@@ -320,7 +320,7 @@ static void fc_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   }
 }
 
-static nxe_ssize_t fc_data_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t fc_data_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   fc_filter_data* fcdata=OBJ_PTR_FROM_FLD_PTR(fc_filter_data, data_in, os);
   nxe_loop* loop=os->super.loop;
   nxe_ssize_t bytes_sent=0;
@@ -330,22 +330,21 @@ static nxe_ssize_t fc_data_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is
       nxe_flags_t wflags=*flags;
       if (next_os->ready) {
         if (fd) { // invoked as sendfile
-          assert(OSTREAM_CLASS(next_os)->sendfile);
-          bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &fcdata->data_out, fd, ptr, size, &wflags);
+          bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &fcdata->data_out, fd, fr, ptr, size, &wflags);
           if (bytes_sent>0 && fcdata->fd && fcdata->fd!=-1) {
             char* buf=malloc(bytes_sent);
-            if (lseek(fd, ptr.offs, SEEK_SET)!=-1 && read(fd, buf, bytes_sent)==bytes_sent) {
+            if (buf && lseek(fd, ptr.offs, SEEK_SET)!=-1 && read(fd, buf, bytes_sent)==bytes_sent) {
               fc_store_append(fcdata, buf, bytes_sent);
             }
             else {
               nxweb_log_error("fc_data_in_write_or_sendfile(): can't read %ld bytes from fd", bytes_sent);
               fc_store_abort(fcdata);
             }
-            free(buf);
+            if (buf) free(buf);
           }
         }
         else {
-          bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &fcdata->data_out, 0, ptr, size, &wflags);
+          bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &fcdata->data_out, 0, 0, ptr, size, &wflags);
           if (bytes_sent>0 && fcdata->fd && fcdata->fd!=-1) {
             fc_store_append(fcdata, ptr.cptr, bytes_sent);
           }

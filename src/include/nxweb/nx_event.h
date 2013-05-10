@@ -177,11 +177,12 @@ typedef struct nxe_istream {
   struct nxe_event evt; // embedded event
 } nxe_istream;
 
+struct nx_file_reader;
+
 typedef struct nxe_ostream_class {
   nxe_interface_base_class super;
   void (*do_read)(struct nxe_ostream* os, struct nxe_istream* is);
-  nxe_ssize_t (*write)(struct nxe_ostream* os, struct nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags); // fd must be 0
-  nxe_ssize_t (*sendfile)(struct nxe_ostream* os, struct nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags);
+  nxe_ssize_t (*write)(struct nxe_ostream* os, struct nxe_istream* is, int fd, struct nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags); // fd & fr are 0 for memory ptr
   void (*shutdown)(struct nxe_ostream* os);
 } nxe_ostream_class;
 

@@ -207,7 +207,7 @@ static void gzip_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxe_flags_t flags=0;
   ptr=nxd_rbuffer_get_read_ptr(rb, &size, &flags);
   if (size>0 || flags&NXEF_EOF) {
-    nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)ptr, size, &flags);
+    nxe_ssize_t bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)ptr, size, &flags);
     if (bytes_sent>0) {
       nxd_rbuffer_read(rb, bytes_sent);
     }
@@ -217,21 +217,23 @@ static void gzip_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   }
 }
 
-static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   nxd_rbuffer* rb=OBJ_PTR_FROM_FLD_PTR(nxd_rbuffer, data_in, os);
   gzip_filter_data* gdata=OBJ_PTR_FROM_FLD_PTR(gzip_filter_data, rb, rb);
   z_stream* zs=&gdata->zs;
   nxe_loop* loop=os->super.loop;
   nxe_ssize_t bytes_sent=0;
   int deflate_result=0;
-  if (size>0 || *flags&NXEF_EOF) {
+  nxe_flags_t flags=*_flags;
+  nx_file_reader_to_mem_ptr(fd, fr, &ptr, &size, &flags);
+  if (size>0 || flags&NXEF_EOF) {
     nxe_size_t size_avail;
     zs->next_out=nxd_rbuffer_get_write_ptr(rb, &size_avail);
     if (size_avail) {
       zs->avail_out=size_avail;
       zs->next_in=ptr.ptr? ptr.ptr : ""; // deflate does not like nulls even when size is zero
       zs->avail_in=size;
-      int flush=*flags&NXEF_EOF? Z_FINISH : Z_SYNC_FLUSH;
+      int flush=flags&NXEF_EOF? Z_FINISH : Z_SYNC_FLUSH;
       deflate_result=deflate(zs, flush);
       if (!((flush==Z_FINISH && (deflate_result==Z_STREAM_END || deflate_result==Z_OK)) || (flush==Z_SYNC_FLUSH && deflate_result==Z_OK))) {
         nxweb_log_warning("gzip-deflate unexpected: flush=%d, deflate_result=%d, avail_in=%d/%d, avail_out=%d/%d, ptr=%p, size=%d, rb.eof=%d",
@@ -246,7 +248,7 @@ static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, 
       nxe_istream_set_ready(loop, &gdata->rb.data_out); // please read out compressed data
     }
   }
-  if (*flags&NXEF_EOF && bytes_sent==size && deflate_result==Z_STREAM_END) {
+  if (flags&NXEF_EOF && bytes_sent==size && deflate_result==Z_STREAM_END) {
     nxe_ostream_unset_ready(os);
     gdata->rb.eof=1;
     nxe_istream_set_ready(os->super.loop, &rb->data_out); // even when no bytes received make sure we signal readiness on EOF
@@ -256,7 +258,7 @@ static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, 
 }
 
 static const nxe_istream_class gzip_data_out_class={.do_write=gzip_data_out_do_write};
-static const nxe_ostream_class gzip_data_in_class={.write=gzip_data_in_write /*, .sendfile=gzip_data_in_write_or_sendfile*/ };
+static const nxe_ostream_class gzip_data_in_class={.write=gzip_data_in_write};
 
 
 static nxweb_filter_data* gzip_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {

@@ -46,7 +46,7 @@ static void streamer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   }
 }
 
-static nxe_ssize_t streamer_data_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t streamer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxd_streamer_node* snode=(nxd_streamer_node*)((char*)os-offsetof(nxd_streamer_node, data_in));
   nxd_streamer* strm=snode->strm;
   nxe_loop* loop=os->super.loop;
@@ -61,13 +61,7 @@ static nxe_ssize_t streamer_data_in_write_or_sendfile(nxe_ostream* os, nxe_istre
       nxe_flags_t wflags=*flags;
       if (!snode->final) wflags&=~NXEF_EOF;
       if (next_os->ready) {
-        if (fd) { // invoked as sendfile
-          assert(OSTREAM_CLASS(next_os)->sendfile);
-          bytes_sent=OSTREAM_CLASS(next_os)->sendfile(next_os, &strm->data_out, fd, ptr, size, &wflags);
-        }
-        else {
-          bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &strm->data_out, 0, ptr, size, &wflags);
-        }
+        bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &strm->data_out, fd, fr, ptr, size, &wflags);
       }
       if (!next_os->ready) {
         nxe_ostream_unset_ready(os);
@@ -101,7 +95,7 @@ static nxe_ssize_t streamer_data_in_write_or_sendfile(nxe_ostream* os, nxe_istre
 }
 
 static const nxe_istream_class streamer_data_out_class={.do_write=streamer_data_out_do_write};
-static const nxe_ostream_class streamer_data_in_class={.write=streamer_data_in_write_or_sendfile, .sendfile=streamer_data_in_write_or_sendfile};
+static const nxe_ostream_class streamer_data_in_class={.write=streamer_data_in_write};
 
 void nxd_streamer_init(nxd_streamer* strm) {
   memset(strm, 0, sizeof(nxd_streamer));

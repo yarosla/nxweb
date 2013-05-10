@@ -186,7 +186,7 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
     if (hcp->req_headers_ptr && *hcp->req_headers_ptr) {
       int size=strlen(hcp->req_headers_ptr);
       nxe_flags_t flags=0;
-      int bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, (nxe_data)hcp->req_headers_ptr, size, &flags);
+      int bytes_sent=OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)hcp->req_headers_ptr, size, &flags);
       hcp->req_headers_ptr+=bytes_sent;
       if (bytes_sent<size) return;
     }
@@ -316,7 +316,7 @@ static nxe_size_t resp_body_out_read(nxe_istream* is, nxe_ostream* os, void* ptr
   return bytes_received;
 }
 
-static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
+static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   //nxweb_log_error("req_body_in_write(%d)", size);
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)os-offsetof(nxd_http_client_proto, req_body_in));
   nxe_loop* loop=os->super.loop;
@@ -332,7 +332,7 @@ static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, n
     nxe_ostream* next_os=hcp->data_out.pair;
     if (next_os) {
       nxe_flags_t wflags=*flags;
-      if (next_os->ready) bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hcp->data_out, 0, (nxe_data)ptr, size, &wflags);
+      if (next_os->ready) bytes_sent=OSTREAM_CLASS(next_os)->write(next_os, &hcp->data_out, 0, 0, (nxe_data)ptr, size, &wflags);
       if (!next_os->ready) {
         //nxweb_log_error("req_body_in_write(%d) - next_os unready", size);
         nxe_ostream_unset_ready(os);
