@@ -126,13 +126,30 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
     return EXIT_SUCCESS;
   }
 
+  if (nxweb_main_args.listening_interface_ip) {
+    int max_len=strlen(nxweb_main_args.listening_interface_ip)+16;
+    nxweb_main_args.listening_host_and_port=malloc(max_len);
+    nxweb_main_args.listening_host_and_port_ssl=malloc(max_len);
+    snprintf((char*)nxweb_main_args.listening_host_and_port, max_len, "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.port);
+    snprintf((char*)nxweb_main_args.listening_host_and_port_ssl, max_len, "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.ssl_port);
+  }
+  else {
+    int max_len=16;
+    nxweb_main_args.listening_host_and_port=malloc(max_len);
+    nxweb_main_args.listening_host_and_port_ssl=malloc(max_len);
+    snprintf((char*)nxweb_main_args.listening_host_and_port, max_len, ":%d", nxweb_main_args.port);
+    snprintf((char*)nxweb_main_args.listening_host_and_port_ssl, max_len, ":%d", nxweb_main_args.ssl_port);
+  }
+
   nxweb_server_config.access_log_fpath=access_log_file;
 
   if (daemon) {
     if (!error_log_file) error_log_file="nxweb_error_log";
+    nxweb_server_config.error_log_fpath=error_log_file;
     nxweb_run_daemon(work_dir, error_log_file, pid_file, server_main);
   }
   else {
+    nxweb_server_config.error_log_fpath=error_log_file;
     nxweb_run_normal(work_dir, error_log_file, pid_file, server_main);
   }
   return EXIT_SUCCESS;

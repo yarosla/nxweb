@@ -66,6 +66,6 @@ static nxweb_result test_on_request(nxweb_http_server_connection* conn, nxweb_ht
   return NXWEB_OK;
 }
 
-nxweb_handler benchmark_handler={.on_request=benchmark_on_request, .flags=NXWEB_HANDLE_GET};
-nxweb_handler benchmark_handler_inworker={.on_request=benchmark_inworker_on_request, .flags=NXWEB_HANDLE_GET|NXWEB_INWORKER};
-nxweb_handler test_handler={.on_request=test_on_request, .flags=NXWEB_HANDLE_GET|NXWEB_HANDLE_POST|NXWEB_PARSE_PARAMETERS};
+NXWEB_DEFINE_HANDLER(benchmark_inprocess, .on_request=benchmark_on_request, .flags=NXWEB_HANDLE_GET);
+NXWEB_DEFINE_HANDLER(benchmark_inworker, .on_request=benchmark_inworker_on_request, .flags=NXWEB_HANDLE_GET|NXWEB_INWORKER);
+NXWEB_DEFINE_HANDLER(test, .on_request=test_on_request, .flags=NXWEB_HANDLE_GET|NXWEB_HANDLE_POST|NXWEB_PARSE_PARAMETERS);

@@ -109,7 +109,7 @@ typedef struct nxweb_handler {
   _Bool insecure_only:1;
   int idx;
 
-  struct nxweb_handler* next;
+  struct nxweb_handler* next; // next in routing list
   nxweb_filter* filters[NXWEB_MAX_FILTERS];
   int num_filters;
   nxweb_handler_callback on_generate_cache_key;
@@ -120,6 +120,8 @@ typedef struct nxweb_handler {
   nxweb_handler_callback on_request;
   nxweb_handler_callback on_complete;
   nxweb_handler_callback on_error;
+
+  struct nxweb_handler* next_defined; // next in chain of defined handlers
 } nxweb_handler;
 
 typedef struct nxweb_module {
@@ -210,10 +212,12 @@ struct nxweb_server_config {
   nxweb_http_proxy_pool_config http_proxy_pool_config[NXWEB_MAX_PROXY_POOLS];
   nxweb_handler_callback request_dispatcher;
   nxweb_handler* handler_list;
+  nxweb_handler* handlers_defined;
   nxweb_module* module_list;
   int shutdown_timeout; // time in secs to close up after SIGTERM
   char* work_dir;
   const char* access_log_fpath;
+  const char* error_log_fpath;
   int access_log_fd;
   pthread_mutex_t access_log_start_mux;
 };
@@ -238,6 +242,7 @@ extern struct nxweb_server_config nxweb_server_config;
 extern __thread struct nxweb_net_thread_data* _nxweb_net_thread_data;
 
 void _nxweb_register_module(nxweb_module* module);
+void _nxweb_define_handler_base(nxweb_handler* handler);
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base);
 nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
 
@@ -250,38 +255,31 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
           _nxweb_register_module(&_nxweb_ ## _name ## _module); \
         }
 
-// Old-style (pre 3.2) handler setup macros:
-
-#define NXWEB_HANDLER(_name, _prefix, ...) \
-        static nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=_prefix, ## __VA_ARGS__}; \
-        static void _nxweb_pre_load_handler_ ## _name() __attribute__ ((constructor)); \
-        static void _nxweb_pre_load_handler_ ## _name() { \
-          _nxweb_register_handler(&_nxweb_ ## _name ## _handler, 0); \
+#define NXWEB_DEFINE_HANDLER(_name, ...) \
+        nxweb_handler nxweb_ ## _name ## _handler={.name=#_name, ## __VA_ARGS__}; \
+        static void _nxweb_define_handler_ ## _name() __attribute__ ((constructor)); \
+        static void _nxweb_define_handler_ ## _name() { \
+          _nxweb_define_handler_base(&nxweb_ ## _name ## _handler); \
         }
-
-#define NXWEB_SET_HANDLER(_name, _prefix, _base, ...) \
-        static nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=_prefix, ## __VA_ARGS__}; \
-        static void _nxweb_pre_load_handler_ ## _name() __attribute__ ((constructor)); \
-        static void _nxweb_pre_load_handler_ ## _name() { \
-          _nxweb_register_handler(&_nxweb_ ## _name ## _handler, (_base)); \
-        }
-
-// New style (3.2+) setup macros (use inside server_config() callback function):
 
 #define NXWEB_HANDLER_SETUP(_name, _prefix, _base, ...) \
+        extern nxweb_handler nxweb_ ## _base ## _handler; \
         nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
-        _nxweb_register_handler(&_nxweb_ ## _name ## _handler, (_base))
+        _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &(nxweb_ ## _base ## _handler))
 
 #define NXWEB_SENDFILE_SETUP(_name, _prefix, ...) \
+        extern nxweb_handler nxweb_sendfile_handler; \
         nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
         _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_sendfile_handler)
 
 #define NXWEB_PROXY_SETUP(_name, _prefix, ...) \
+        extern nxweb_handler nxweb_http_proxy_handler; \
         nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
         _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_http_proxy_handler)
 
 #ifdef WITH_PYTHON
 #define NXWEB_PYTHON_SETUP(_name, _prefix, ...) \
+        extern nxweb_handler nxweb_python_handler; \
         nxweb_handler _nxweb_ ## _name ## _handler={.name=#_name, .prefix=(_prefix), ## __VA_ARGS__}; \
         _nxweb_register_handler(&_nxweb_ ## _name ## _handler, &nxweb_python_handler)
 #endif

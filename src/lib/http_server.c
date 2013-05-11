@@ -63,7 +63,7 @@ static nxweb_result default_on_headers(nxweb_http_server_connection* conn, nxweb
 }
 
 // nxweb_handler _nxweb_default_handler={.priority=999999999, .on_headers=default_on_headers};
-NXWEB_HANDLER(default, 0, .priority=999999999, .on_headers=default_on_headers);
+NXWEB_DEFINE_HANDLER(default, .prefix=0, .priority=999999999, .on_headers=default_on_headers);
 
 int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_handler* handler, nxe_data handler_param) {
   conn->handler=handler;
@@ -277,7 +277,7 @@ nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* con
   }
 
   req->path_info=0;
-  nxweb_select_handler(conn, req, resp, &_nxweb_default_handler, (nxe_data)0);
+  nxweb_select_handler(conn, req, resp, &nxweb_default_handler, (nxe_data)0);
   return NXWEB_OK;
 }
 
@@ -301,6 +301,11 @@ void _nxweb_register_module(nxweb_module* module) {
       mod->next=module;
     }
   }
+}
+
+void _nxweb_define_handler_base(nxweb_handler* handler) {
+  handler->next_defined=nxweb_server_config.handlers_defined;
+  nxweb_server_config.handlers_defined=handler;
 }
 
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
@@ -418,7 +423,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     req->received_time=nxweb_get_loop_time(conn);
     nxweb_access_log_on_request_received(conn, req);
     nxweb_server_config.request_dispatcher(conn, req, resp);
-    if (!conn->handler) conn->handler=&_nxweb_default_handler;
+    if (!conn->handler) conn->handler=&nxweb_default_handler;
 
     if (conn->hsp.state==HSP_SENDING_HEADERS || resp->run_filter_idx) return; // one of callbacks has already started sending response
 

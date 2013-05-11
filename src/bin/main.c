@@ -42,23 +42,9 @@ nxweb_main_args_t nxweb_main_args={
 static void server_config() {
 
   // Bind listening interfaces:
-  char host_and_port[64];
-  if (nxweb_main_args.listening_interface_ip) {
-    snprintf(host_and_port, sizeof(host_and_port), "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.port);
-  }
-  else {
-    snprintf(host_and_port, sizeof(host_and_port), ":%d", nxweb_main_args.port);
-  }
-  if (nxweb_listen(host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen(nxweb_main_args.listening_host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
 #ifdef WITH_SSL
-  char ssl_host_and_port[64];
-  if (nxweb_main_args.listening_interface_ip) {
-    snprintf(ssl_host_and_port, sizeof(ssl_host_and_port), "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.ssl_port);
-  }
-  else {
-    snprintf(ssl_host_and_port, sizeof(ssl_host_and_port), ":%d", nxweb_main_args.ssl_port);
-  }
-  if (nxweb_listen_ssl(ssl_host_and_port, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen_ssl(nxweb_main_args.listening_host_and_port_ssl, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
 #endif // WITH_SSL
 
   // Drop privileges:
@@ -71,35 +57,26 @@ static void server_config() {
   ////////////////////
   // Setup handlers:
 
-  extern nxweb_handler hello_handler;
-  extern nxweb_handler benchmark_handler;
-  extern nxweb_handler benchmark_handler_inworker;
-  extern nxweb_handler test_handler;
-  extern nxweb_handler upload_handler;
-  extern nxweb_handler subreq_handler;
-  extern nxweb_handler tmpl_handler;
-  extern nxweb_handler curtime_handler;
-
   // These are benchmarking handlers (see modules/benchmark.c):
-  NXWEB_HANDLER_SETUP(benchmark, "/benchmark-inprocess", &benchmark_handler, .priority=100);
-  NXWEB_HANDLER_SETUP(benchmark_inworker, "/benchmark-inworker", &benchmark_handler_inworker, .priority=100);
-  NXWEB_HANDLER_SETUP(test, "/test", &test_handler, .priority=900);
+  NXWEB_HANDLER_SETUP(my_benchmark_inprocess, "/benchmark-inprocess", benchmark_inprocess, .priority=100);
+  NXWEB_HANDLER_SETUP(my_benchmark_inworker, "/benchmark-inworker", benchmark_inworker, .priority=100);
+  NXWEB_HANDLER_SETUP(my_test, "/test", test, .priority=900);
 
   // This is sample handler (see modules/hello.c):
-  NXWEB_HANDLER_SETUP(hello, "/hello", &hello_handler, .priority=1000, .filters={
+  NXWEB_HANDLER_SETUP(my_hello, "/hello", hello, .priority=1000, .filters={
   #ifdef WITH_ZLIB
     nxweb_gzip_filter_setup(4, 0), // null cache_dir as we don't need caching
   #endif
   });
 
   // This handler proxies requests to backend with index 0 (see proxy setup further below):
-  NXWEB_PROXY_SETUP(backend1, "/backend1", .priority=10000, .idx=0, .uri="",
+  NXWEB_PROXY_SETUP(my_backend1, "/backend1", .priority=10000, .idx=0, .uri="",
         .filters={
             nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter
          });
 
   // This handler proxies requests to backend with index 1 (see proxy setup further below):
-  NXWEB_PROXY_SETUP(backend2, "/backend2", .priority=10000, .idx=1, .uri="",
+  NXWEB_PROXY_SETUP(my_backend2, "/backend2", .priority=10000, .idx=1, .uri="",
         .filters={
             nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter,
 #ifdef WITH_ZLIB
@@ -108,21 +85,20 @@ static void server_config() {
          });
 
   // This is sample handler (see modules/upload.c):
-  NXWEB_HANDLER_SETUP(upload, "/upload", &upload_handler, .priority=200000);
+  NXWEB_HANDLER_SETUP(my_upload, "/upload", upload, .priority=200000);
 
   // These are sample handlers (see modules/subrequests.c):
-  NXWEB_HANDLER_SETUP(subreq, "/subreq", &subreq_handler, .priority=200000);
-  NXWEB_HANDLER_SETUP(tmpl, "/tmpl", &tmpl_handler, .priority=200000);
-  NXWEB_HANDLER_SETUP(curtime, "/curtime", &curtime_handler, .priority=200000,
+  NXWEB_HANDLER_SETUP(my_subreq, "/subreq", subreq, .priority=200000);
+  NXWEB_HANDLER_SETUP(my_curtime, "/curtime", curtime, .priority=200000,
                       .filters={ nxweb_file_cache_filter_setup("www/cache/curtime") });
 #ifdef WITH_IMAGEMAGICK
   extern nxweb_handler captcha_handler;
-  NXWEB_HANDLER_SETUP(captcha, "/captcha", &captcha_handler, .priority=200000,
+  NXWEB_HANDLER_SETUP(my_captcha, "/captcha", captcha, .priority=200000,
                       .filters={ nxweb_draw_filter_setup("www/fonts/Sansation/Sansation_Bold.ttf") });
 #endif
 
   // This handler serves static files from $(work_dir)/www/root directory:
-  NXWEB_SENDFILE_SETUP(sendfile1, 0, .priority=900000,
+  NXWEB_SENDFILE_SETUP(my_sendfile1, 0, .priority=900000,
         .dir="www/root", .memcache=1,
         .charset=NXWEB_DEFAULT_CHARSET, .index_file=NXWEB_DEFAULT_INDEX_FILE,
         .filters={
@@ -137,7 +113,7 @@ static void server_config() {
          });
 
 #ifdef WITH_PYTHON
-  NXWEB_PYTHON_SETUP(python, "/py", .priority=950000,
+  NXWEB_PYTHON_SETUP(my_python, "/py", .priority=950000,
         .dir="www/cache/upload_temp", .size=50000000, // file upload 50Mb size limit
         .filters={
             nxweb_file_cache_filter_setup("www/cache/python"), &templates_filter, &ssi_filter

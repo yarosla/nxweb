@@ -39,7 +39,7 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
   return NXWEB_OK;
 }
 
-nxweb_handler subreq_handler={ .on_request=subreq_on_request, .flags=NXWEB_HANDLE_ANY };
+NXWEB_DEFINE_HANDLER(subreq, .on_request=subreq_on_request, .flags=NXWEB_HANDLE_ANY);
 
 int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
 
@@ -62,24 +62,6 @@ static int tmpl_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_
     }
   }
 }
-
-static nxweb_result tmpl_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
-  nxweb_set_response_content_type(resp, "text/html");
-
-  const char* tmpl="{% extends \"ttt\"%} {% block title %}The Very {% parent %}{% endblock %}";
-  tmpl=nxb_copy_obj(req->nxb, tmpl, strlen(tmpl)+1);
-  nxt_context ctx;
-  nxt_init(&ctx, req->nxb, tmpl_load, (nxe_data)0);
-  nxt_parse(&ctx, req->uri, (char*)tmpl, strlen(tmpl));
-  nxt_merge(&ctx);
-  resp->content=nxt_serialize(&ctx);
-  resp->content_length=strlen(resp->content);
-
-  return NXWEB_OK;
-}
-
-nxweb_handler tmpl_handler={ .on_request=tmpl_on_request, .flags=NXWEB_HANDLE_ANY };
-
 
 static nxweb_result curtime_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
@@ -110,9 +92,9 @@ static nxweb_result curtime_generate_cache_key(nxweb_http_server_connection* con
   return NXWEB_OK;
 }
 
-nxweb_handler curtime_handler={ .on_request=curtime_on_request,
+NXWEB_DEFINE_HANDLER(curtime, .on_request=curtime_on_request,
         .on_generate_cache_key=curtime_generate_cache_key,
-        .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS };
+        .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS);
 
 
 #ifdef WITH_IMAGEMAGICK
@@ -123,7 +105,7 @@ static nxweb_result captcha_on_request(nxweb_http_server_connection* conn, nxweb
   return NXWEB_OK;
 }
 
-nxweb_handler captcha_handler={ .on_request=captcha_on_request,
-        .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS };
+NXWEB_DEFINE_HANDLER(captcha, .on_request=captcha_on_request,
+        .flags=NXWEB_HANDLE_GET|NXWEB_PARSE_PARAMETERS);
 
 #endif

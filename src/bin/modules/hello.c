@@ -98,5 +98,5 @@ static nxweb_result hello_on_request(nxweb_http_server_connection* conn, nxweb_h
   return NXWEB_OK;
 }
 
-nxweb_handler hello_handler={.on_request=hello_on_request,
-        .flags=NXWEB_HANDLE_ANY|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES};
+NXWEB_DEFINE_HANDLER(hello, .on_request=hello_on_request,
+        .flags=NXWEB_HANDLE_ANY|NXWEB_PARSE_PARAMETERS|NXWEB_PARSE_COOKIES);

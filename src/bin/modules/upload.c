@@ -137,8 +137,8 @@ static nxweb_result upload_on_post_data_complete(nxweb_http_server_connection* c
   return NXWEB_OK;
 }
 
-nxweb_handler upload_handler={
+NXWEB_DEFINE_HANDLER(upload,
         .on_request=upload_on_request,
         .on_post_data=upload_on_post_data,
         .on_post_data_complete=upload_on_post_data_complete,
-        .flags=NXWEB_HANDLE_ANY};
+        .flags=NXWEB_HANDLE_ANY);
