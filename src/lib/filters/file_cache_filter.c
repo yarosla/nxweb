@@ -591,9 +591,20 @@ static nxweb_result fc_do_filter(nxweb_filter* filter, nxweb_http_server_connect
   return _nxweb_fc_store(conn, req, resp, fdata->fcache);
 }
 
-static nxweb_filter_file_cache file_cache_filter={.base={.name="file_cache", .init=fc_init, .finalize=fc_finalize,
+static nxweb_filter* fc_config(nxweb_filter* base, const nx_json* json) {
+  nxweb_filter_file_cache* f=calloc(1, sizeof(nxweb_filter_file_cache)); // NOTE this will never be freed
+  *f=*(nxweb_filter_file_cache*)base;
+  f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
+  return (nxweb_filter*)f;
+}
+
+static nxweb_filter_file_cache file_cache_filter={.base={
+        .config=fc_config,
+        .init=fc_init, .finalize=fc_finalize,
         .translate_cache_key=fc_translate_cache_key,
         .serve_from_cache=fc_serve_from_cache, .do_filter=fc_do_filter}};
+
+NXWEB_DEFINE_FILTER(file_cache, file_cache_filter.base);
 
 nxweb_filter* nxweb_file_cache_filter_setup(const char* cache_dir) {
   nxweb_filter_file_cache* f=nx_alloc(sizeof(nxweb_filter_file_cache)); // NOTE this will never be freed

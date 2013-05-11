@@ -39,6 +39,7 @@
 #include "nx_event.h"
 #include "misc.h"
 #include "nx_workers.h"
+#include "nxjson.h"
 
 #ifdef	__cplusplus
 extern "C" {

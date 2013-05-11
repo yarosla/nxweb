@@ -347,10 +347,22 @@ static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_conne
   return fdata->fcache? _nxweb_fc_store(conn, req, resp, fdata->fcache) : NXWEB_OK;
 }
 
-static nxweb_filter_gzip gzip_filter={.base={.name="gzip", .init=gzip_init, .finalize=gzip_finalize,
+static nxweb_filter* gzip_config(nxweb_filter* base, const nx_json* json) {
+  nxweb_filter_gzip* f=calloc(1, sizeof(nxweb_filter_gzip)); // NOTE this will never be freed
+  *f=*(nxweb_filter_gzip*)base;
+  f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
+  f->compression_level=(int)nx_json_get(json, "compression")->int_value;
+  return (nxweb_filter*)f;
+}
+
+static nxweb_filter_gzip gzip_filter={.base={
+        .config=gzip_config,
+        .init=gzip_init, .finalize=gzip_finalize,
         .translate_cache_key=gzip_translate_cache_key,
         .serve_from_cache=gzip_serve_from_cache, .do_filter=gzip_do_filter},
         .compression_level=4, .cache_dir=0};
+
+NXWEB_DEFINE_FILTER(gzip, gzip_filter.base);
 
 // compression level is between 0 and 9: 1 gives best speed, 9 gives best compression, 0 gives no compression at all
 nxweb_filter* nxweb_gzip_filter_setup(int compression_level, const char* cache_dir) {

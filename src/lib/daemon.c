@@ -193,6 +193,7 @@ int nxweb_drop_privileges(const char* group_name, const char* user_name) {
         nxweb_log_error("can't set uid=%d errno=%d", uid, errno);
         return -1;
       }
+      nxweb_log_error("privileges dropped to %s[%d] %s[%d]", group_name, (int)gid, user_name, (int)uid);
     }
   }
   return 0;

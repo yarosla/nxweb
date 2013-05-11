@@ -308,12 +308,17 @@ void _nxweb_define_handler_base(nxweb_handler* handler) {
   nxweb_server_config.handlers_defined=handler;
 }
 
+void _nxweb_define_filter(nxweb_filter* filter) {
+  filter->next_defined=nxweb_server_config.filters_defined;
+  nxweb_server_config.filters_defined=filter;
+}
+
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
   handler->prefix_len=handler->prefix? strlen(handler->prefix) : 0;
   if (handler->prefix_len) {
     if (handler->prefix[0]!='/') {
       nxweb_log_error("handler's prefix must start with '/'; handler=%s with prefix=%s not allowed", handler->name, handler->prefix);
-      exit(1);
+      exit(0);
     }
   }
   handler->vhost_len=handler->vhost? strlen(handler->vhost) : 0;

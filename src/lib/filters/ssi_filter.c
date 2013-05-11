@@ -263,5 +263,7 @@ static nxweb_result ssi_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   return NXWEB_OK;
 }
 
-nxweb_filter ssi_filter={.name="ssi", .init=ssi_init, .finalize=ssi_finalize,
+nxweb_filter ssi_filter={.init=ssi_init, .finalize=ssi_finalize,
         .do_filter=ssi_do_filter};
+
+NXWEB_DEFINE_FILTER(ssi, ssi_filter);

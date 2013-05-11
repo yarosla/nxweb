@@ -78,6 +78,8 @@ typedef struct nxweb_filter {
   nxweb_result (*serve_from_cache)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time);
   nxweb_result (*do_filter)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
   void (*finalize)(struct nxweb_filter* fparam, struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata);
+  struct nxweb_filter* next_defined;
+  struct nxweb_filter* (*config)(struct nxweb_filter* base, const struct nx_json* json);
 } nxweb_filter;
 
 struct fc_filter_data* _nxweb_fc_create(nxb_buffer* nxb, const char* cache_dir);
@@ -213,6 +215,7 @@ struct nxweb_server_config {
   nxweb_handler_callback request_dispatcher;
   nxweb_handler* handler_list;
   nxweb_handler* handlers_defined;
+  nxweb_filter* filters_defined;
   nxweb_module* module_list;
   int shutdown_timeout; // time in secs to close up after SIGTERM
   char* work_dir;
@@ -243,6 +246,7 @@ extern __thread struct nxweb_net_thread_data* _nxweb_net_thread_data;
 
 void _nxweb_register_module(nxweb_module* module);
 void _nxweb_define_handler_base(nxweb_handler* handler);
+void _nxweb_define_filter(nxweb_filter* filter);
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base);
 nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
 
@@ -260,6 +264,13 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
         static void _nxweb_define_handler_ ## _name() __attribute__ ((constructor)); \
         static void _nxweb_define_handler_ ## _name() { \
           _nxweb_define_handler_base(&nxweb_ ## _name ## _handler); \
+        }
+
+#define NXWEB_DEFINE_FILTER(_name, _filter) \
+        static void _nxweb_define_filter_ ## _name() __attribute__ ((constructor)); \
+        static void _nxweb_define_filter_ ## _name() { \
+          _filter.name=#_name; \
+          _nxweb_define_filter(&_filter); \
         }
 
 #define NXWEB_HANDLER_SETUP(_name, _prefix, _base, ...) \

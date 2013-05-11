@@ -21,6 +21,23 @@
 
 // Note: see config.h for most nxweb #defined parameters
 
+// Command-line defaults (parsed by nxweb_main_stub()):
+nxweb_main_args_t nxweb_main_args={
+  .user_name=0,
+  .group_name=0,
+  .port=8055,
+  .ssl_port=8056
+};
+
+#ifndef NO_JSON_CONFIG
+
+static void server_config() {
+  if (nxweb_load_config("nxweb_config.json")==-1) return; // simulate normal exit
+  nxweb_run();
+}
+
+#else // not NO_JSON_CONFIG
+
 #define NXWEB_DEFAULT_CHARSET "utf-8"
 #define NXWEB_DEFAULT_INDEX_FILE "index.htm"
 
@@ -30,14 +47,6 @@
 #define SSL_DH_PARAMS_FILE "ssl/dh.pem"
 
 #define SSL_PRIORITIES "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"
-
-// Command-line defaults (parsed by nxweb_main_stub()):
-nxweb_main_args_t nxweb_main_args={
-  .user_name=0,
-  .group_name=0,
-  .port=8055,
-  .ssl_port=8056
-};
 
 static void server_config() {
 
@@ -69,13 +78,16 @@ static void server_config() {
   #endif
   });
 
-  // This handler proxies requests to backend with index 0 (see proxy setup further below):
+  // This handler proxies requests to backend with index 0 (see proxy setup above):
   NXWEB_PROXY_SETUP(my_backend1, "/backend1", .priority=10000, .idx=0, .uri="",
         .filters={
-            nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter
+            nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter,
+#ifdef WITH_ZLIB
+            nxweb_gzip_filter_setup(4, "www/cache/gzip"),
+#endif
          });
 
-  // This handler proxies requests to backend with index 1 (see proxy setup further below):
+  // This handler proxies requests to backend with index 1 (see proxy setup above):
   NXWEB_PROXY_SETUP(my_backend2, "/backend2", .priority=10000, .idx=1, .uri="",
         .filters={
             nxweb_file_cache_filter_setup("www/cache/proxy"), &templates_filter, &ssi_filter,
@@ -129,6 +141,8 @@ static void server_config() {
   // Go!
   nxweb_run();
 }
+
+#endif
 
 int main(int argc, char** argv) {
   return nxweb_main_stub(argc, argv, server_config);

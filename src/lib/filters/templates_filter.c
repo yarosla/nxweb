@@ -289,5 +289,7 @@ static nxweb_result tf_do_filter(nxweb_filter* filter, nxweb_http_server_connect
   return NXWEB_DELAY; // don't start sending; wait for all subrequests complete, so we can calculate last_modified
 }
 
-nxweb_filter templates_filter={.name="templates", .init=tf_init, .finalize=tf_finalize,
+nxweb_filter templates_filter={.init=tf_init, .finalize=tf_finalize,
         .translate_cache_key=tf_translate_cache_key, .do_filter=tf_do_filter};
+
+NXWEB_DEFINE_FILTER(templates, templates_filter);

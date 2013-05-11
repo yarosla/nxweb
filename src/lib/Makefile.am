@@ -13,6 +13,7 @@ libnxweb_la_SOURCES = \
 	nxd_socket.c nxd_ssl_socket.c nxd_streamer.c \
 	nx_event.c nx_file_reader.c nx_pool.c nx_workers.c \
 	http_subrequest.c templates.c access_log.c main_stub.c \
+	nxjson.c json_config.c \
 	\
 	modules/http_proxy.c modules/sendfile.c modules/host_redirect.c \
 	\

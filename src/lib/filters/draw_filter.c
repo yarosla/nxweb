@@ -171,8 +171,19 @@ static nxweb_result draw_do_filter(nxweb_filter* filter, nxweb_http_server_conne
   return NXWEB_OK;
 }
 
-static nxweb_filter_draw draw_filter={.base={.name="draw", .init=draw_init, .finalize=draw_finalize,
+static nxweb_filter* draw_config(nxweb_filter* base, const nx_json* json) {
+  nxweb_filter_draw* f=calloc(1, sizeof(nxweb_filter_draw)); // NOTE this will never be freed
+  *f=*(nxweb_filter_draw*)base;
+  f->font_file=nx_json_get(json, "font_file")->text_value;
+  return (nxweb_filter*)f;
+}
+
+static nxweb_filter_draw draw_filter={.base={
+        .config=draw_config,
+        .init=draw_init, .finalize=draw_finalize,
         .do_filter=draw_do_filter}};
+
+NXWEB_DEFINE_FILTER(draw, draw_filter.base);
 
 nxweb_filter* nxweb_draw_filter_setup(const char* font_file) {
   nxweb_filter_draw* f=nx_alloc(sizeof(nxweb_filter_draw)); // NOTE this will never be freed

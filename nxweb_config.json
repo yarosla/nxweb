@@ -1,0 +1,119 @@
+/* NXWEB sample config file */
+{
+  "listen":[
+    {"interface":":8055", "backlog":4096},
+    {"interface":":8056", "backlog":1024, "secure":true,
+      "cert":"ssl/server_cert.pem", "key":"ssl/server_key.pem", "dh":"ssl/dh.pem",
+      "priorities":"NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"}
+  ],
+  // uncomment if needed
+  // "drop_privileges":{
+  //   "group":"www-data", "user":"www-data",
+  // },
+  "backends":[
+    {"connect":"localhost:8000"}, // idx=0
+    {"connect":"localhost:8080"}, // idx=1
+  ],
+  "logging":{
+    "log_level":"INFO",
+    "access_log":"nxweb_access_log"
+    // can't set error log here; it is opened before parsing this config file; use command line switch for that
+  },
+  "routing":[
+    { // see modules/benchmark.c
+      "prefix":"/benchmark-inprocess", "handler":"benchmark_inprocess"
+    },
+    { // see modules/benchmark.c
+      "prefix":"/benchmark-inworker", "handler":"benchmark_inworker"
+    },
+    { // see modules/benchmark.c
+      "prefix":"/test", "handler":"test"
+    },
+    { // see modules/hello.c
+      "prefix":"/hello", "handler":"hello",
+      "filters":[
+        {"type":"gzip", "compression":4}
+      ]
+    },
+    { // see modules/upload.c
+      "prefix":"/upload", "handler":"upload"
+    },
+    { // see modules/subrequests.c
+      "prefix":"/subreq", "handler":"subreq"
+    },
+    { // see modules/subrequests.c
+      "prefix":"/curtime", "handler":"curtime",
+      "filters":[
+        {"type":"file_cache", "cache_dir":"www/cache/curtime"},
+      ]
+    },
+    { // see modules/subrequests.c
+      "prefix":"/captcha", "handler":"captcha",
+      "filters":[
+        {"type":"draw", "font_file":"www/fonts/Sansation/Sansation_Bold.ttf"},
+      ]
+    },
+    {
+      "prefix":"/backend1", "handler":"http_proxy", "idx":0,
+      "uri":"", // prepend this uri prefix to path info
+      "proxy_copy_host":true, // copy host header from original request
+      "filters":[
+        {"type":"file_cache", "cache_dir":"www/cache/proxy"},
+        {"type":"templates"},
+        {"type":"ssi"},
+        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+      ]
+    },
+    {
+      "prefix":"/backend2", "handler":"http_proxy", "idx":1,
+      "uri":"", // prepend this uri prefix to path info
+      "proxy_copy_host":true, // copy host header from original request
+      "filters":[
+        {"type":"file_cache", "cache_dir":"www/cache/proxy"},
+        {"type":"templates"},
+        {"type":"ssi"},
+        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+      ]
+    },
+    {
+      "prefix":null, // null matches all requests
+      "handler":"sendfile",
+      // "vhost":".some.host.com", // match only at this host
+      // "secure_only":true, // match under https connection only
+      // "insecure_only":true, // match under http (not https) connection only
+      "dir":"www/root", // aka document root
+      "memcache":true, // cache small files in memory
+      "charset":"utf-8", // charset for text files
+      "index_file":"index.htm", // directory index
+      "filters":[
+        {"type":"templates"},
+        {"type":"ssi"},
+        {
+          "type":"image", "cache_dir":"www/cache/img",
+          "allowed_cmds":[
+            {"cmd":"scale", "width":50, "height":50}, // eg. /path/to/image.50x50.jpg
+            {"cmd":"crop", "width":50, "height":50}, // eg. /path/to/image.c50x50.jpg
+            {"cmd":"scale", "width":100, "height":100}, // eg. /path/to/image.100x100.jpg
+            {"cmd":"crop", "width":100, "height":100}, // eg. /path/to/image.c100x100.jpg
+            {"cmd":"fill", "width":100, "height":100, "bgcolor":"#FF8800"}, // eg. /path/to/image.f100x100xFF8800.jpg
+            {"cmd":"fill", "width":500, "height":500, "bgcolor":"#FF8800"}, // eg. /path/to/image.f500x500xFF8800.jpg
+          ],
+          // don't forget to change secret key in your setup
+          "sign_key":"XbLBZeqSsUgfKWooMKoh0r1gjzqG856yVCMLf1pz"
+        },
+        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+      ]
+    },
+    {
+      "prefix":"/py", "handler":"python",
+      "dir":"www/cache/upload_temp", // temp dir for large uploads
+      "size":50000000 /* 50 Mb */, // max upload size
+      "filters":[
+        {"type":"file_cache", "cache_dir":"www/cache/python"},
+        {"type":"templates"},
+        {"type":"ssi"},
+        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+      ]
+    },
+  ]
+}

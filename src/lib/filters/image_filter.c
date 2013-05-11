@@ -720,13 +720,46 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   return NXWEB_OK;
 }
 
-static nxweb_filter_image image_filter={.base={.name="image", .init=img_init, .finalize=img_finalize,
+static nxweb_filter* img_config(nxweb_filter* base, const nx_json* json) {
+  nxweb_filter_image* f=calloc(1, sizeof(nxweb_filter_image)); // NOTE this will never be freed
+  *f=*(nxweb_filter_image*)base;
+  f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
+  const char* sign_key=nx_json_get(json, "sign_key")->text_value;
+  if (sign_key) f->sign_key=sign_key;
+  const nx_json* allowed_cmds_json=nx_json_get(json, "allowed_cmds");
+  if (allowed_cmds_json) {
+    nxweb_image_filter_cmd* allowed_cmds=calloc(allowed_cmds_json->length+1, sizeof(nxweb_image_filter_cmd));
+    int i;
+    nxweb_image_filter_cmd* cmd=allowed_cmds;
+    for (i=0; i<allowed_cmds_json->length; i++) {
+      const nx_json* js=nx_json_item(allowed_cmds_json, i);
+      const char* c=nx_json_get(js, "cmd")->text_value;
+      if (!c || !*c) continue;
+      cmd->cmd=*c;
+      cmd->width=(int)nx_json_get(js, "width")->int_value;
+      cmd->height=(int)nx_json_get(js, "height")->int_value;
+      const char* color=nx_json_get(js, "bgcolor")->text_value;
+      if (color && *color=='#' && strlen(color)==7) {
+        strcpy(cmd->color, color);
+      }
+      cmd++;
+    }
+    f->allowed_cmds=allowed_cmds;
+  }
+  return (nxweb_filter*)f;
+}
+
+static nxweb_filter_image image_filter={.base={
+        .config=img_config,
+        .init=img_init, .finalize=img_finalize,
         .translate_cache_key=img_translate_cache_key,
         .decode_uri=img_decode_uri, .do_filter=img_do_filter},
         .allowed_cmds=allowed_cmds, .sign_key=CMD_SIGN_SECRET_KEY};
 
+NXWEB_DEFINE_FILTER(image, image_filter.base);
+
 nxweb_filter* nxweb_image_filter_setup(const char* cache_dir, nxweb_image_filter_cmd* allowed_cmds, const char* sign_key) {
-  nxweb_filter_image* f=nx_alloc(sizeof(nxweb_filter_image)); // NOTE this will never be freed
+  nxweb_filter_image* f=calloc(1, sizeof(nxweb_filter_image)); // NOTE this will never be freed
   *f=image_filter;
   f->cache_dir=cache_dir;
   if (allowed_cmds) f->allowed_cmds=allowed_cmds;

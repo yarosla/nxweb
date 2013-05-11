@@ -39,6 +39,7 @@ static void show_help(void) {
 #ifdef WITH_SSL
           " -S port  set https port\n"
 #endif
+          " -T targ  set configuration target\n"
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
@@ -55,7 +56,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file="nxweb.pid";
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:I:P:S:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:I:P:S:T:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -107,6 +108,9 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
           fprintf(stderr, "invalid ssl port: %s\n\n", optarg);
           return EXIT_FAILURE;
         }
+        break;
+      case 'T':
+        nxweb_main_args.config_target=optarg;
         break;
       case '?':
         fprintf(stderr, "unkown option: -%c\n\n", optopt);
