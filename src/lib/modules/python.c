@@ -349,8 +349,8 @@ static nxweb_result python_generate_cache_key(nxweb_http_server_connection* conn
   return NXWEB_OK;
 }
 
-nxweb_handler nxweb_python_handler={.on_request=python_on_request,
+NXWEB_DEFINE_HANDLER(python, .on_request=python_on_request,
         .on_generate_cache_key=python_generate_cache_key,
         .on_post_data=python_on_post_data,
         //.on_post_data_complete=python_on_post_data_complete,
-        .flags=NXWEB_HANDLE_ANY|NXWEB_INWORKER};
+        .flags=NXWEB_HANDLE_ANY|NXWEB_INWORKER);

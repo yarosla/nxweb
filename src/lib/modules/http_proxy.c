@@ -215,9 +215,9 @@ static nxweb_result proxy_generate_cache_key(nxweb_http_server_connection* conn,
   return NXWEB_OK;
 }
 
-nxweb_handler nxweb_http_proxy_handler={.on_headers=nxweb_http_proxy_handler_on_headers,
+NXWEB_DEFINE_HANDLER(http_proxy, .on_headers=nxweb_http_proxy_handler_on_headers,
         .on_generate_cache_key=proxy_generate_cache_key,
-        .flags=NXWEB_HANDLE_ANY|NXWEB_ACCEPT_CONTENT};
+        .flags=NXWEB_HANDLE_ANY|NXWEB_ACCEPT_CONTENT);
 
 static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
   nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)sub-offsetof(nxweb_http_proxy_request_data, proxy_events_sub));

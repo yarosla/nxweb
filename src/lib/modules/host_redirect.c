@@ -34,5 +34,5 @@ static nxweb_result host_redirect_on_select(nxweb_http_server_connection* conn, 
   return NXWEB_ERROR;
 }
 
-nxweb_handler nxweb_host_redirect_handler={.on_select=host_redirect_on_select,
-        .flags=NXWEB_HANDLE_ANY};
+NXWEB_DEFINE_HANDLER(host_redirect, .on_select=host_redirect_on_select,
+        .flags=NXWEB_HANDLE_ANY);

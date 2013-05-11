@@ -114,6 +114,6 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   return NXWEB_OK;
 }
 
-nxweb_handler nxweb_sendfile_handler={.on_select=sendfile_on_select,
+NXWEB_DEFINE_HANDLER(sendfile, .on_select=sendfile_on_select,
         .on_generate_cache_key=sendfile_generate_cache_key,
-        .flags=NXWEB_HANDLE_GET};
+        .flags=NXWEB_HANDLE_GET);
