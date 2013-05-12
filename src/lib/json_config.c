@@ -48,12 +48,14 @@ int nxweb_load_config(const char* filename) {
     nxweb_log_error("can't open config file %s", filename);
     return -1;
   }
-  char* text=malloc(st.st_size); // this is not going to be freed
+  char* text=malloc(st.st_size+1); // this is not going to be freed
   if (st.st_size!=read(fd, text, st.st_size)) {
     nxweb_log_error("can't read config file %s", filename);
+    close(fd);
     return -1;
   }
   close(fd);
+  text[st.st_size]='\0';
   const nx_json* json=nx_json_parse(text);
   if (!json) {
     nxweb_log_error("can't parse config file %s", filename);
@@ -180,4 +182,6 @@ int nxweb_load_config(const char* filename) {
       _nxweb_register_handler(new_handler, base_handler);
     }
   }
+
+  nx_json_free(json);
 }

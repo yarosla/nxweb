@@ -17,32 +17,51 @@
  * License along with NXJSON. If not, see <http://www.gnu.org/licenses/>.
  */
 
+// this file can be #included in your code
+#ifndef NXJSON_C
+#define NXJSON_C
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
+#include <assert.h>
 
 #include "nxjson.h"
 
+// redefine NX_JSON_CALLOC & NX_JSON_FREE to use custom allocator
+#ifndef NX_JSON_CALLOC
+#define NX_JSON_CALLOC() calloc(1, sizeof(nx_json))
+#define NX_JSON_FREE(json) free((void*)(json))
+#endif
+
+// redefine NX_JSON_REPORT_ERROR to use custom error reporting
+#ifndef NX_JSON_REPORT_ERROR
+#define NX_JSON_REPORT_ERROR(msg, p) fprintf(stderr, "NXJSON PARSE ERROR (%d): " msg " at %s\n", __LINE__, p)
+#endif
+
+#define IS_WHITESPACE(c) ((unsigned char)(c)<=(unsigned char)' ')
+
 static const nx_json dummy={ NX_JSON_NULL };
 
-static void append_json(nx_json* parent, nx_json* child) {
-  nx_json* p=parent->child;
-  if (!p) {
-    parent->child=child;
+static nx_json* create_json(nx_json_type type, const char* key, nx_json* parent) {
+  nx_json* js=NX_JSON_CALLOC();
+  assert(js);
+  js->type=type;
+  js->key=key;
+  if (!parent->last_child) {
+    parent->child=parent->last_child=js;
   }
   else {
-    while (p->next) p=p->next;
-    p->next=child;
+    parent->last_child->next=js;
+    parent->last_child=js;
   }
   parent->length++;
-}
-
-static nx_json* create_json(nx_json_type type, const char* tag, nx_json* parent) {
-  nx_json* js=calloc(1, sizeof(nx_json));
-  js->type=type;
-  js->tag=tag;
-  append_json(parent, js);
   return js;
 }
 
@@ -54,61 +73,67 @@ void nx_json_free(const nx_json* js) {
     nx_json_free(p);
     p=p1;
   }
-  free((void*)js);
+  NX_JSON_FREE(js);
 }
 
-static char* unescape(char* s) {
-  char* p;
-  while (p=strchr(s, '\\')) {
-    switch (p[1]) {
-      // case '\\':
-      // case '"':
-      //   break;
-      case 'b':
-        *p='\b';
-        break;
-      case 'f':
-        *p='\f';
-        break;
-      case 'n':
-        *p='\n';
-        break;
-      case 'r':
-        *p='\r';
-        break;
-      case 't':
-        *p='\t';
-        break;
-      case 'u': // unicode unescape not implemented
-        continue;
+static char* unescape_string(char* s, char** end) {
+  char* p=s;
+  char* d=s;
+  char c;
+  while ((c=*p++)) {
+    if (c=='"') {
+      *d='\0';
+      *end=p;
+      return s;
     }
-    memmove(p, p+1, strlen(p)); // including null-terminator
+    else if (c=='\\') {
+      switch (*p) {
+        case '\\':
+        case '/':
+        case '"':
+          c=*p++;
+          break;
+        case 'b':
+          c='\b'; p++;
+          break;
+        case 'f':
+          c='\f'; p++;
+          break;
+        case 'n':
+          c='\n'; p++;
+          break;
+        case 'r':
+          c='\r'; p++;
+          break;
+        case 't':
+          c='\t'; p++;
+          break;
+        case 'u': // unicode unescape not implemented
+          break;
+      }
+      *d++=c;
+    }
+    else {
+      *d++=c;
+    }
   }
-  return s;
+  NX_JSON_REPORT_ERROR("no closing quote for string", s);
+  return 0;
 }
 
-static char* parse_tag(const char** tag, char* p) {
+static char* parse_key(const char** key, char* p) {
   // on '}' return with *p=='}'
   char c;
-  while (c=*p++) {
+  while ((c=*p++)) {
     if (c=='"') {
-      char* ps=p;
-      REPEAT:
-      p=strchr(p, '"');
-      if (!p) {
-        printf("ERROR: no closing quote for key %s\n", ps);
-        return 0; // error
-      }
-      if (p[-1]=='\\') { // escaped
-        p++;
-        goto REPEAT;
-      }
-      *p++='\0';
-      *tag=ps;
-      while (*p && ((unsigned char)*p)<=' ') p++;
-      return *p==':'? p+1 : 0;
+      *key=unescape_string(p, &p);
+      if (!*key) return 0; // propagate error
+      while (*p && IS_WHITESPACE(*p)) p++;
+      if (*p==':') return p+1;
+      NX_JSON_REPORT_ERROR("unexpected chars", p);
+      return 0;
     }
-    else if (((unsigned char)c)<=' ' || c==',') {
+    else if (IS_WHITESPACE(c) || c==',') {
       // continue
     }
     else if (c=='}') {
@@ -119,7 +144,7 @@ static char* parse_tag(const char** tag, char* p) {
         char* ps=p-1;
         p=strchr(p+1, '\n');
         if (!p) {
-          printf("ERROR: endless comment %s\n", ps);
+          NX_JSON_REPORT_ERROR("endless comment", ps);
           return 0; // error
         }
         p++;
@@ -129,7 +154,7 @@ static char* parse_tag(const char** tag, char* p) {
         REPEAT2:
         p=strchr(p+1, '/');
         if (!p) {
-          printf("ERROR: endless comment %s\n", ps);
+          NX_JSON_REPORT_ERROR("endless comment", ps);
           return 0; // error
         }
         if (p[-1]!='*') {
@@ -138,25 +163,25 @@ static char* parse_tag(const char** tag, char* p) {
         p++;
       }
       else {
-        printf("ERROR (%d) AT: %s\n", __LINE__, p);
+        NX_JSON_REPORT_ERROR("unexpected chars", p-1);
         return 0; // error
       }
     }
     else {
-      printf("ERROR (%d) AT: %s\n", __LINE__, p);
+      NX_JSON_REPORT_ERROR("unexpected chars", p-1);
       return 0; // error
     }
   }
-  printf("ERROR (%d) AT: %s\n", __LINE__, p);
+  NX_JSON_REPORT_ERROR("unexpected chars", p-1);
   return 0; // error
 }
 
-static char* parse_value(nx_json* parent, const char* tag, char* p) {
+static char* parse_value(nx_json* parent, const char* key, char* p) {
   nx_json* js;
   while (1) {
     switch (*p) {
       case '\0':
-        printf("ERROR (%d): unexpected end of text\n", __LINE__);
+        NX_JSON_REPORT_ERROR("unexpected end of text", p);
         return 0; // error
       case ' ': case '\t': case '\n': case '\r':
       case ',':
@@ -164,18 +189,18 @@ static char* parse_value(nx_json* parent, const char* tag, char* p) {
         p++;
         break;
       case '{':
-        js=create_json(NX_JSON_OBJECT, tag, parent);
+        js=create_json(NX_JSON_OBJECT, key, parent);
         p++;
         while (1) {
-          const char* new_tag;
-          p=parse_tag(&new_tag, p);
+          const char* new_key;
+          p=parse_key(&new_key, p);
           if (!p) return 0; // error
           if (*p=='}') return p+1; // end of object
-          p=parse_value(js, new_tag, p);
+          p=parse_value(js, new_key, p);
           if (!p) return 0; // error
         }
       case '[':
-        js=create_json(NX_JSON_ARRAY, tag, parent);
+        js=create_json(NX_JSON_ARRAY, key, parent);
         p++;
         while (1) {
           p=parse_value(js, 0, p);
@@ -186,35 +211,24 @@ static char* parse_value(nx_json* parent, const char* tag, char* p) {
         return p;
       case '"':
         p++;
-        char* ps=p;
-        REPEAT:
-        p=strchr(p, '"');
-        if (!p) {
-          printf("ERROR: no closing quote for string %s\n", ps);
-          return 0; // error
-        }
-        if (p[-1]=='\\') { // escaped
-          p++;
-          goto REPEAT;
-        }
-        *p++='\0';
-        js=create_json(NX_JSON_STRING, tag, parent);
-        js->text_value=unescape(ps);
+        js=create_json(NX_JSON_STRING, key, parent);
+        js->text_value=unescape_string(p, &p);
+        if (!js->text_value) return 0; // propagate error
         return p;
       case '-': case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
         {
-          js=create_json(NX_JSON_INTEGER, tag, parent);
+          js=create_json(NX_JSON_INTEGER, key, parent);
           char* pe;
           js->int_value=strtol(p, &pe, 0);
           if (pe==p) {
-            printf("ERROR (%d): invalid number AT: %s\n", __LINE__, p);
+            NX_JSON_REPORT_ERROR("invalid number", p);
             return 0; // error
           }
           if (*pe=='.' || *pe=='e' || *pe=='E') { // double value
             js->type=NX_JSON_DOUBLE;
             js->dbl_value=strtod(p, &pe);
             if (pe==p) {
-              printf("ERROR (%d): invalid number AT: %s\n", __LINE__, p);
+              NX_JSON_REPORT_ERROR("invalid number", p);
               return 0; // error
             }
           }
@@ -225,33 +239,33 @@ static char* parse_value(nx_json* parent, const char* tag, char* p) {
         }
       case 't':
         if (!strncmp(p, "true", 4)) {
-          js=create_json(NX_JSON_BOOL, tag, parent);
+          js=create_json(NX_JSON_BOOL, key, parent);
           js->int_value=1;
           return p+4;
         }
-        printf("ERROR (%d) AT: %s\n", __LINE__, p);
+        NX_JSON_REPORT_ERROR("unexpected chars", p);
         return 0; // error
       case 'f':
         if (!strncmp(p, "false", 5)) {
-          js=create_json(NX_JSON_BOOL, tag, parent);
+          js=create_json(NX_JSON_BOOL, key, parent);
           js->int_value=0;
           return p+5;
         }
-        printf("ERROR (%d) AT: %s\n", __LINE__, p);
+        NX_JSON_REPORT_ERROR("unexpected chars", p);
         return 0; // error
       case 'n':
         if (!strncmp(p, "null", 4)) {
-          create_json(NX_JSON_NULL, tag, parent);
+          create_json(NX_JSON_NULL, key, parent);
           return p+4;
         }
-        printf("ERROR (%d) AT: %s\n", __LINE__, p);
+        NX_JSON_REPORT_ERROR("unexpected chars", p);
         return 0; // error
       case '/': // comment
         if (p[1]=='/') { // line comment
           char* ps=p;
           p=strchr(p+2, '\n');
           if (!p) {
-            printf("ERROR: endless comment %s\n", ps);
+            NX_JSON_REPORT_ERROR("endless comment", ps);
             return 0; // error
           }
           p++;
@@ -261,7 +275,7 @@ static char* parse_value(nx_json* parent, const char* tag, char* p) {
           REPEAT2:
           p=strchr(p+2, '/');
           if (!p) {
-            printf("ERROR: endless comment %s\n", ps);
+            NX_JSON_REPORT_ERROR("endless comment", ps);
             return 0; // error
           }
           if (p[-1]!='*') {
@@ -270,12 +284,12 @@ static char* parse_value(nx_json* parent, const char* tag, char* p) {
           p++;
         }
         else {
-          printf("ERROR (%d) AT: %s\n", __LINE__, p);
+          NX_JSON_REPORT_ERROR("unexpected chars", p);
           return 0; // error
         }
         break;
       default:
-        printf("ERROR (%d) AT: %s\n", __LINE__, p);
+        NX_JSON_REPORT_ERROR("unexpected chars", p);
         return 0; // error
     }
   }
@@ -290,29 +304,29 @@ const nx_json* nx_json_parse(char* text) {
   return js.child;
 }
 
-const nx_json* nx_json_get(const nx_json* json, const char* tag) {
-  if (!json) return &dummy;
+const nx_json* nx_json_get(const nx_json* json, const char* key) {
+  if (!json) return &dummy; // never return null
   nx_json* js;
   for (js=json->child; js; js=js->next) {
-    if (!strcmp(js->tag, tag)) return js;
+    if (!strcmp(js->key, key)) return js;
   }
-  return &dummy;
+  return &dummy; // never return null
 }
 
 const nx_json* nx_json_item(const nx_json* json, int idx) {
-  if (!json) return &dummy;
+  if (!json) return &dummy; // never return null
   nx_json* js;
   for (js=json->child; js; js=js->next) {
     if (!idx--) return js;
   }
-  return &dummy;
+  return &dummy; // never return null
 }
 
-#ifdef NXJSON_DEBUG
+#ifdef NXJSON_DEMO
 
 int main() {
-  char* code=strdup(" {\"some-int\":195, \"array\" :[ 0, 5.1, -7, \"nine\" ,, /*11*/ , ],"
-    "\"some-bool\":true, \"some-dbl\":-1e-4, \"some-null\": null, \"hello\" : \"world\\\"!\", /*\"other\" : \"/OTHER/\"*/,\n"
+  char* code=strdup(" {\"some-int\":195, \"array\" :[ 0, 5.1, -7, \"\\\\\" ,, /*11*/ , \"last\\nitem\"],"
+    "\"some-bool\":true, \"some-dbl\":-1e-4, \"some-null\": null, \"hello\" : \"world\\\"\\!\", /*\"other\" : \"/OTHER/\"*/,\n"
     "\"obj\":{\"KEY\":\"VAL\"}\n"
     "}");
   const nx_json* json=nx_json_parse(code);
@@ -337,3 +351,10 @@ int main() {
 }
 
 #endif
+
+
+#ifdef  __cplusplus
+}
+#endif
+
+#endif  /* NXJSON_C */

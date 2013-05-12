@@ -37,18 +37,19 @@ typedef enum nx_json_type {
 
 typedef struct nx_json {
   nx_json_type type;
-  const char* tag;
+  const char* key;
   const char* text_value;
   long int_value; // also bool
   double dbl_value;
   int length; // num children
   struct nx_json* child;
   struct nx_json* next;
+  struct nx_json* last_child;
 } nx_json;
 
 const nx_json* nx_json_parse(char* text);
 void nx_json_free(const nx_json* js);
-const nx_json* nx_json_get(const nx_json* json, const char* tag); // get object's property by key
+const nx_json* nx_json_get(const nx_json* json, const char* key); // get object's property by key
 const nx_json* nx_json_item(const nx_json* json, int idx); // get array element by index
 
 
