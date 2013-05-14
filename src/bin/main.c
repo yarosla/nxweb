@@ -19,20 +19,11 @@
 
 #include "nxweb/nxweb.h"
 
-// Note: see config.h for most nxweb #defined parameters
-
-// Command-line defaults (parsed by nxweb_main_stub()):
-nxweb_main_args_t nxweb_main_args={
-  .user_name=0,
-  .group_name=0,
-  .port=8055,
-  .ssl_port=8056
-};
 
 #ifndef NO_JSON_CONFIG
 
 static void server_config() {
-  if (nxweb_load_config("nxweb_config.json")==-1) return; // simulate normal exit
+  if (nxweb_load_config(nxweb_main_args.config_file)==-1) return;
   nxweb_run();
 }
 
@@ -51,9 +42,9 @@ static void server_config() {
 static void server_config() {
 
   // Bind listening interfaces:
-  if (nxweb_listen(nxweb_main_args.listening_host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen(nxweb_main_args.http_listening_host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
 #ifdef WITH_SSL
-  if (nxweb_listen_ssl(nxweb_main_args.listening_host_and_port_ssl, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen_ssl(nxweb_main_args.https_listening_host_and_port, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
 #endif // WITH_SSL
 
   // Drop privileges:

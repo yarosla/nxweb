@@ -56,7 +56,7 @@ int nxweb_load_config(const char* filename) {
   }
   close(fd);
   text[st.st_size]='\0';
-  const nx_json* json=nx_json_parse(text);
+  const nx_json* json=nx_json_parse(text, 0);
   if (!json) {
     nxweb_log_error("can't parse config file %s", filename);
     return -1;
@@ -65,7 +65,7 @@ int nxweb_load_config(const char* filename) {
   int i;
 
   const nx_json* listen=nx_json_get(json, "listen");
-  if (listen) {
+  if (listen->type!=NX_JSON_NULL) {
     for (i=0; i<listen->length; i++) {
       const nx_json* l=nx_json_item(listen, i);
       const char* itf=nx_json_get(l, "interface")->text_value;
@@ -76,18 +76,29 @@ int nxweb_load_config(const char* filename) {
         if (!secure) {
           if (nxweb_listen(itf, backlog)) return -1;
         }
+#ifdef WITH_SSL
         else {
           if (nxweb_listen_ssl(itf, backlog, 1, nx_json_get(l, "cert")->text_value, nx_json_get(l, "key")->text_value, nx_json_get(l, "dh")->text_value, nx_json_get(l, "priorities")->text_value)) return -1;
         }
+#endif // WITH_SSL
       }
     }
   }
   else { // fallback to command line arguments
-    if (nxweb_listen(nxweb_main_args.listening_host_and_port, 4096)) return -1;
+    if (nxweb_main_args.http_listening_host_and_port) {
+      if (nxweb_listen(nxweb_main_args.http_listening_host_and_port, 4096)) return -1;
+    }
+#ifdef WITH_SSL
+    if (nxweb_main_args.https_listening_host_and_port) {
+      if (nxweb_listen_ssl(nxweb_main_args.https_listening_host_and_port, 1024, 1,
+                           "ssl/server_cert.pem", "ssl/server_key.pem", "ssl/dh.pem",
+                           "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1")) return -1;
+    }
+#endif // WITH_SSL
   }
 
   const nx_json* drop_privileges=nx_json_get(json, "drop_privileges");
-  if (drop_privileges) {
+  if (drop_privileges->type!=NX_JSON_NULL) {
     if (nxweb_drop_privileges(nx_json_get(drop_privileges, "group")->text_value, nx_json_get(drop_privileges, "user")->text_value)==-1) return -1;
   }
   else { // fallback to command line arguments
@@ -97,7 +108,7 @@ int nxweb_load_config(const char* filename) {
   nxweb_error_log_level=NXWEB_LOG_WARNING;
 
   const nx_json* logging=nx_json_get(json, "logging");
-  if (logging) {
+  if (logging->type!=NX_JSON_NULL) {
     // set error log verbosity: INFO=most verbose, WARN, ERROR, NONE
     const char* log_level=nx_json_get(logging, "log_level")->text_value;
     if (log_level) {
@@ -113,7 +124,7 @@ int nxweb_load_config(const char* filename) {
   }
 
   const nx_json* backends=nx_json_get(json, "backends");
-  if (backends) {
+  if (backends->type!=NX_JSON_NULL) {
     for (i=0; i<backends->length; i++) {
       const nx_json* js=nx_json_item(backends, i);
       const char* itf=nx_json_get(js, "connect")->text_value;
@@ -124,7 +135,7 @@ int nxweb_load_config(const char* filename) {
   }
 
   const nx_json* routing=nx_json_get(json, "routing");
-  if (routing) {
+  if (routing->type!=NX_JSON_NULL) {
     for (i=0; i<routing->length; i++) {
       const nx_json* js=nx_json_item(routing, i);
       const char* targets=nx_json_get(js, "targets")->text_value;
@@ -141,12 +152,37 @@ int nxweb_load_config(const char* filename) {
         nxweb_log_error("can't find handler '%s' specified for routing record #%d", handler_name, i);
         continue;
       }
+
       nxweb_handler* new_handler=calloc(1, sizeof(nxweb_handler)); // this will never be freed
       new_handler->name=base_handler->name;
       new_handler->prefix=nx_json_get(js, "prefix")->text_value;
 
+      const char* backend=nx_json_get(js, "backend")->text_value;
+      if (backend) {
+        if (!backends->length) {
+          nxweb_log_error("no backend %s configured for routing record #%d", backend, i);
+          continue;
+        }
+        int j, found=0;
+        for (j=0; j<backends->length; j++) {
+          const nx_json* bk=nx_json_item(backends, j);
+          if (bk->key && !strcmp(bk->key, backend)) {
+            new_handler->idx=j;
+            found=1;
+            break;
+          }
+        }
+        if (!found) {
+          nxweb_log_error("backend %s not found for routing record #%d", backend, i);
+          continue;
+        }
+      }
+      else {
+        new_handler->idx=nx_json_get(js, "idx")->int_value;
+      }
+
       const nx_json* filters=nx_json_get(js, "filters");
-      if (filters) {
+      if (filters->type!=NX_JSON_NULL) {
         int j, k=0;
         for (j=0; j<filters->length; j++) {
           const nx_json* js=nx_json_item(filters, j);
@@ -173,7 +209,6 @@ int nxweb_load_config(const char* filename) {
       new_handler->dir=nx_json_get(js, "dir")->text_value;
       new_handler->uri=nx_json_get(js, "uri")->text_value;
       new_handler->host=nx_json_get(js, "host")->text_value;
-      new_handler->idx=nx_json_get(js, "idx")->int_value;
       new_handler->index_file=nx_json_get(js, "index_file")->text_value;
       new_handler->proxy_copy_host=!!nx_json_get(js, "proxy_copy_host")->int_value;
       new_handler->size=nx_json_get(js, "size")->int_value;

@@ -34,18 +34,25 @@ static void show_help(void) {
           " -p file  set pid file        (default: nxweb.pid)\n"
           " -u user  set process uid\n"
           " -g group set process gid\n"
-          " -I ip    set http interface IP address\n"
-          " -P port  set http port\n"
+          " -H [ip]:port http listens to     (default: :8055)\n"
 #ifdef WITH_SSL
-          " -S port  set https port\n"
+          " -S [ip]:port https listens to    (default: :8056)\n"
 #endif
+          " -c file  load configuration file (default: nxweb_config.json)\n"
           " -T targ  set configuration target\n"
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
-          "example:  nxweb -d -l nxweb_error_log\n\n"
+          "example:  nxweb -d -l nxweb_error_log -H :80\n\n"
          );
 }
+
+// Command-line defaults
+nxweb_main_args_t nxweb_main_args={
+  .config_file="nxweb_config.json",
+  .http_listening_host_and_port=":8055",
+  .https_listening_host_and_port=":8056"
+};
 
 int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   int daemon=0;
@@ -56,7 +63,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file="nxweb.pid";
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:I:P:S:T:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -92,22 +99,14 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
       case 'g':
         nxweb_main_args.group_name=optarg;
         break;
-      case 'I':
-        nxweb_main_args.listening_interface_ip=optarg;
-        break;
-      case 'P':
-        nxweb_main_args.port=atoi(optarg);
-        if (nxweb_main_args.port<=0 || nxweb_main_args.port>65536) {
-          fprintf(stderr, "invalid port: %s\n\n", optarg);
-          return EXIT_FAILURE;
-        }
+      case 'H':
+        nxweb_main_args.http_listening_host_and_port=optarg;
         break;
       case 'S':
-        nxweb_main_args.ssl_port=atoi(optarg);
-        if (nxweb_main_args.ssl_port<=0 ||  nxweb_main_args.ssl_port>65536) {
-          fprintf(stderr, "invalid ssl port: %s\n\n", optarg);
-          return EXIT_FAILURE;
-        }
+        nxweb_main_args.https_listening_host_and_port=optarg;
+        break;
+      case 'c':
+        nxweb_main_args.config_file=optarg;
         break;
       case 'T':
         nxweb_main_args.config_target=optarg;
@@ -128,21 +127,6 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   if (shutdown) {
     nxweb_shutdown_daemon(work_dir, pid_file);
     return EXIT_SUCCESS;
-  }
-
-  if (nxweb_main_args.listening_interface_ip) {
-    int max_len=strlen(nxweb_main_args.listening_interface_ip)+16;
-    nxweb_main_args.listening_host_and_port=malloc(max_len);
-    nxweb_main_args.listening_host_and_port_ssl=malloc(max_len);
-    snprintf((char*)nxweb_main_args.listening_host_and_port, max_len, "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.port);
-    snprintf((char*)nxweb_main_args.listening_host_and_port_ssl, max_len, "%s:%d", nxweb_main_args.listening_interface_ip, nxweb_main_args.ssl_port);
-  }
-  else {
-    int max_len=16;
-    nxweb_main_args.listening_host_and_port=malloc(max_len);
-    nxweb_main_args.listening_host_and_port_ssl=malloc(max_len);
-    snprintf((char*)nxweb_main_args.listening_host_and_port, max_len, ":%d", nxweb_main_args.port);
-    snprintf((char*)nxweb_main_args.listening_host_and_port_ssl, max_len, ":%d", nxweb_main_args.ssl_port);
   }
 
   nxweb_server_config.access_log_fpath=access_log_file;

@@ -38,13 +38,11 @@ int nxweb_run_normal(const char* work_dir, const char* log_file, const char* pid
 int nxweb_drop_privileges(const char* group_name, const char* user_name);
 
 typedef struct nxweb_main_args_t {
-  int port;
-  int ssl_port;
   const char* group_name;
   const char* user_name;
-  const char* listening_interface_ip;
-  const char* listening_host_and_port;
-  const char* listening_host_and_port_ssl;
+  const char* http_listening_host_and_port;
+  const char* https_listening_host_and_port;
+  const char* config_file;
   const char* config_target;
 } nxweb_main_args_t;
 
