@@ -47,6 +47,7 @@ void nxweb_open_log_file(const char* log_file) {
     nxweb_die("dup2(stdin/stdout/stderr) failed");
   }
   close(fd);
+  close(zfd);
   nxweb_log_error("=== LOG OPENED ===");
 }
 
@@ -209,7 +210,9 @@ int nxweb_run_normal(const char* work_dir, const char* log_file, const char* pid
   if (work_dir && chdir(work_dir)<0) {
     nxweb_die("chdir(work_dir) failed");
   }
+  if (pid_file) nxweb_create_pid_file(pid_file, getpid());
   if (log_file) nxweb_open_log_file(log_file);
   main_func();
+  if (pid_file) unlink(pid_file); // this might not always succeed since the privileges are dropped
   return EXIT_SUCCESS;
 }

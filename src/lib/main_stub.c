@@ -31,7 +31,7 @@ static void show_help(void) {
           " -w dir   set work dir        (default: ./)\n"
           " -l file  set error log file  (default: stderr or nxweb_error_log for daemon)\n"
           " -a file  set access log file (default: none)\n"
-          " -p file  set pid file        (default: nxweb.pid)\n"
+          " -p file  set pid file        (default: none or nxweb.pid for daemon)\n"
           " -u user  set process uid\n"
           " -g group set process gid\n"
           " -H [ip]:port http listens to     (default: :8055)\n"
@@ -60,7 +60,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* work_dir=0;
   const char* error_log_file=0;
   const char* access_log_file=0;
-  const char* pid_file="nxweb.pid";
+  const char* pid_file=0;
 
   int c;
   while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:"))!=-1) {
@@ -132,6 +132,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   nxweb_server_config.access_log_fpath=access_log_file;
 
   if (daemon) {
+    if (!pid_file) pid_file="nxweb.pid";
     if (!error_log_file) error_log_file="nxweb_error_log";
     nxweb_server_config.error_log_fpath=error_log_file;
     nxweb_run_daemon(work_dir, error_log_file, pid_file, server_main);

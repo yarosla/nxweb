@@ -133,7 +133,7 @@ static void server_config() {
   nxweb_run();
 }
 
-#endif
+#endif // NO_JSON_CONFIG
 
 int main(int argc, char** argv) {
   return nxweb_main_stub(argc, argv, server_config);
