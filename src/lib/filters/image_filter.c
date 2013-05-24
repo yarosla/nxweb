@@ -654,11 +654,6 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
       return NXWEB_ERROR;
     }
 
-    if (resp->sendfile_fd>0) {
-      close(resp->sendfile_fd);
-    }
-    resp->sendfile_fd=0;
-
     MagickWand* image=NewMagickWand();
     if (!MagickReadImage(image, resp->sendfile_path)) {
       DestroyMagickWand(image);
@@ -708,6 +703,7 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   resp->last_modified=resp->sendfile_info.st_mtime;
   resp->content=0;
 
+  if (resp->sendfile_fd>0) close(resp->sendfile_fd);
   resp->sendfile_fd=open(resp->sendfile_path, O_RDONLY|O_NONBLOCK);
   if (resp->sendfile_fd!=-1) {
     nxd_fbuffer_init(&ifdata->fb, resp->sendfile_fd, resp->sendfile_offset, resp->sendfile_end);
