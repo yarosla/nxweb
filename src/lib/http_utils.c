@@ -617,6 +617,8 @@ void _nxweb_encode_chunked_init(nxweb_chunked_encoder_state* encoder_state) {
   assert(sizeof(encoder_state->buf)==8);
   memcpy(encoder_state->buf, "\r\n0000\r\n", sizeof(encoder_state->buf));
   encoder_state->pos=2;
+  encoder_state->header_prepared=0;
+  encoder_state->final_chunk=0;
 }
 
 int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe_size_t* offered_size, void** send_ptr, nxe_size_t* send_size, nxe_flags_t* flags) {
@@ -626,7 +628,7 @@ int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe
     *send_ptr=encoder_state->buf+encoder_state->pos;
     return 1;
   }
-  else if (encoder_state->pos<=2) { // can start new chunk
+  else if (encoder_state->pos<=2 && !encoder_state->header_prepared) { // can start new chunk
     if (!*offered_size) {
       if (*flags&NXEF_EOF) {
         encoder_state->final_chunk=1;
@@ -643,25 +645,28 @@ int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe
       }
     }
     else {
-      if (*offered_size>0xffff) *offered_size=0xffff; // max chunk size
+      if (*offered_size > 0xffff) *offered_size=0xffff; // max chunk size
       encoder_state->chunk_size=*offered_size;
       uint_to_hex_string_zeropad(*offered_size, encoder_state->buf+2, 4, 0);
-      *send_size=sizeof(encoder_state->buf)-encoder_state->pos;
+      *send_size=sizeof(encoder_state->buf) - encoder_state->pos;
       *send_ptr=encoder_state->buf+encoder_state->pos;
       *flags&=~NXEF_EOF;
+      encoder_state->header_prepared=1;
       return 1;
     }
   }
   else if (encoder_state->pos<sizeof(encoder_state->buf)) { // still inside header
-    if (*offered_size>encoder_state->chunk_size) *offered_size=encoder_state->chunk_size; // stick to previously defined chunk size
-    *send_size=sizeof(encoder_state->buf)-encoder_state->pos;
+    assert(*offered_size >= encoder_state->chunk_size); // can't reduce offered_size
+    if (*offered_size > encoder_state->chunk_size) *offered_size=encoder_state->chunk_size; // stick to previously defined chunk size
+    *send_size=sizeof(encoder_state->buf) - encoder_state->pos;
     *send_ptr=encoder_state->buf+encoder_state->pos;
     *flags&=~NXEF_EOF;
     return 1;
   }
   else { // sending chunk data
-    nxe_ssize_t chunk_bytes_left=encoder_state->chunk_size-(encoder_state->pos-sizeof(encoder_state->buf));
-    if (*offered_size>chunk_bytes_left) *offered_size=chunk_bytes_left;
+    nxe_ssize_t chunk_bytes_left=encoder_state->chunk_size - (encoder_state->pos - sizeof(encoder_state->buf));
+    assert(*offered_size >= chunk_bytes_left); // can't reduce offered_size
+    if (*offered_size > chunk_bytes_left) *offered_size=chunk_bytes_left;
     *send_size=0;
     *send_ptr=0;
     *flags&=~NXEF_EOF;
@@ -672,7 +677,10 @@ int _nxweb_encode_chunked_stream(nxweb_chunked_encoder_state* encoder_state, nxe
 void _nxweb_encode_chunked_advance(nxweb_chunked_encoder_state* encoder_state, nxe_ssize_t pos_delta) {
   if (!pos_delta) return;
   encoder_state->pos+=pos_delta;
-  if (encoder_state->pos==sizeof(encoder_state->buf)+encoder_state->chunk_size) encoder_state->pos=0;
+  if (encoder_state->pos==sizeof(encoder_state->buf)+encoder_state->chunk_size) {
+    encoder_state->pos=0;
+    encoder_state->header_prepared=0;
+  }
 }
 
 int _nxweb_encode_chunked_is_complete(nxweb_chunked_encoder_state* encoder_state) {

@@ -318,49 +318,51 @@ static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd
       _nxweb_batch_write_begin(fd);
       loop->batch_write_fd=fd;
     }
-    nxe_ssize_t buffered_byte_sent=0;
+    /*
+    nxe_ssize_t buffered_bytes_sent=0;
     if (ss->buffered_size) {
-      buffered_byte_sent=gnutls_record_send(ss->session, 0, 0); // flush buffered data
-      if (buffered_byte_sent != ss->buffered_size) {
-        if (buffered_byte_sent==GNUTLS_E_AGAIN) {
+      buffered_bytes_sent=gnutls_record_send(ss->session, 0, 0); // flush buffered data
+      if (buffered_bytes_sent != ss->buffered_size) {
+        if (buffered_bytes_sent<0) {
           nxe_ostream_unset_ready(os);
-          nxweb_log_warning("gnutls_record_send() returned GNUTLS_E_AGAIN again");
+          if (buffered_bytes_sent==GNUTLS_E_AGAIN) {
+            nxweb_log_warning("gnutls_record_send() returned GNUTLS_E_AGAIN again");
+            return 0;
+          }
+          nxweb_log_warning("gnutls_record_send() can't flush buffered data err=%d", (int)buffered_bytes_sent);
+          nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
           return 0;
         }
-        nxweb_log_warning("gnutls_record_send() can't flush buffered data %d", (int)buffered_byte_sent);
-        nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
+        ss->buffered_size-=buffered_bytes_sent;
+        nxweb_log_info("gnutls_record_send() flushed %d bytes, %d bytes left in buffer", (int)buffered_bytes_sent, (int)ss->buffered_size);
+        assert(ss->buffered_size>0);
         return 0;
       }
       ss->buffered_size=0;
-      buffered_byte_sent=1; // one byte that has left (see below)
+      buffered_bytes_sent=1; // one byte that has left (see below)
       size--;
-      if (!size) return buffered_byte_sent;
+      if (!size) return buffered_bytes_sent;
     }
+    */
     nxe_ssize_t bytes_sent=gnutls_record_send(ss->session, ptr.cptr, size);
     if (bytes_sent<0) {
       nxe_ostream_unset_ready(os);
       if (bytes_sent==GNUTLS_E_AGAIN) {
-        nxweb_log_info("gnutls_record_send() returned GNUTLS_E_AGAIN; %ld bytes buffered", size);
+        nxweb_log_info("gnutls_record_send() returned GNUTLS_E_AGAIN; %ld bytes offered, some buffered", size);
         // GNUTLS buffers data provided to gnutls_record_send() so we can't change it anymore.
         // Effectively is could be considered as "sent" but we still need to call
         // gnutls_record_send() again to flush it out.
-        ss->buffered_size=size;
-        return buffered_byte_sent+ss->buffered_size-1; // pretend all sent except last byte
+        //ss->buffered_size=size;
+        //return buffered_bytes_sent+ss->buffered_size-1; // pretend all sent except last byte
+        return 0;
       }
       nxe_publish(&fs->data_error, (nxe_data)NXE_ERROR);
       nxweb_log_warning("gnutls_record_send() returned error %d", (int)bytes_sent);
-      return buffered_byte_sent; // +0
+      //return buffered_bytes_sent; // +0
+      return 0;
     }
-/*
-    if (bytes_sent<size) {
-      nxe_ostream_unset_ready(os);
-      if (bytes_sent==0) {
-        nxe_publish(&fs->data_error, (nxe_data)NXE_WRITTEN_NONE);
-        return 0;
-      }
-    }
-*/
-    return buffered_byte_sent+bytes_sent;
+    //return buffered_bytes_sent+bytes_sent;
+    return bytes_sent;
   }
   return 0;
 }

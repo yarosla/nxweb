@@ -72,6 +72,7 @@ typedef struct nxweb_chunked_decoder_state {
 
 typedef struct nxweb_chunked_encoder_state {
   unsigned short final_chunk:1;
+  unsigned short header_prepared:1;
   nxe_ssize_t chunk_size;
   nxe_ssize_t pos;
   char buf[8]; // "\r\n0000\r\n"
