@@ -460,7 +460,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
 
     if (req->content_length) {
       if (h->on_post_data) h->on_post_data(conn, req, resp);
-      if (!conn->hsp.cls->get_request_body_out_pair(&conn->hsp)) { // stream still not connected
+      if (conn->hsp.state!=HSP_SENDING_HEADERS && !conn->hsp.cls->get_request_body_out_pair(&conn->hsp)) { // stream still not connected
         if (req->content_length>NXWEB_MAX_REQUEST_BODY_SIZE) {
           nxweb_send_http_error(resp, 413, "Request Entity Too Large");
           resp->keep_alive=0; // close connection
