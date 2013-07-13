@@ -57,6 +57,9 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
 static const nxe_subscriber_class nxweb_http_server_proxy_events_sub_class={.on_message=nxweb_http_server_proxy_events_sub_on_message};
 
 static void nxweb_http_proxy_request_finalize(nxd_http_server_proto* hsp, void* req_data) {
+
+  nxweb_log_debug("nxweb_http_proxy_request_finalize");
+
   nxweb_http_proxy_request_data* rdata=req_data;
   nxweb_http_server_connection* conn=rdata->conn;
   nxe_loop* loop=conn->tdata->loop;
@@ -77,6 +80,9 @@ static void nxweb_http_proxy_request_finalize(nxd_http_server_proto* hsp, void* 
 }
 
 static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_proxy_request_data* rdata) {
+
+  nxweb_log_debug("start_proxy_request");
+
   nxe_loop* loop=conn->tdata->loop;
   nxweb_handler* handler=conn->handler;
   assert(handler->idx>=0 && handler->idx<NXWEB_MAX_PROXY_POOLS);
@@ -144,6 +150,9 @@ static nxweb_result start_proxy_request(nxweb_http_server_connection* conn, nxwe
 }
 
 static void retry_proxy_request(nxweb_http_proxy_request_data* rdata) {
+
+  nxweb_log_debug("retry_proxy_request");
+
   nxd_http_proxy* hpx=rdata->hpx;
   nxweb_http_server_connection* conn=rdata->conn;
 
@@ -162,6 +171,9 @@ static void retry_proxy_request(nxweb_http_proxy_request_data* rdata) {
 }
 
 static void fail_proxy_request(nxweb_http_proxy_request_data* rdata) {
+
+  nxweb_log_debug("fail_proxy_request");
+
   nxweb_http_server_connection* conn=rdata->conn;
   if (rdata->response_sending_started) {
     nxweb_http_server_connection_finalize(conn, 0);
@@ -175,6 +187,9 @@ static void fail_proxy_request(nxweb_http_proxy_request_data* rdata) {
 }
 
 static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
+
+  nxweb_log_debug("timer_backend_on_timeout");
+
   nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)timer-offsetof(nxweb_http_proxy_request_data, timer_backend));
   nxweb_http_server_connection* conn=rdata->conn;
   if (rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
@@ -194,6 +209,9 @@ static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
 static const nxe_timer_class timer_backend_class={.on_timeout=timer_backend_on_timeout};
 
 static nxweb_result nxweb_http_proxy_handler_on_headers(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+
+  nxweb_log_debug("nxweb_http_proxy_handler_on_headers");
+
   nxweb_http_proxy_request_data* rdata=nxb_alloc_obj(conn->hsp.nxb, sizeof(nxweb_http_proxy_request_data));
   nxe_loop* loop=conn->tdata->loop;
   memset(rdata, 0, sizeof(nxweb_http_proxy_request_data));
@@ -220,6 +238,9 @@ NXWEB_DEFINE_HANDLER(http_proxy, .on_headers=nxweb_http_proxy_handler_on_headers
         .flags=NXWEB_HANDLE_ANY|NXWEB_ACCEPT_CONTENT);
 
 static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
+
+  nxweb_log_debug("nxweb_http_server_proxy_events_sub_on_message");
+
   nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)sub-offsetof(nxweb_http_proxy_request_data, proxy_events_sub));
   nxweb_http_server_connection* conn=rdata->conn;
   nxe_loop* loop=sub->super.loop;

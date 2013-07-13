@@ -120,6 +120,8 @@ static void rbuffer_data_in_do_read(nxe_ostream* os, nxe_istream* is) {
   nxd_rbuffer* rb=(nxd_rbuffer*)((char*)os-offsetof(nxd_rbuffer, data_in));
   //nxe_loop* loop=os->super.loop;
 
+  nxweb_log_debug("rbuffer_data_in_do_read");
+
   nxe_size_t size;
   char* ptr=nxd_rbuffer_get_write_ptr(rb, &size);
   assert(size);
@@ -147,6 +149,8 @@ static void rbuffer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxd_rbuffer* rb=(nxd_rbuffer*)((char*)is-offsetof(nxd_rbuffer, data_out));
   //nxe_loop* loop=os->super.loop;
 
+  nxweb_log_debug("rbuffer_data_out_do_write");
+
   nxe_size_t size;
   const void* ptr;
   nxe_flags_t flags=0;
@@ -170,6 +174,8 @@ void nxd_rbuffer_init(nxd_rbuffer* rb, void* buf, int size) {
 }
 
 void nxd_rbuffer_read(nxd_rbuffer* rb, int size) {
+  nxweb_log_debug("nxd_rbuffer_read");
+
   if (size) {
     rb->read_ptr+=size;
     assert(rb->read_ptr <= rb->end_ptr);
@@ -188,6 +194,8 @@ void nxd_rbuffer_read(nxd_rbuffer* rb, int size) {
 }
 
 void nxd_rbuffer_write(nxd_rbuffer* rb, int size) {
+  nxweb_log_debug("nxd_rbuffer_write");
+
   if (size) {
     rb->write_ptr+=size;
     assert(rb->write_ptr <= rb->end_ptr);

@@ -155,6 +155,7 @@ static nxe_timer_queue* nxe_closest_tq(nxe_loop* loop) {
 
 static void nxe_process_loop(nxe_loop* loop) {
   nxe_event* evt;
+  int count=1000;
   while ((evt=loop->first)) {
     loop->first=evt->next;
     nxe_unlink(evt);
@@ -168,6 +169,8 @@ static void nxe_process_loop(nxe_loop* loop) {
 
     // stream event might have been relinked to the loop again here; but stream events don't have free method anyway
     if (/*!IS_IN_LOOP(loop, evt) &&*/ evt->cls->free) evt->cls->free(loop, evt);
+
+    nxweb_activate_log_debug(--count<=0, "too many events in loop");
   }
 }
 
@@ -370,6 +373,7 @@ static void stream_event_deliver(nxe_event* evt) {
   nxe_ostream* os=evt->receiver.os;
   nxe_istream* is=os->pair;
   if (!is || !os) return; // not connected
+  nxweb_log_debug("stream_event_deliver");
   int count=50;
   if (ISTREAM_CLASS(is)->do_write) {
     while (is->ready && os->ready && is==os->pair) {
@@ -408,6 +412,7 @@ static void message_event_deliver(nxe_event* evt) {
   nxe_subscriber* sub=evt->receiver.sub;
   nxe_publisher* pub=sub->pub;
   assert(sub->evt==evt);
+  nxweb_log_debug("message_event_deliver");
   sub->evt=evt->next_by_receiver;
   if (PUBLISHER_CLASS(pub)->do_publish) {
     PUBLISHER_CLASS(pub)->do_publish(pub, sub, evt->data);

@@ -202,6 +202,8 @@ static void gzip_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxd_rbuffer* rb=OBJ_PTR_FROM_FLD_PTR(nxd_rbuffer, data_out, is);
   nxe_loop* loop=is->super.loop;
 
+  nxweb_log_debug("gzip_data_out_do_write");
+
   nxe_size_t size;
   const void* ptr;
   nxe_flags_t flags=0;
@@ -220,6 +222,9 @@ static void gzip_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
 static nxe_ssize_t gzip_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   nxd_rbuffer* rb=OBJ_PTR_FROM_FLD_PTR(nxd_rbuffer, data_in, os);
   gzip_filter_data* gdata=OBJ_PTR_FROM_FLD_PTR(gzip_filter_data, rb, rb);
+
+  nxweb_log_debug("gzip_data_in_write");
+
   z_stream* zs=&gdata->zs;
   nxe_loop* loop=os->super.loop;
   nxe_ssize_t bytes_sent=0;
@@ -288,6 +293,9 @@ static nxweb_result gzip_serve_from_cache(nxweb_filter* filter, nxweb_http_serve
 }
 
 static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+
+  nxweb_log_debug("gzip_do_filter");
+
   gzip_filter_data* gdata=(gzip_filter_data*)fdata;
   if (fdata->fcache) {
     nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);

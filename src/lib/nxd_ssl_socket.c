@@ -190,6 +190,9 @@ static const char *bin2hex(const void *bin, size_t bin_size) { // not optimized!
 */
 
 static int do_handshake(nxd_ssl_socket* ss) {
+
+  nxweb_log_debug("ssl do_handshake");
+
   nxe_loop* loop=ss->fs.data_is.super.loop;
   assert(!ss->handshake_complete && !ss->handshake_failed);
   if (!ss->handshake_started) {
@@ -247,6 +250,9 @@ static int do_handshake(nxd_ssl_socket* ss) {
 
 static void handshake_stub_is_do_write(nxe_istream* is, nxe_ostream* os) {
   nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)is-offsetof(nxd_ssl_socket, handshake_stub_is));
+
+  nxweb_log_debug("ssl handshake_stub_is_do_write");
+
   // continue handshake
   if (ss->handshake_failed || do_handshake(ss)) {
     nxe_ostream_unset_ready(os);
@@ -255,6 +261,9 @@ static void handshake_stub_is_do_write(nxe_istream* is, nxe_ostream* os) {
 
 static void handshake_stub_os_do_read(nxe_ostream* os, nxe_istream* is) {
   nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)os-offsetof(nxd_ssl_socket, handshake_stub_os));
+
+  nxweb_log_debug("ssl handshake_stub_os_do_read");
+
   // continue handshake
   if (ss->handshake_failed || do_handshake(ss)) {
     nxe_istream_unset_ready(is);
@@ -264,6 +273,8 @@ static void handshake_stub_os_do_read(nxe_ostream* os, nxe_istream* is) {
 static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxe_fd_source* fs=(nxe_fd_source*)((char*)is-offsetof(nxe_fd_source, data_is));
   nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)is-offsetof(nxe_fd_source, data_is)-offsetof(nxd_ssl_socket, fs));
+
+  nxweb_log_debug("ssl sock_data_recv_read");
 
   if (!ss->handshake_complete) {
     if (do_handshake(ss)) {
@@ -301,6 +312,8 @@ static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* pt
 static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   nxe_fd_source* fs=(nxe_fd_source*)((char*)os-offsetof(nxe_fd_source, data_os));
   nxd_ssl_socket* ss=(nxd_ssl_socket*)((char*)os-offsetof(nxe_fd_source, data_os)-offsetof(nxd_ssl_socket, fs));
+
+  nxweb_log_debug("ssl sock_data_send_write");
 
   if (!ss->handshake_complete) {
     if (do_handshake(ss)) {

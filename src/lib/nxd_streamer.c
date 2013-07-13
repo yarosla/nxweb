@@ -29,6 +29,8 @@ static void streamer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxd_streamer_node* snode=strm->current;
   nxe_loop* loop=is->super.loop;
 
+  nxweb_log_debug("streamer_data_out_do_write");
+
   nxe_istream* prev_is=snode->data_in.pair;
   if (prev_is) {
     if (prev_is->ready) {
@@ -50,6 +52,9 @@ static nxe_ssize_t streamer_data_in_write(nxe_ostream* os, nxe_istream* is, int 
   nxd_streamer_node* snode=(nxd_streamer_node*)((char*)os-offsetof(nxd_streamer_node, data_in));
   nxd_streamer* strm=snode->strm;
   nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("streamer_data_in_write");
+
   if (snode!=strm->current) {
     nxe_ostream_unset_ready(os); // wait in queue for nxd_streamer_node_start()
     return 0;
@@ -98,18 +103,27 @@ static const nxe_istream_class streamer_data_out_class={.do_write=streamer_data_
 static const nxe_ostream_class streamer_data_in_class={.write=streamer_data_in_write};
 
 void nxd_streamer_init(nxd_streamer* strm) {
+
+  nxweb_log_debug("nxd_streamer_init");
+
   memset(strm, 0, sizeof(nxd_streamer));
   strm->data_out.super.cls.is_cls=&streamer_data_out_class;
   strm->data_out.evt.cls=NXE_EV_STREAM;
 }
 
 void nxd_streamer_node_init(nxd_streamer_node* snode) {
+
+  nxweb_log_debug("nxd_streamer_node_init");
+
   memset(snode, 0, sizeof(nxd_streamer_node));
   snode->data_in.super.cls.os_cls=&streamer_data_in_class;
   //snode->data_in.ready=1;
 }
 
 void nxd_streamer_add_node(nxd_streamer* strm, nxd_streamer_node* snode, int final) {
+
+  nxweb_log_debug("nxd_streamer_add_node");
+
   if (!strm->head) {
     strm->head=snode;
   }
@@ -126,6 +140,9 @@ void nxd_streamer_add_node(nxd_streamer* strm, nxd_streamer_node* snode, int fin
 }
 
 void nxd_streamer_node_finalize(nxd_streamer_node* snode) {
+
+  nxweb_log_debug("nxd_streamer_node_finalize");
+
   if (snode->data_in.pair) nxe_disconnect_streams(snode->data_in.pair, &snode->data_in);
   if (snode->next) nxd_streamer_node_finalize(snode->next);
 }
@@ -136,6 +153,9 @@ void nxd_streamer_finalize(nxd_streamer* strm) {
 }
 
 void nxd_streamer_node_start(nxd_streamer_node* snode) {
+
+  nxweb_log_debug("nxd_streamer_node_start");
+
   assert(!snode->complete);
   snode->strm->current=snode;
   nxe_ostream_set_ready(snode->data_in.super.loop, &snode->data_in);

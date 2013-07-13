@@ -35,6 +35,7 @@
 #include <malloc.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <sys/resource.h>
 
 struct nxweb_server_config nxweb_server_config={
   .shutdown_timeout=5
@@ -425,6 +426,9 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
   nxweb_http_response* resp=&conn->hsp._resp;
   if (data.i==NXD_HSP_REQUEST_RECEIVED) {
     assert(nxweb_server_config.request_dispatcher);
+
+    nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_REQUEST_RECEIVED");
+
     req->received_time=nxweb_get_loop_time(conn);
     nxweb_access_log_on_request_received(conn, req);
     nxweb_server_config.request_dispatcher(conn, req, resp);
@@ -480,6 +484,9 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
   }
   else if (data.i==NXD_HSP_REQUEST_BODY_RECEIVED) {
     assert(conn->handler);
+
+    nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_REQUEST_BODY_RECEIVED");
+
     nxweb_handler* h=conn->handler;
     nxweb_handler_flags flags=h->flags;
     if (h->on_post_data_complete) h->on_post_data_complete(conn, req, resp);
@@ -491,17 +498,26 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     invoke_request_handler(conn, req, resp, h, flags);
   }
   else if (data.i==NXD_HSP_REQUEST_COMPLETE) {
+
+    nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_REQUEST_COMPLETE");
+
     conn->hsp.cls->request_cleanup(sub->super.loop, &conn->hsp);
     conn->handler=0;
     conn->handler_param=(nxe_data)0;
   }
   else if (data.i==NXD_HSP_RESPONSE_READY) {
+
+    nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_RESPONSE_READY");
+
     // this must be subrequest
     nxweb_http_server_connection* parent_conn=conn->parent;
     conn->response_ready=1;
     if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
   }
   else if (data.i<0) {
+
+    nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message data.i=%d", data.i);
+
     if (conn->handler && conn->handler->on_error) conn->handler->on_error(conn, req, resp);
     conn->handler=0;
     conn->handler_param=(nxe_data)0;
@@ -879,12 +895,17 @@ void nxweb_run() {
   pthread_mutex_init(&nxweb_server_config.access_log_start_mux, 0);
   nxweb_access_log_restart();
 
+  struct rlimit rl_fildes;
+  struct rlimit rl_core;
+  getrlimit(RLIMIT_NOFILE, &rl_fildes);
+  getrlimit(RLIMIT_CORE, &rl_core);
+
   nxweb_log_error("NXWEB startup: pid=%d net_threads=%d pg=%d"
-                  " short=%d int=%d long=%d size_t=%d evt=%d conn=%d req=%d td=%d",
+                  " short=%d int=%d long=%d size_t=%d evt=%d conn=%d req=%d td=%d max_fd=%d max_core=%d",
                   (int)pid, _nxweb_num_net_threads, (int)sysconf(_SC_PAGE_SIZE),
                   (int)sizeof(short), (int)sizeof(int), (int)sizeof(long), (int)sizeof(size_t),
                   (int)sizeof(nxe_event), (int)sizeof(nxweb_http_server_connection), (int)sizeof(nxweb_http_request),
-                  (int)sizeof(nxweb_net_thread_data));
+                  (int)sizeof(nxweb_net_thread_data), (int)rl_fildes.rlim_cur, (int)rl_core.rlim_cur);
 
   nxweb_handler* h=nxweb_server_config.handler_list;
   while (h) {

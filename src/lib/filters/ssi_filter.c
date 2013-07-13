@@ -139,6 +139,9 @@ static int parse_text(ssi_buffer* ssib) {
 static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   ssi_buffer* ssib=OBJ_PTR_FROM_FLD_PTR(ssi_buffer, data_in, os);
   //nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("ssi_buffer_data_in_write");
+
   nxe_flags_t flags=*_flags;
   if (ssib->overflow) { // reached max_ssi_size
     // swallow input data

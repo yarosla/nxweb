@@ -26,6 +26,9 @@
 
 
 static inline void start_receiving_response(nxd_http_client_proto* hcp, nxe_loop* loop) {
+
+  nxweb_log_debug("http_client start_receiving_response");
+
   nxe_istream_unset_ready(&hcp->data_out);
   nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
   nxe_set_timer(loop, NXWEB_TIMER_READ, &hcp->timer_read);
@@ -43,6 +46,9 @@ static inline void wait_for_100_continue(nxd_http_client_proto* hcp, nxe_loop* l
 }
 
 static inline void request_complete(nxd_http_client_proto* hcp, nxe_loop* loop) {
+
+  nxweb_log_debug("http_client request_complete");
+
   nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_REQUEST_COMPLETE);
   if (hcp->queued_error_message.i) nxe_publish(&hcp->events_pub, hcp->queued_error_message);
   nxe_ostream_unset_ready(&hcp->data_in);
@@ -57,6 +63,9 @@ static inline void request_complete(nxd_http_client_proto* hcp, nxe_loop* loop) 
 static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)os-offsetof(nxd_http_client_proto, data_in));
   nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("http_client data_in_do_read");
+
   if (hcp->state==HCP_WAITING_FOR_RESPONSE) {
     nxe_unset_timer(loop, NXWEB_TIMER_READ, &hcp->timer_read);
     nxe_unset_timer(loop, NXWEB_TIMER_100CONTINUE, &hcp->timer_100_continue);
@@ -168,6 +177,8 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)is-offsetof(nxd_http_client_proto, data_out));
   nxe_loop* loop=is->super.loop;
 
+  nxweb_log_debug("http_client data_out_do_write");
+
   nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
   nxe_set_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
 
@@ -233,6 +244,8 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
 static nxe_size_t resp_body_out_read(nxe_istream* is, nxe_ostream* os, void* ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)is-offsetof(nxd_http_client_proto, resp_body_out));
   nxe_loop* loop=is->super.loop;
+
+  nxweb_log_debug("http_client resp_body_out_read");
 
   if (hcp->request_complete) {
     nxweb_log_error("hcp->request_complete - resp_body_out_read() should not be called");
@@ -320,6 +333,9 @@ static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, n
   //nxweb_log_error("req_body_in_write(%d)", size);
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)os-offsetof(nxd_http_client_proto, req_body_in));
   nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("http_client req_body_in_write");
+
   if (hcp->state!=HCP_SENDING_BODY) {
     nxe_ostream_unset_ready(os);
     nxe_istream_set_ready(loop, &hcp->data_out); // get notified when next_os ready
@@ -355,6 +371,9 @@ static nxe_ssize_t req_body_in_write(nxe_ostream* os, nxe_istream* is, int fd, n
 }
 
 static void data_error_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
+
+  nxweb_log_debug("http_client data_error_on_message");
+
   nxd_http_client_proto* hcp=(nxd_http_client_proto*)((char*)sub-offsetof(nxd_http_client_proto, data_error));
   nxe_loop* loop=sub->super.loop;
   if ((data.i==NXE_HUP || data.i==NXE_RDHUP || data.i==NXE_RDCLOSED)
@@ -451,6 +470,9 @@ void nxd_http_client_proto_finalize(nxd_http_client_proto* hcp) {
 }
 
 void nxd_http_client_proto_start_request(nxd_http_client_proto* hcp, nxweb_http_request* req) {
+
+  nxweb_log_debug("nxd_http_client_proto_start_request");
+
   //nxweb_http_request* resp=&hcp->resp;
   hcp->nxb=nxp_alloc(hcp->nxb_pool);
   nxb_init(hcp->nxb, NXWEB_CONN_NXB_SIZE);
@@ -477,6 +499,9 @@ void nxd_http_client_proto_start_request(nxd_http_client_proto* hcp, nxweb_http_
 }
 
 void nxd_http_client_proto_rearm(nxd_http_client_proto* hcp) {
+
+  nxweb_log_debug("nxd_http_client_proto_rearm");
+
   assert(hcp->nxb);
   nxb_empty(hcp->nxb);
   nxp_free(hcp->nxb_pool, hcp->nxb);

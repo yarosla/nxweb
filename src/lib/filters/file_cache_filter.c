@@ -303,6 +303,8 @@ static void fc_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   fc_filter_data* fcdata=OBJ_PTR_FROM_FLD_PTR(fc_filter_data, data_out, is);
   nxe_loop* loop=is->super.loop;
 
+  nxweb_log_debug("fc_data_out_do_write");
+
   nxe_istream* prev_is=fcdata->data_in.pair;
   if (prev_is) {
     if (prev_is->ready) {
@@ -323,6 +325,9 @@ static void fc_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
 static nxe_ssize_t fc_data_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   fc_filter_data* fcdata=OBJ_PTR_FROM_FLD_PTR(fc_filter_data, data_in, os);
   nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("fc_data_in_write_or_sendfile");
+
   nxe_ssize_t bytes_sent=0;
   if (size>0 || *flags&NXEF_EOF) {
     nxe_ostream* next_os=fcdata->data_out.pair;
@@ -465,6 +470,9 @@ static nxweb_result fc_initiate_revalidation(fc_filter_data* fcdata, nxweb_http_
 
 nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, const char* cache_key, fc_filter_data* fcdata, time_t check_time) {
   if (!cache_key) return NXWEB_NEXT;
+
+  nxweb_log_debug("_nxweb_fc_serve_from_cache");
+
   fc_build_cache_fpath(req->nxb, fcdata, cache_key);
   if (stat(fcdata->cache_fpath, &fcdata->cache_finfo)==-1) {
     if (req->if_modified_since) {
@@ -586,6 +594,9 @@ nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_ht
 }
 
 static nxweb_result fc_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+
+  nxweb_log_debug("fc_do_filter");
+
   nxweb_result r=_nxweb_fc_revalidate(conn, req, resp, fdata->fcache);
   if (r!=NXWEB_NEXT) return r;
   return _nxweb_fc_store(conn, req, resp, fdata->fcache);

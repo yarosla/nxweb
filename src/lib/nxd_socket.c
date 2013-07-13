@@ -27,6 +27,9 @@
 static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxe_fd_source* fs=(nxe_fd_source*)((char*)is-offsetof(nxe_fd_source, data_is));
   //nxd_server_socket* ss=(nxd_server_socket*)((char*)is-offsetof(nxe_fd_source, data_is)-offsetof(nxd_server_socket, fs));
+
+  nxweb_log_debug("sock_data_recv_read");
+
   if (size>0) {
     nxe_ssize_t bytes_received=read(fs->fd, ptr, size);
     if (bytes_received<0) {
@@ -48,6 +51,9 @@ static nxe_size_t sock_data_recv_read(nxe_istream* is, nxe_ostream* os, void* pt
 
 static nxe_ssize_t sock_data_send_write(nxe_ostream* os, nxe_istream* is, int sfd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxe_fd_source* fs=(nxe_fd_source*)((char*)os-offsetof(nxe_fd_source, data_os));
+
+  nxweb_log_debug("sock_data_send_write");
+
   if (size>0) {
     nxe_loop* loop=os->super.loop;
     int fd=fs->fd;

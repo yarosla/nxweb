@@ -87,6 +87,9 @@ static void tf_check_complete(tf_filter_data* tfdata) {
 static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* _flags) {
   tf_buffer* tfb=OBJ_PTR_FROM_FLD_PTR(tf_buffer, data_in, os);
   //nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("tf_buffer_data_in_write");
+
   nxe_flags_t flags=*_flags;
   if (tfb->overflow) { // reached max_tf_size
     // swallow input data
@@ -156,6 +159,9 @@ static void tf_buffer_make_room(tf_buffer* tfb, int data_size) {
 }
 
 static void tf_on_subrequest_ready(nxe_data data) {
+
+  nxweb_log_debug("tf_on_subrequest_ready");
+
   nxweb_http_server_connection* subconn=(nxweb_http_server_connection*)data.ptr;
   nxweb_http_request* subreq=&subconn->hsp.req;
   nxweb_http_server_connection* conn=subconn->parent;
@@ -237,6 +243,9 @@ static nxweb_result tf_translate_cache_key(nxweb_filter* filter, nxweb_http_serv
 }
 
 static nxweb_result tf_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
+
+  nxweb_log_debug("tf_do_filter");
+
   tf_filter_data* tfdata=(tf_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
 

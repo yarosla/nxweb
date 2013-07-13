@@ -26,6 +26,9 @@
 void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp);
 
 static void request_cleanup(nxe_loop* loop, nxd_http_server_proto* hsp) {
+
+  nxweb_log_debug("subrequest_cleanup");
+
   // subrequest connections do not reuse requests
   // so no cleanup is strictly required
   // it will get finalized anyway
@@ -65,6 +68,8 @@ static void subrequest_start_sending_response(nxd_http_server_proto* hsp, nxweb_
     return;
   }
 
+  nxweb_log_debug("subrequest_start_sending_response");
+
   nxweb_http_request* req=&hsp->req;
   hsp->resp=resp;
   nxe_loop* loop=hsp->events_pub.super.loop;
@@ -84,6 +89,9 @@ static void subrequest_start_sending_response(nxd_http_server_proto* hsp, nxweb_
 }
 
 static void subrequest_connect_request_body_out(nxd_http_server_proto* hsp, nxe_ostream* is) {
+
+  nxweb_log_debug("subrequest_connect_request_body_out");
+
   nxe_connect_streams(hsp->events_pub.super.loop, &hsp->ob.data_out, is);
 }
 
@@ -113,6 +121,9 @@ void nxd_http_server_proto_subrequest_init(nxd_http_server_proto* hsp, nxp_pool*
 }
 
 void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri, nxweb_http_request* parent_req) {
+
+  nxweb_log_debug("nxweb_http_server_proto_subrequest_execute %s %s", host, uri);
+
   hsp->nxb=nxp_alloc(hsp->nxb_pool);
   nxb_init(hsp->nxb, NXWEB_CONN_NXB_SIZE);
   hsp->state=HSP_RECEIVING_HEADERS;

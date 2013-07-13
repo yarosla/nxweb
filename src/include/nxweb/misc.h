@@ -28,6 +28,8 @@ extern "C" {
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include "config.h"
+
 void nxweb_open_log_file(const char* log_file);
 void nxweb_continue_as_daemon(const char* work_dir, const char* log_file);
 void nxweb_create_pid_file(const char* pid_file, pid_t pid);
@@ -55,10 +57,29 @@ void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2))
 void nxweb_log_warning(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 void nxweb_log_info(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 
+#if ENABLE_LOG_DEBUG
+
+void nxweb_log_debug(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
+
+#define nxweb_activate_log_debug(cond, msg) ({ \
+    if (nxweb_error_log_level!=NXWEB_LOG_DEBUG && (cond)) { \
+      nxweb_error_log_level=NXWEB_LOG_DEBUG; \
+      nxweb_log_error("log_debug activated: " msg); \
+    } \
+})
+
+#else
+
+#define nxweb_log_debug(...)
+#define nxweb_activate_log_debug(cond, msg)
+
+#endif
+
 #define NXWEB_LOG_NONE 0
 #define NXWEB_LOG_ERROR 1
 #define NXWEB_LOG_WARNING 2
 #define NXWEB_LOG_INFO 3
+#define NXWEB_LOG_DEBUG 4
 
 extern int nxweb_error_log_level;
 

@@ -203,6 +203,8 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
   }
 
 
+  nxweb_log_debug("invoke python");
+
   PyGILState_STATE gstate=PyGILState_Ensure();
 
   PyObject* py_func_args=PyTuple_New(1);
@@ -334,6 +336,8 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
 
   // Release the thread. No Python API allowed beyond this point.
   PyGILState_Release(gstate);
+
+  nxweb_log_debug("invoke python complete");
 
   return NXWEB_OK;
 }

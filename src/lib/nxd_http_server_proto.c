@@ -30,6 +30,8 @@ static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* 
 void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
   // this could be called more than once, be ready for it
 
+  nxweb_log_debug("_nxweb_call_request_finalizers");
+
   nxweb_http_request_data* rdata=hsp->req.data_chain;
   nxweb_http_server_connection* conn=(nxweb_http_server_connection*)((char*)hsp-offsetof(nxweb_http_server_connection, hsp));
   nxweb_http_request* req=&hsp->req;
@@ -77,6 +79,9 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
 }
 
 static void request_cleanup(nxe_loop* loop, nxd_http_server_proto* hsp) {
+
+  nxweb_log_debug("request_cleanup");
+
   // get ready for new request:
   //  - release per-request resources
   //  - initialize variables
@@ -106,6 +111,9 @@ static void request_cleanup(nxe_loop* loop, nxd_http_server_proto* hsp) {
 }
 
 static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
+
+  nxweb_log_debug("request_complete");
+
   nxe_istream_unset_ready(&hsp->data_out);
   nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hsp->timer_write);
   if (hsp->resp_body_in.pair) nxe_disconnect_streams(hsp->resp_body_in.pair, &hsp->resp_body_in);
@@ -116,6 +124,9 @@ static void request_complete(nxe_loop* loop, nxd_http_server_proto* hsp) {
 static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)os-offsetof(nxd_http_server_proto, data_in));
   nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("data_in_do_read");
+
   if (hsp->state==HSP_WAITING_FOR_REQUEST) {
     hsp->nxb=nxp_alloc(hsp->nxb_pool);
     nxb_init(hsp->nxb, NXWEB_CONN_NXB_SIZE);
@@ -210,6 +221,8 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)is-offsetof(nxd_http_server_proto, data_out));
   nxe_loop* loop=is->super.loop;
 
+  nxweb_log_debug("data_out_do_write");
+
   if (hsp->req.sending_100_continue) {
     if (hsp->resp_headers_ptr && *hsp->resp_headers_ptr) {
       int size=strlen(hsp->resp_headers_ptr);
@@ -282,6 +295,8 @@ static inline int is_request_body_complete(nxd_http_server_proto* hsp) {
 static nxe_size_t req_body_out_read(nxe_istream* is, nxe_ostream* os, void* ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)is-offsetof(nxd_http_server_proto, req_body_out));
   nxe_loop* loop=is->super.loop;
+
+  nxweb_log_debug("req_body_out_read");
 
   if (hsp->state==HSP_HANDLING) {
     nxweb_log_error("hsp->state==HSP_HANDLING - req_body_out_read() should not be called");
@@ -368,6 +383,9 @@ static nxe_size_t req_body_out_read(nxe_istream* is, nxe_ostream* os, void* ptr,
 static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* is, int fd, nx_file_reader* fr, nxe_data ptr, nxe_size_t size, nxe_flags_t* flags) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)os-offsetof(nxd_http_server_proto, resp_body_in));
   nxe_loop* loop=os->super.loop;
+
+  nxweb_log_debug("resp_body_in_write_or_sendfile");
+
   if (hsp->state!=HSP_SENDING_BODY) {
     nxe_ostream_unset_ready(os);
     nxe_istream_set_ready(loop, &hsp->data_out); // get notified when next_os is ready
@@ -434,6 +452,9 @@ static nxe_ssize_t resp_body_in_write_or_sendfile(nxe_ostream* os, nxe_istream* 
 
 static void data_error_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
   nxd_http_server_proto* hsp=(nxd_http_server_proto*)((char*)sub-offsetof(nxd_http_server_proto, data_error));
+
+  nxweb_log_debug("data_error_on_message");
+
   //nxe_loop* loop=sub->super.loop;
 /*
   if (data.i==NXE_PROTO_ERROR && hsp->state==HSP_RECEIVING_HEADERS && hsp->headers_bytes_received==0) {
@@ -502,6 +523,8 @@ void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp) {
 void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
   if (resp->content_out) return; // already setup
 
+  nxweb_log_debug("nxd_http_server_proto_setup_content_out");
+
   if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd) {
     int size;
     nxb_get_unfinished(resp->nxb, &size);
@@ -549,6 +572,8 @@ void nxweb_reset_content_out(nxd_http_server_proto* hsp, nxweb_http_response* re
 }
 
 static void nxd_http_server_proto_start_sending_response(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
+  nxweb_log_debug("nxd_http_server_proto_start_sending_response");
+
   if (hsp->state!=HSP_RECEIVING_HEADERS && hsp->state!=HSP_RECEIVING_BODY && hsp->state!=HSP_HANDLING) {
     nxweb_log_error("illegal state for start_sending_response()");
     return;
