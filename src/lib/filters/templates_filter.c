@@ -100,6 +100,7 @@ static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int
     assert(wsize>=0);
     if (wsize>0) {
       nx_file_reader_to_mem_ptr(fd, fr, &ptr, &size, &flags);
+      if (((int)size)<wsize) wsize=size;
       nxb_make_room(tfb->nxb, wsize);
       char* dptr=nxb_get_room(tfb->nxb, 0);
       memcpy(dptr, ptr.cptr, wsize);

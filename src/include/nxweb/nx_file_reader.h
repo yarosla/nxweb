@@ -57,8 +57,10 @@ static inline void nx_file_reader_to_mem_ptr(int fd, nx_file_reader* fr, nxe_dat
   if (!fd) return;
   nxfr_size_t fr_size;
   const void* p=nx_file_reader_get_mbuf_ptr(fr, fd, ptr->offs+*size, ptr->offs, &fr_size);
-  if (fr_size!=*size) *flags&=~NXEF_EOF; // not EOF yet
-  *size=fr_size;
+  if (fr_size!=*size) {
+    *flags&=~NXEF_EOF; // not EOF yet
+    *size=fr_size;
+  }
   ptr->cptr=p;
 }
 

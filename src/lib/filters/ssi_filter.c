@@ -152,6 +152,7 @@ static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, in
     assert(wsize>=0);
     if (wsize>0) {
       nx_file_reader_to_mem_ptr(fd, fr, &ptr, &size, &flags);
+      if (((int)size)<wsize) wsize=size;
       nxb_make_room(ssib->nxb, wsize);
       char* dptr=nxb_get_room(ssib->nxb, 0);
       memcpy(dptr, ptr.cptr, wsize);
