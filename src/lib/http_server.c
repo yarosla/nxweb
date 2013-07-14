@@ -55,7 +55,8 @@ static nxe_time_t _nxe_timeouts[NXE_NUMBER_OF_TIMER_QUEUES] = {
   [NXWEB_TIMER_READ]=NXWEB_DEFAULT_READ_TIMEOUT,
   [NXWEB_TIMER_WRITE]=NXWEB_DEFAULT_WRITE_TIMEOUT,
   [NXWEB_TIMER_BACKEND]=NXWEB_DEFAULT_BACKEND_TIMEOUT,
-  [NXWEB_TIMER_100CONTINUE]=NXWEB_DEFAULT_100CONTINUE_TIMEOUT
+  [NXWEB_TIMER_100CONTINUE]=NXWEB_DEFAULT_100CONTINUE_TIMEOUT,
+  [NXWEB_TIMER_ACCEPT_RETRY]=NXWEB_DEFAULT_ACCEPT_RETRY_TIMEOUT
 };
 
 static nxweb_result default_on_headers(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
@@ -695,36 +696,58 @@ static void on_net_thread_gc(nxe_subscriber* sub, nxe_publisher* pub, nxe_data d
   nxweb_access_log_thread_flush();
 }
 
-static void accept_connection(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
-  nxweb_http_server_listening_socket* lsock=(nxweb_http_server_listening_socket*)((char*)sub-offsetof(nxweb_http_server_listening_socket, listen_sub));
-  int lconf_idx=lsock->idx;
-  nxweb_net_thread_data* tdata=(nxweb_net_thread_data*)((char*)(lsock-lconf_idx)-offsetof(nxweb_net_thread_data, listening_sock));
-  nxe_loop* loop=sub->super.loop;
+static void accept_connection(nxe_loop* loop, nxweb_http_server_listening_socket* lsock) {
   //static int next_net_thread_idx=0;
   //nxweb_accept accept_msg;
   int client_fd;
   struct sockaddr_in client_addr;
   socklen_t client_len=sizeof(client_addr);
-  while (!shutdown_in_progress && (client_fd=accept4(lsock->listen_source.fd, (struct sockaddr *)&client_addr, &client_len, SOCK_NONBLOCK))!=-1) {
-    if (/*_nxweb_set_non_block(client_fd) ||*/ _nxweb_setup_client_socket(client_fd)) {
-      _nxweb_close_bad_socket(client_fd);
-      nxweb_log_error("failed to setup client socket");
-      continue;
+  nxe_unset_timer(loop, NXWEB_TIMER_ACCEPT_RETRY, &lsock->accept_retry_timer);
+  while (!shutdown_in_progress) {
+    client_fd=accept4(lsock->listen_source.fd, (struct sockaddr *)&client_addr, &client_len, SOCK_NONBLOCK);
+    if (client_fd!=-1) {
+      if (/*_nxweb_set_non_block(client_fd) ||*/ _nxweb_setup_client_socket(client_fd)) {
+        _nxweb_close_bad_socket(client_fd);
+        nxweb_log_error("failed to setup client socket");
+        continue;
+      }
+      int lconf_idx=lsock->idx;
+      nxweb_net_thread_data* tdata=(nxweb_net_thread_data*)((char*)(lsock-lconf_idx)-offsetof(nxweb_net_thread_data, listening_sock));
+      nxweb_http_server_connection* conn=nxp_alloc(tdata->free_conn_pool);
+      nxweb_http_server_connection_init(conn, tdata, lconf_idx);
+      inet_ntop(AF_INET, &client_addr.sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
+      nxweb_http_server_connection_connect(conn, loop, client_fd);
     }
-    nxweb_http_server_connection* conn=nxp_alloc(tdata->free_conn_pool);
-    nxweb_http_server_connection_init(conn, tdata, lconf_idx);
-    inet_ntop(AF_INET, &client_addr.sin_addr, conn->remote_addr, sizeof(conn->remote_addr));
-    nxweb_http_server_connection_connect(conn, loop, client_fd);
-  }
-  // log error
-  if (!shutdown_in_progress && errno!=EAGAIN) {
-    nxweb_log_error("accept() failed %d", errno);
+    else {
+      if (errno!=EAGAIN) {
+        nxweb_log_error("accept() failed %d", errno);
+        // retry accept after timeout
+        nxe_set_timer(loop, NXWEB_TIMER_ACCEPT_RETRY, &lsock->accept_retry_timer);
+      }
+      break;
+    }
   }
 }
 
-static const nxe_subscriber_class listen_sub_class={.on_message=accept_connection};
+static void on_listen_event(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
+  if (data.i) {
+    nxweb_log_error("listening socket error %d", data.i);
+    return;
+  }
+  nxweb_http_server_listening_socket* lsock=OBJ_PTR_FROM_FLD_PTR(nxweb_http_server_listening_socket, listen_sub, sub);
+  accept_connection(sub->super.loop, lsock);
+}
+
+static void accept_retry_on_timeout(nxe_timer* timer, nxe_data data) {
+  nxweb_http_server_listening_socket* lsock=OBJ_PTR_FROM_FLD_PTR(nxweb_http_server_listening_socket, accept_retry_timer, timer);
+  nxweb_log_info("retrying accept after an error");
+  accept_connection(timer->super.loop, lsock);
+}
+
+static const nxe_subscriber_class listen_sub_class={.on_message=on_listen_event};
 static const nxe_subscriber_class shutdown_sub_class={.on_message=on_net_thread_shutdown};
 static const nxe_subscriber_class gc_sub_class={.on_message=on_net_thread_gc};
+static const nxe_timer_class accept_retry_timer_class={.on_timeout=accept_retry_on_timeout};
 
 static void* net_thread_main(void* ptr) {
   nxweb_net_thread_data* tdata=ptr;
@@ -738,6 +761,7 @@ static void* net_thread_main(void* ptr) {
   nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_WRITE, _nxe_timeouts[NXWEB_TIMER_WRITE]);
   nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_BACKEND, _nxe_timeouts[NXWEB_TIMER_BACKEND]);
   nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_100CONTINUE, _nxe_timeouts[NXWEB_TIMER_100CONTINUE]);
+  nxe_set_timer_queue_timeout(loop, NXWEB_TIMER_ACCEPT_RETRY, _nxe_timeouts[NXWEB_TIMER_ACCEPT_RETRY]);
 
   nxweb_server_listen_config* lconf;
   nxweb_http_server_listening_socket* lsock;
@@ -749,6 +773,7 @@ static void* net_thread_main(void* ptr) {
       nxe_register_listenfd_source(loop, &lsock->listen_source);
       nxe_init_subscriber(&lsock->listen_sub, &listen_sub_class);
       nxe_subscribe(loop, &lsock->listen_source.data_notify, &lsock->listen_sub);
+      nxe_init_timer(&lsock->accept_retry_timer, &accept_retry_timer_class);
     }
   }
 

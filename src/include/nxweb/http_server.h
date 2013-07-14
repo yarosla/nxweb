@@ -141,6 +141,7 @@ typedef struct nxweb_http_server_listening_socket {
   int idx;
   nxe_listenfd_source listen_source;
   nxe_subscriber listen_sub;
+  nxe_timer accept_retry_timer;
 } nxweb_http_server_listening_socket;
 
 #define NXWEB_ACCESS_LOG_BLOCK_SIZE 32768

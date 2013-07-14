@@ -52,7 +52,8 @@ enum nxweb_timers {
   NXWEB_TIMER_READ,
   NXWEB_TIMER_WRITE,
   NXWEB_TIMER_BACKEND,
-  NXWEB_TIMER_100CONTINUE
+  NXWEB_TIMER_100CONTINUE,
+  NXWEB_TIMER_ACCEPT_RETRY
 };
 
 typedef struct nx_simple_map_entry {
