@@ -155,7 +155,7 @@ static nxe_timer_queue* nxe_closest_tq(nxe_loop* loop) {
 
 static void nxe_process_loop(nxe_loop* loop) {
   nxe_event* evt;
-  int count=1000;
+  int count=100000;
   while ((evt=loop->first)) {
     loop->first=evt->next;
     nxe_unlink(evt);

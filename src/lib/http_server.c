@@ -503,8 +503,7 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_REQUEST_COMPLETE");
 
     conn->hsp.cls->request_cleanup(sub->super.loop, &conn->hsp);
-    conn->handler=0;
-    conn->handler_param=(nxe_data)0;
+    assert(!conn->handler);
   }
   else if (data.i==NXD_HSP_RESPONSE_READY) {
 
@@ -520,8 +519,6 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message data.i=%d", data.i);
 
     if (conn->handler && conn->handler->on_error) conn->handler->on_error(conn, req, resp);
-    conn->handler=0;
-    conn->handler_param=(nxe_data)0;
     if (conn->hsp.headers_bytes_received) {
       nxweb_log_warning("conn %p error: i=%d errno=%d state=%d rc=%d br=%d", conn, data.i, errno, conn->hsp.state, conn->hsp.request_count, conn->hsp.headers_bytes_received);
     }
