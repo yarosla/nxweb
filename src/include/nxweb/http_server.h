@@ -185,6 +185,8 @@ typedef struct nxweb_http_server_connection {
   _Bool secure:1;
   _Bool response_ready:1;
   _Bool subrequest_failed:1;
+  _Bool in_worker:1;
+  _Bool connection_closing:1;
   uint64_t uid; // unique connection id
   struct nxweb_http_server_connection* parent;
   struct nxweb_http_server_connection* subrequests;

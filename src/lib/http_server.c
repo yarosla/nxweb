@@ -377,26 +377,22 @@ static void invoke_request_handler_in_worker(void* ptr) {
 static void nxweb_http_server_connection_worker_complete_on_message(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
   nxweb_http_server_connection* conn=OBJ_PTR_FROM_FLD_PTR(nxweb_http_server_connection, worker_complete, sub);
   nxe_unsubscribe(conn->worker_complete.pub, &conn->worker_complete);
+  __sync_synchronize(); // full memory barrier
+  conn->in_worker=0;
   long cnt=0;
   while (!conn->worker_job_done) cnt++;
-  __sync_synchronize(); // full memory barrier
-  nxweb_start_sending_response(conn, &conn->hsp._resp);
   if (cnt) nxweb_log_warning("job not done in %ld steps", cnt);
+  if (conn->connection_closing) {
+    nxweb_http_server_connection_finalize(conn, 0);
+  }
+  else {
+    nxweb_start_sending_response(conn, &conn->hsp._resp);
+  }
 }
-
-/*
-static void wait_worker_complete(nxweb_http_server_connection* conn) {
-  long cnt=0;
-  while (!conn->worker_job_done) cnt++;
-  __sync_synchronize(); // full memory barrier
-  assert(conn->hsp._resp.content && conn->hsp._resp.content_length);
-  nxweb_start_sending_response(conn, &conn->hsp._resp);
-  if (cnt) nxweb_log_error("job not done in %ld steps", cnt);
-}
-*/
 
 static inline nxweb_result invoke_request_handler(nxweb_http_server_connection* conn, nxweb_http_request* req,
         nxweb_http_response* resp, nxweb_handler* h, nxweb_handler_flags flags) {
+  if (conn->connection_closing) return; // do not process if already closing
   if (flags&NXWEB_PARSE_PARAMETERS) nxweb_parse_request_parameters(req, 1); // !!(flags&NXWEB_PRESERVE_URI)
   if (flags&NXWEB_PARSE_COOKIES) nxweb_parse_request_cookies(req);
   nxweb_result res=NXWEB_OK;
@@ -410,7 +406,7 @@ static inline nxweb_result invoke_request_handler(nxweb_http_server_connection* 
       }
       nxe_subscribe(conn->tdata->loop, &w->complete_efs.data_notify, &conn->worker_complete);
       nxw_start_worker(w, invoke_request_handler_in_worker, conn, &conn->worker_job_done);
-      //wait_worker_complete(conn);
+      conn->in_worker=1;
     }
     else {
       res=h->on_request(conn, req, resp);
@@ -510,7 +506,6 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_RESPONSE_READY");
 
     // this must be subrequest
-    nxweb_http_server_connection* parent_conn=conn->parent;
     conn->response_ready=1;
     if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
   }
@@ -522,13 +517,8 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     if (conn->hsp.headers_bytes_received) {
       nxweb_log_warning("conn %p error: i=%d errno=%d state=%d rc=%d br=%d", conn, data.i, errno, conn->hsp.state, conn->hsp.request_count, conn->hsp.headers_bytes_received);
     }
-    if (!conn->hsp.headers_bytes_received && (data.i==NXE_RDHUP || data.i==NXE_HUP || data.i==NXE_RDCLOSED)) {
-      // normal close
-      nxweb_http_server_connection_finalize(conn, 1);
-    }
-    else {
-      nxweb_http_server_connection_finalize(conn, 0);
-    }
+    int good=(!conn->hsp.headers_bytes_received && (data.i==NXE_RDHUP || data.i==NXE_HUP || data.i==NXE_RDCLOSED)); // normal close
+    nxweb_http_server_connection_finalize(conn, good); // bad connections get RST'd
   }
 }
 
@@ -597,14 +587,35 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
   //__sync_add_and_fetch(&num_connections, 1);
 }
 
+static void nxweb_http_server_connection_do_finalize(nxweb_http_server_connection* conn, int good) {
+  //nxe_loop* loop=conn->sock.fs.data_is.super.loop;
+  nxweb_http_server_connection_finalize_subrequests(conn, good);
+  if (conn->worker_complete.pub) nxe_unsubscribe(conn->worker_complete.pub, &conn->worker_complete);
+  conn->hsp.cls->finalize(&conn->hsp);
+  if (conn->sock.cls) conn->sock.cls->finalize((nxd_socket*)&conn->sock, good);
+  nxp_free(conn->tdata->free_conn_pool, conn);
+  //if (!__sync_sub_and_fetch(&num_connections, 1)) nxweb_log_info("all connections closed");
+}
+
 void nxweb_http_server_connection_finalize_subrequests(nxweb_http_server_connection* conn, int good) {
   nxweb_http_server_connection* sub=conn->subrequests;
   while (sub) {
-    sub->parent=0;
-    nxweb_http_server_connection_finalize(sub, good);
+    nxweb_http_server_connection_do_finalize(sub, good);
     sub=sub->next;
   }
   conn->subrequests=0;
+}
+
+static _Bool nxweb_http_server_connection_check_if_can_close(nxweb_http_server_connection* conn) {
+  conn->connection_closing=1; // mark for closing
+  _Bool can_close=!conn->in_worker; // can't close while worker is running
+  if (!can_close) nxweb_log_info("trying to close connection while in worker");
+  nxweb_http_server_connection* sub=conn->subrequests;
+  while (sub) {
+    if (!nxweb_http_server_connection_check_if_can_close(sub)) can_close=0;
+    sub=sub->next;
+  }
+  return can_close;
 }
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good) {
@@ -618,18 +629,15 @@ void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, i
       if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
     }
     // to be finalized with parent connection
-    return;
   }
-  //nxe_loop* loop=conn->sock.fs.data_is.super.loop;
-  nxweb_http_server_connection_finalize_subrequests(conn, good);
-  if (conn->worker_complete.pub) nxe_unsubscribe(conn->worker_complete.pub, &conn->worker_complete);
-  conn->hsp.cls->finalize(&conn->hsp);
-  if (conn->sock.cls) conn->sock.cls->finalize((nxd_socket*)&conn->sock, good);
-  nxp_free(conn->tdata->free_conn_pool, conn);
-  //if (!__sync_sub_and_fetch(&num_connections, 1)) nxweb_log_info("all connections closed");
+  else {
+    if (nxweb_http_server_connection_check_if_can_close(conn)) nxweb_http_server_connection_do_finalize(conn, good);
+    // otherwise it is marked for closing immediately after worker thread completes
+  }
 }
 
 nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri) {
+  if (parent_conn->connection_closing) return 0; // do not start subrequests if already closing
   nxweb_net_thread_data* tdata=_nxweb_net_thread_data;
   nxe_loop* loop=parent_conn->tdata->loop;
   nxweb_http_server_connection* conn=nxp_alloc(tdata->free_conn_pool);
