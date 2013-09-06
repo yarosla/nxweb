@@ -134,6 +134,25 @@ int nxweb_load_config(const char* filename) {
     }
   }
 
+  const nx_json* modules=nx_json_get(json, "modules");
+  if (modules->type!=NX_JSON_NULL) {
+    for (i=0; i<modules->length; i++) {
+      const nx_json* js=nx_json_item(modules, i);
+      const char* module_name=js->key;
+      nxweb_log_debug("json module %s config", module_name);
+      if (module_name) {
+        nxweb_module* mod=nxweb_server_config.module_list;
+        while (mod) {
+          if (mod->name && !strcmp(mod->name, module_name)) {
+            if (mod->on_config) mod->on_config(js);
+            break;
+          }
+          mod=mod->next;
+        }
+      }
+    }
+  }
+
   const nx_json* routing=nx_json_get(json, "routing");
   if (routing->type!=NX_JSON_NULL) {
     for (i=0; i<routing->length; i++) {

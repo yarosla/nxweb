@@ -1,18 +1,62 @@
-import sys
-import io
-import os
+# Copyright (c) 2011-2013 Yaroslav Stavnichiy <yarosla@gmail.com>
+#
+# This file is part of NXWEB.
+#
+# NXWEB is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+#
+# NXWEB is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
 
-import hello
-# WSGI_APP=hello.ping_app
-# WSGI_APP=hello.hello_world_app
-WSGI_APP=hello.file_upload_app
+import sys, io, os, traceback
 
-# Django sample setup:
-# import os
-# PROJECT_PATH=os.path.abspath(os.path.dirname(__file__))
-# sys.path.append(os.path.join(PROJECT_PATH, 'mysite'))
-# import mysite.wsgi
-# WSGI_APP=mysite.wsgi.application
+def _disable_stdout_buffering():
+  # credit: http://stackoverflow.com/a/3678114/697313
+  sys.stdout.flush()
+  fileno=sys.stdout.fileno()
+  temp_fd=os.dup(fileno)
+  sys.stdout.close()
+  os.dup2(temp_fd, fileno)
+  os.close(temp_fd)
+  sys.stdout=os.fdopen(fileno, 'w', 0)
+
+_disable_stdout_buffering()
+
+print 'python module parameters:', ', '.join(sys.argv)
+
+WSGI_APP=None
+
+if len(sys.argv)>=3:
+  if sys.argv[1]:
+    project_path=os.path.realpath(os.path.join(os.path.dirname(__file__), sys.argv[1]))
+    sys.path.append(project_path)
+    print 'python project path:', project_path
+  project_app=sys.argv[2]
+  if project_app:
+    p=project_app.rsplit('.', 1)
+    if len(p)==2:
+      module_name, app_name=p
+      mod=__import__(module_name, globals(), locals(), [app_name])
+      if mod and hasattr(mod, app_name):
+        WSGI_APP=getattr(mod, app_name)
+    else:
+      print 'python wsgi_application is expected in form <module>.<app>'
+
+if not WSGI_APP:
+  print 'python config error: no WSGI_APP defined; using stub'
+
+  def default_app(environ, start_response):
+    start_response('200 OK', [('Content-Type', 'text/html;charset=utf-8')])
+    return ['Python WSGI stub']
+
+  WSGI_APP=default_app
 
 def _nxweb_on_request(environ):
   try:
@@ -47,15 +91,3 @@ def _call_wsgi_application(app, environ):
     if hasattr(app_iter, 'close'):
       app_iter.close()
   return status_headers[0], status_headers[1], body_writer.getvalue()
-
-def _disable_stdout_buffering():
-  # credit: http://stackoverflow.com/a/3678114/697313
-  sys.stdout.flush()
-  fileno=sys.stdout.fileno()
-  temp_fd=os.dup(fileno)
-  sys.stdout.close()
-  os.dup2(temp_fd, fileno)
-  os.close(temp_fd)
-  sys.stdout=os.fdopen(fileno, "w", 0)
-
-_disable_stdout_buffering()

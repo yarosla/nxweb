@@ -20,6 +20,12 @@
     "access_log":"nxweb_access_log"
     // can't set error log here; it is opened before parsing this config file; use command line switch for that
   },
+  "modules":{
+    "python":{
+      "project_path":".", // python module search root; relative to workdir/python folder
+      "wsgi_application":"hello.hello_world_app" // full python name of WSGI entry point
+    }
+  },
   "routing":[
     { // see modules/benchmark.c
       "prefix":"/benchmark-inprocess", "handler":"benchmark_inprocess"

@@ -135,6 +135,7 @@ typedef struct nxweb_module {
   int (*on_thread_startup)();
   void (*on_thread_shutdown)();
   void (*on_server_shutdown)();
+  void (*on_config)(const struct nx_json* js);
 } nxweb_module;
 
 typedef struct nxweb_http_server_listening_socket {

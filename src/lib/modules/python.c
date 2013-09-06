@@ -38,9 +38,20 @@ static const char* PROG_NAME="python/nxwebpy.py";
 static const char* MODULE_NAME="nxwebpy";
 static const char* FUNC_NAME="_nxweb_on_request";
 
+static const char* PROJECT_ROOT="";
+static const char* PROJECT_APP="";
+
 static PyThreadState* py_main_thread_state;
 static PyObject* py_module;
 static PyObject* py_nxweb_on_request_func;
+
+static void on_config(const nx_json* js) {
+  const char* v=nx_json_get(js, "project_path")->text_value;
+  if (v) PROJECT_ROOT=v;
+  v=nx_json_get(js, "wsgi_application")->text_value;
+  if (v) PROJECT_APP=v;
+  nxweb_log_debug("python config: %s, %s", PROJECT_ROOT, PROJECT_APP);
+}
 
 static int on_startup() {
   struct stat fi;
@@ -53,8 +64,8 @@ static int on_startup() {
   // initialize thread support
   PyEval_InitThreads();
   Py_Initialize();
-  char *a[]={(char*)PROG_NAME};
-  PySys_SetArgv(1, a);
+  char *a[]={(char*)PROG_NAME, (char*)PROJECT_ROOT, (char*)PROJECT_APP};
+  PySys_SetArgv(3, a);
   PyObject* py_module_name=PyString_FromString(MODULE_NAME);
   assert(py_module_name);
   // save a pointer to the main PyThreadState object
@@ -84,7 +95,7 @@ static void on_shutdown() {
   nxweb_log_error("python finalized");
 }
 
-NXWEB_MODULE(python, .on_server_startup=on_startup, .on_server_shutdown=on_shutdown);
+NXWEB_MODULE(python, .on_server_startup=on_startup, .on_server_shutdown=on_shutdown, .on_config=on_config);
 
 #define NXWEB_MAX_PYTHON_UPLOAD_SIZE 50000000
 

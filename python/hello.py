@@ -19,15 +19,14 @@ def hello_world_app(environ, start_response):
     subject=escape(parameters['subject'][0])
   else:
     subject='World'
-  start_response('200 OK', [('Content-Type', 'text/plain;charset=utf-8')])
-  result='Hello, %(subject)s!\n' % {'subject': subject}
+  start_response('200 OK', [('Content-Type', 'text/html;charset=utf-8')])
+  result=u'<p>Hello, %(subject)s!</p>\n' % {'subject': subject}
   for key, value in iter(sorted(environ.iteritems())):
-    result+=key+'='+str(value)+'\n'
+    result+='<p>'+html_escape(key)+'='+html_escape(value)+'</p>\n'
   content_length=environ.get('CONTENT_LENGTH', 0)
   if content_length and content_length<100:
     result+='bytes read='+environ['wsgi.input'].read()
-  # environ['wsgi.errors'].write(result+'\n')
-  return [result]
+  return [result.encode('utf-8')]
 
 def file_upload_app(environ, start_response):
   result=''
@@ -58,3 +57,7 @@ def file_upload_app(environ, start_response):
         <input type="submit" value="Start upload!" />
       </form>'''
   return [result]
+
+def html_escape(s):
+  if not s: return ''
+  return unicode(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace('\'', '&#39;')
