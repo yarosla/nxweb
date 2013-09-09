@@ -72,7 +72,8 @@ static int on_startup() {
   py_main_thread_state=PyThreadState_Get();
   py_module=PyImport_Import(py_module_name);
   if (!py_module || !PyModule_Check(py_module)) {
-    fprintf(stderr, "can't load python module %s; check for parse errors\n", MODULE_NAME);
+    fprintf(stderr, "can't load python module %s; check parse errors:\n", MODULE_NAME);
+    PyErr_Print();
     exit(0);
   }
   Py_DECREF(py_module_name);
