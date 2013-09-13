@@ -303,7 +303,7 @@ static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_conne
   }
 
   if (resp->gzip_encoded) return NXWEB_NEXT;
-  if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
+  if (resp->status_code && resp->status_code!=200 && resp->status_code!=404) return NXWEB_OK;
 
   if (!resp->mtype && resp->content_type) {
     resp->mtype=nxweb_get_mime_type(resp->content_type);

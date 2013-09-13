@@ -223,7 +223,7 @@ static nxweb_result ssi_translate_cache_key(nxweb_filter* filter, nxweb_http_ser
 
 static nxweb_result ssi_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   ssi_filter_data* sfdata=(ssi_filter_data*)fdata;
-  if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
+  if (resp->status_code && resp->status_code!=200 && resp->status_code!=404) return NXWEB_OK;
 
   if (resp->gzip_encoded) {
     fdata->bypass=1;
