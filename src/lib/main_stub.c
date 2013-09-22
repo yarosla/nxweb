@@ -124,6 +124,8 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
     return EXIT_FAILURE;
   }
 
+  if (!pid_file) pid_file="nxweb.pid";
+
   if (shutdown) {
     nxweb_shutdown_daemon(work_dir, pid_file);
     return EXIT_SUCCESS;
@@ -132,7 +134,6 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   nxweb_server_config.access_log_fpath=access_log_file;
 
   if (daemon) {
-    if (!pid_file) pid_file="nxweb.pid";
     if (!error_log_file) error_log_file="nxweb_error_log";
     nxweb_server_config.error_log_fpath=error_log_file;
     nxweb_run_daemon(work_dir, error_log_file, pid_file, server_main);
