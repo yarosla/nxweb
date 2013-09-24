@@ -584,6 +584,7 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
   nxe_connect_streams(loop, &conn->sock.fs.data_is, &conn->hsp.data_in);
   nxe_connect_streams(loop, &conn->hsp.data_out, &conn->sock.fs.data_os);
   conn->uid=nxweb_generate_unique_id();
+  nxd_http_server_proto_connect(&conn->hsp, loop);
   //__sync_add_and_fetch(&num_connections, 1);
 }
 

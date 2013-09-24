@@ -658,3 +658,8 @@ void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool) 
   hsp->data_in.ready=1;
   hsp->resp_body_in.ready=1;
 }
+
+void nxd_http_server_proto_connect(nxd_http_server_proto* hsp, nxe_loop* loop) {
+  hsp->state=HSP_WAITING_FOR_REQUEST;
+  nxe_set_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hsp->timer_keep_alive);
+}
