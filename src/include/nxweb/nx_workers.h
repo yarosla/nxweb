@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -27,9 +27,9 @@ extern "C" {
 #include "nx_queue_tpl.h"
 
 #define NXWEB_MAX_WORKERS 512
-#define NXWEB_MAX_IDLE_WORKERS_IN_QUEUE 32
+#define NXWEB_MAX_IDLE_WORKERS_IN_QUEUE 16
 #define NXWEB_MAX_WORKERS_IN_QUEUE 128
-#define NXWEB_START_WORKERS_IN_QUEUE 16
+#define NXWEB_START_WORKERS_IN_QUEUE 0
 
 typedef struct nxw_worker {
   struct nxw_factory* factory;
