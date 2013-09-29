@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -95,7 +95,7 @@ void nxw_gc_factory(nxw_factory* f) {
     w=next;
   }
   if (cnt) nxweb_log_error("gc destroyed %d dead workers", cnt);
-  int extra=(nx_queue_workers_length(&f->queue) - NXWEB_MAX_IDLE_WORKERS_IN_QUEUE)/2;
+  int extra=(nx_queue_workers_length(&f->queue) - NXWEB_MAX_IDLE_WORKERS_IN_QUEUE + 1)/2;
   // wake up half extra workers so we can destroy them dead in the next gc round
   for (; extra>0; extra--) {
     if (nx_queue_workers_pop(&f->queue, &w)) break;
@@ -108,19 +108,19 @@ void nxw_gc_factory(nxw_factory* f) {
 
 nxw_worker* nxw_get_worker(nxw_factory* f) {
   nxw_worker* w;
-  while (nx_queue_workers_pop(&f->queue, &w)) {
+  if (nx_queue_workers_pop(&f->queue, &w)) {
     if (f->worker_count>NXWEB_MAX_WORKERS) return 0; // no more workers
-    nxw_create_worker(f);
+    w=nxw_create_worker(f);
   }
   return w;
 }
 
 void nxw_start_worker(nxw_worker* w, void (*job_func)(void* job_param), void* job_param, volatile int* job_done) {
+  pthread_mutex_lock(&w->start_mux);
   w->do_job=job_func;
   w->job_param=job_param;
   w->job_done=job_done;
   *job_done=0;
-  pthread_mutex_lock(&w->start_mux);
   pthread_cond_signal(&w->start_cond);
   pthread_mutex_unlock(&w->start_mux);
 }
@@ -156,17 +156,7 @@ static void* nxw_worker_main(void* ptr) {
   nxw_worker* w=ptr;
 
   while (1) {
-    // put itself into queue
-    pthread_mutex_lock(&w->factory->queue_mux);
-    if (w->shutdown_in_progress || w->factory->shutdown_in_progress) {
-      pthread_mutex_unlock(&w->factory->queue_mux);
-      break;
-    }
-    int result=nx_queue_workers_push(&w->factory->queue, &w);
-    pthread_mutex_unlock(&w->factory->queue_mux);
-    if (result) break; // queue full => kill itself
-
-    // now wait for start
+    // wait for start
     pthread_mutex_lock(&w->start_mux);
     while (!w->do_job && !w->shutdown_in_progress && !w->factory->shutdown_in_progress) {
       pthread_cond_wait(&w->start_cond, &w->start_mux);
@@ -181,6 +171,16 @@ static void* nxw_worker_main(void* ptr) {
     *w->job_done=1;
     __sync_synchronize(); // full memory barrier
     nxe_trigger_eventfd(&w->complete_efs);
+
+    // put itself into queue
+    pthread_mutex_lock(&w->factory->queue_mux);
+    if (w->shutdown_in_progress || w->factory->shutdown_in_progress) {
+      pthread_mutex_unlock(&w->factory->queue_mux);
+      break;
+    }
+    int result=nx_queue_workers_push(&w->factory->queue, &w);
+    pthread_mutex_unlock(&w->factory->queue_mux);
+    if (result) break; // queue full => kill itself
   }
 
   w->dead=1;
