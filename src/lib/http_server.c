@@ -368,6 +368,7 @@ static void invoke_request_handler_in_worker(void* ptr) {
   nxweb_http_server_connection* conn=ptr;
   if (conn && conn->handler && conn->handler->on_request) {
     conn->handler->on_request(conn, &conn->hsp.req, &conn->hsp._resp);
+    nxd_http_server_proto_finish_response(&conn->hsp._resp);
   }
   else {
     nxweb_log_error("invalid conn handler reached worker");
@@ -410,6 +411,7 @@ static inline nxweb_result invoke_request_handler(nxweb_http_server_connection* 
     }
     else {
       res=h->on_request(conn, req, resp);
+      nxd_http_server_proto_finish_response(resp);
       if (res!=NXWEB_ASYNC) nxweb_start_sending_response(conn, resp);
     }
   }

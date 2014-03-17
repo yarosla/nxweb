@@ -522,19 +522,27 @@ void nxd_http_server_proto_finalize(nxd_http_server_proto* hsp) {
   }
 }
 
+void nxd_http_server_proto_finish_response(nxweb_http_response* resp) {
+  // make sure there is no unfinished stream left in resp->nxb
+  int size;
+  nxb_get_unfinished(resp->nxb, &size);
+  if (size) {
+    if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd) {
+      resp->content=nxb_finish_stream(resp->nxb, &size);
+      resp->content_length=size;
+    }
+    else {
+      nxb_unfinish_stream(resp->nxb);
+    }
+  }
+}
+
 void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp) {
   if (resp->content_out) return; // already setup
 
   nxweb_log_debug("nxd_http_server_proto_setup_content_out");
 
-  if (!resp->content && !resp->sendfile_path && !resp->sendfile_fd) {
-    int size;
-    nxb_get_unfinished(resp->nxb, &size);
-    if (size) {
-      resp->content=nxb_finish_stream(resp->nxb, &size);
-      resp->content_length=size;
-    }
-  }
+  nxd_http_server_proto_finish_response(resp);
 
   if (resp->content && resp->content_length>0) {
     nxd_obuffer_init(&hsp->ob, resp->content, resp->content_length);

@@ -101,6 +101,11 @@ void nxweb_access_log_write(nxweb_http_request* req) { // write request's log re
     frags[i]=frag;
   }
   num_frags=i;
+  if (rec_size >= NXWEB_ACCESS_LOG_BLOCK_SIZE) {
+    frag=frags[num_frags-1];
+    nxweb_log_error("access log record_size is too large: %d \"%.*s\"", rec_size, frag->length, frag->content);
+    return;
+  }
   if (rec_size > tdata->access_log_block_avail) {
     // flush block
     nxweb_access_log_thread_flush();

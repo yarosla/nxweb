@@ -264,6 +264,7 @@ void nxd_http_server_proto_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
 void nxd_http_server_proto_connect(nxd_http_server_proto* hsp, nxe_loop* loop);
 void nxd_http_server_proto_subrequest_init(nxd_http_server_proto* hsp, nxp_pool* nxb_pool);
 void nxweb_http_server_proto_subrequest_execute(nxd_http_server_proto* hsp, const char* host, const char* uri, nxweb_http_request* parent_req);
+void nxd_http_server_proto_finish_response(nxweb_http_response* resp);
 void nxd_http_server_proto_setup_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp);
 void nxweb_reset_content_out(nxd_http_server_proto* hsp, nxweb_http_response* resp);
 
