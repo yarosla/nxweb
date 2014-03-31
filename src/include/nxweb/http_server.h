@@ -227,6 +227,9 @@ struct nxweb_server_config {
   const char* error_log_fpath;
   int access_log_fd;
   pthread_mutex_t access_log_start_mux;
+  void (*access_log_on_request_received)(nxweb_http_server_connection* conn, nxweb_http_request* req);
+  void (*access_log_on_request_complete)(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+  void (*access_log_on_proxy_response)(nxweb_http_request* req, nxd_http_proxy* hpx, nxweb_http_response* proxy_resp);
 };
 
 typedef struct nxweb_image_filter_cmd {

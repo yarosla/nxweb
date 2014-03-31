@@ -38,7 +38,7 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
   nxweb_http_response* resp=hsp->resp;
 
   if (req->access_log) {
-    nxweb_access_log_on_request_complete(conn, req, resp);
+    nxweb_server_config.access_log_on_request_complete(conn, req, resp);
     nxweb_access_log_write(req);
     req->access_log=0;
   }

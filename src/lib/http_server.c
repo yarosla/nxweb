@@ -38,7 +38,10 @@
 #include <sys/resource.h>
 
 struct nxweb_server_config nxweb_server_config={
-  .shutdown_timeout=5
+  .shutdown_timeout=5,
+  .access_log_on_request_received=nxweb_access_log_on_request_received,
+  .access_log_on_request_complete=nxweb_access_log_on_request_complete,
+  .access_log_on_proxy_response=nxweb_access_log_on_proxy_response
 };
 
 static pthread_t main_thread_id=0;
@@ -425,11 +428,12 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
   nxweb_http_response* resp=&conn->hsp._resp;
   if (data.i==NXD_HSP_REQUEST_RECEIVED) {
     assert(nxweb_server_config.request_dispatcher);
+    assert(nxweb_server_config.access_log_on_request_received);
 
     nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_REQUEST_RECEIVED");
 
     req->received_time=nxweb_get_loop_time(conn);
-    nxweb_access_log_on_request_received(conn, req);
+    nxweb_server_config.access_log_on_request_received(conn, req);
     nxweb_server_config.request_dispatcher(conn, req, resp);
     if (!conn->handler) conn->handler=&nxweb_default_handler;
 

@@ -145,7 +145,7 @@ void nxweb_access_log_write(nxweb_http_request* req) { // write request's log re
 void nxweb_access_log_on_request_received(nxweb_http_server_connection* conn, nxweb_http_request* req) {
   BUILD_FRAG_BEGIN;
 
-  nxb_append_str(nxb, nxe_get_current_iso8601_time_str(_nxweb_net_thread_data->loop));
+  nxb_append_str(nxb, nxe_get_current_iso8601_time_str(conn->tdata->loop));
   nxb_append_char(nxb, ' ');
   nxb_append_uint64_hex_zeropad(nxb, conn->uid, 16);
   nxb_append_char(nxb, ' ');
