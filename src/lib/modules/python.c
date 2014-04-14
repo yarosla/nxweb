@@ -249,12 +249,17 @@ static nxweb_result python_on_request(nxweb_http_server_connection* conn, nxweb_
 
   if (req->headers) {
     // write added headers
+    // encode http headers into CGI variables; see 4.1.18 in https://tools.ietf.org/html/rfc3875
     char hname[256];
     memcpy(hname, "HTTP_", 5);
     char* h=hname+5;
     nx_simple_map_entry* itr;
     for (itr=nx_simple_map_itr_begin(req->headers); itr; itr=nx_simple_map_itr_next(itr)) {
       nx_strtoupper(h, itr->name);
+      char* p;
+      for (p=h; *p; p++) {
+        if (*p=='-') *p='_';
+      }
       dict_set(py_environ, hname, PyString_FromString(itr->value));
     }
   }
