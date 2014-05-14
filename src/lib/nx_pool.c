@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2011-2012 Yaroslav Stavnichiy <yarosla@gmail.com>
- * 
+ *
  * This file is part of NXWEB.
- * 
+ *
  * NXWEB is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation, either version 3
  * of the License, or (at your option) any later version.
- * 
+ *
  * NXWEB is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with NXWEB. If not, see <http://www.gnu.org/licenses/>.
  */
@@ -60,11 +60,9 @@ void nxp_init(nxp_pool* pool, int object_size, nxp_chunk* initial_chunk, int chu
 void nxp_finalize(nxp_pool* pool) {
   nxp_chunk* c=pool->chunk;
   nxp_chunk* cp;
-  int cnt=0;
   while (c!=pool->initial_chunk) {
     cp=c->prev;
     nx_free(c);
-    cnt++;
     c=cp;
   }
 }
@@ -170,4 +168,25 @@ void nxp_gc(nxp_pool* pool) {
   nxp_chunk* c=pool->chunk;
   pool->chunk=pool->chunk->prev;
   nx_free(c);
+}
+
+void* nxp_iterate_allocated_objects(nxp_pool* pool, nxp_pool_iterator* itr) {
+  if (pool) {
+    itr->pool=pool;
+    itr->chunk=pool->chunk;
+    itr->i=0;
+  }
+  nxp_object *obj;
+  while (itr->chunk) {
+    while (itr->i < itr->chunk->nitems) {
+      obj=(nxp_object*)((char*)itr->chunk->pool + itr->pool->object_size * itr->i);
+      itr->i++;
+      if (obj->in_use) {
+        return obj+1;
+      }
+    }
+    itr->chunk=itr->chunk->prev;
+    itr->i=0;
+  }
+  return 0;
 }

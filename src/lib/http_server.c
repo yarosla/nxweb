@@ -590,6 +590,7 @@ static void nxweb_http_server_connection_connect(nxweb_http_server_connection* c
   nxe_connect_streams(loop, &conn->sock.fs.data_is, &conn->hsp.data_in);
   nxe_connect_streams(loop, &conn->hsp.data_out, &conn->sock.fs.data_os);
   conn->uid=nxweb_generate_unique_id();
+  conn->connected_time=loop->current_time;
   nxd_http_server_proto_connect(&conn->hsp, loop);
   //__sync_add_and_fetch(&num_connections, 1);
 }
@@ -688,6 +689,8 @@ static void on_net_thread_shutdown(nxe_subscriber* sub, nxe_publisher* pub, nxe_
 
   nxe_unregister_eventfd_source(&tdata->shutdown_efs);
   nxe_finalize_eventfd_source(&tdata->shutdown_efs);
+  nxe_unregister_eventfd_source(&tdata->diagnostics_efs);
+  nxe_finalize_eventfd_source(&tdata->diagnostics_efs);
 
   nxw_finalize_factory(&tdata->workers_factory);
 
@@ -697,6 +700,20 @@ static void on_net_thread_shutdown(nxe_subscriber* sub, nxe_publisher* pub, nxe_
   }
 
   nxweb_access_log_thread_flush();
+}
+
+static void on_net_thread_diagnostics(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
+
+  nxweb_log_error("net thread diagnostics begin");
+
+  nxweb_module* mod=nxweb_server_config.module_list;
+  while (mod) {
+    if (mod->on_thread_diagnostics)
+      mod->on_thread_diagnostics();
+    mod=mod->next;
+  }
+
+  nxweb_log_error("net thread diagnostics end");
 }
 
 static void on_net_thread_gc(nxe_subscriber* sub, nxe_publisher* pub, nxe_data data) {
@@ -758,6 +775,7 @@ static void accept_retry_on_timeout(nxe_timer* timer, nxe_data data) {
 
 static const nxe_subscriber_class listen_sub_class={.on_message=on_listen_event};
 static const nxe_subscriber_class shutdown_sub_class={.on_message=on_net_thread_shutdown};
+static const nxe_subscriber_class diagnostics_sub_class={.on_message=on_net_thread_diagnostics};
 static const nxe_subscriber_class gc_sub_class={.on_message=on_net_thread_gc};
 static const nxe_timer_class accept_retry_timer_class={.on_timeout=accept_retry_on_timeout};
 
@@ -793,6 +811,10 @@ static void* net_thread_main(void* ptr) {
   nxe_register_eventfd_source(loop, &tdata->shutdown_efs);
   nxe_init_subscriber(&tdata->shutdown_sub, &shutdown_sub_class);
   nxe_subscribe(loop, &tdata->shutdown_efs.data_notify, &tdata->shutdown_sub);
+  nxe_init_eventfd_source(&tdata->diagnostics_efs, NXE_PUB_DEFAULT);
+  nxe_register_eventfd_source(loop, &tdata->diagnostics_efs);
+  nxe_init_subscriber(&tdata->diagnostics_sub, &diagnostics_sub_class);
+  nxe_subscribe(loop, &tdata->diagnostics_efs.data_notify, &tdata->diagnostics_sub);
   nxe_init_subscriber(&tdata->gc_sub, &gc_sub_class);
   nxe_subscribe(loop, &loop->gc_pub, &tdata->gc_sub);
 
@@ -870,6 +892,25 @@ static void on_sigterm(int sig) {
   alarm(nxweb_server_config.shutdown_timeout); // make sure we terminate via SIGALRM if some connections do not close in 5 seconds
 }
 
+void _nxweb_launch_diagnostics() {
+  nxweb_log_error("server diagnostics begin");
+
+  nxweb_module* mod=nxweb_server_config.module_list;
+  while (mod) {
+    if (mod->on_server_diagnostics)
+      mod->on_server_diagnostics();
+    mod=mod->next;
+  }
+
+  nxweb_log_error("server diagnostics end");
+
+  int i;
+  nxweb_net_thread_data* tdata;
+  for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
+    nxe_trigger_eventfd(&tdata->diagnostics_efs);
+  }
+}
+
 static void on_sigalrm(int sig) {
   nxweb_log_error("SIGALRM received. Exiting");
   exit(EXIT_SUCCESS);
@@ -879,6 +920,10 @@ static void on_sigusr1(int sig) {
   nxweb_log_error("SIGUSR1 or SIGHUP received. Restarting access_log & error_log");
   if (nxweb_server_config.error_log_fpath) nxweb_open_log_file(nxweb_server_config.error_log_fpath);
   nxweb_access_log_restart();
+}
+
+static void on_sigusr2(int sig) {
+  _nxweb_launch_diagnostics();
 }
 
 void nxweb_set_timeout(enum nxweb_timers timer_idx, nxe_time_t timeout) {
@@ -982,6 +1027,7 @@ void nxweb_run() {
   sigaddset(&set, SIGQUIT);
   sigaddset(&set, SIGHUP);
   sigaddset(&set, SIGUSR1);
+  sigaddset(&set, SIGUSR2);
   if (pthread_sigmask(SIG_BLOCK, &set, NULL)) {
     nxweb_log_error("can't set pthread_sigmask");
     exit(EXIT_SUCCESS); // simulate normal exit so nxweb is not respawned
@@ -1008,6 +1054,7 @@ void nxweb_run() {
   signal(SIGUSR1, on_sigusr1);
   signal(SIGHUP, on_sigusr1);
   signal(SIGALRM, on_sigalrm);
+  signal(SIGUSR2, on_sigusr2);
 
   // Unblock signals for the main thread;
   // other threads have inherited sigmask we set earlier

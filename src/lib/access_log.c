@@ -207,6 +207,8 @@ void nxweb_access_log_on_proxy_response(nxweb_http_request* req, nxd_http_proxy*
   nxb_append(nxb, "{{px:", 5);
   nxb_append_uint64_hex_zeropad(nxb, hpx->uid, 16);
   nxb_append_char(nxb, ' ');
+  nxb_append_uint(nxb, hpx->hcp.request_count);
+  nxb_append_char(nxb, '/');
   nxb_append_uint(nxb, hpx->pool->conn_count);
   nxb_append_char(nxb, '/');
   nxb_append_uint(nxb, hpx->pool->conn_count_max);

@@ -175,15 +175,12 @@ static void fail_proxy_request(nxweb_http_proxy_request_data* rdata) {
   nxweb_log_debug("fail_proxy_request");
 
   nxweb_http_server_connection* conn=rdata->conn;
-  if (rdata->response_sending_started) {
-    nxweb_http_server_connection_finalize(conn, 0);
-  }
-  else {
-    nxweb_http_response* resp=&conn->hsp._resp;
-    nxweb_send_http_error(resp, 504, "Gateway Timeout");
-    nxweb_start_sending_response(conn, resp);
-    rdata->proxy_request_complete=1; // ignore further backend errors
-  }
+
+  assert(!rdata->response_sending_started);
+  nxweb_http_response* resp=&conn->hsp._resp;
+  nxweb_send_http_error(resp, 504, "Gateway Timeout");
+  nxweb_start_sending_response(conn, resp);
+  rdata->response_sending_started=1; // ignore further backend errors
 }
 
 static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
@@ -193,11 +190,12 @@ static void timer_backend_on_timeout(nxe_timer* timer, nxe_data data) {
   nxweb_http_proxy_request_data* rdata=(nxweb_http_proxy_request_data*)((char*)timer-offsetof(nxweb_http_proxy_request_data, timer_backend));
   nxweb_http_server_connection* conn=rdata->conn;
   if (rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
-    // can't retry => do nothing, continue processing until parent connection times out
-    nxweb_log_warning("backend connection %p timeout; can't retry", conn);
+    // backend did respond in time (headers or 100-continue) but request is not done yet
+    // do nothing, continue processing until parent connection times out
+    nxweb_log_warning("backend connection %p timeout; backend responded; post=%d resp=%d", conn, (int)rdata->hpx->hcp.req_body_sending_started, (int)rdata->response_sending_started);
   }
   else if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT) {
-    nxweb_log_warning("backend connection %p timeout; retry count exceeded", conn);
+    nxweb_log_error("backend connection %p timeout; retry count exceeded", conn);
     fail_proxy_request(rdata);
   }
   else {
@@ -279,9 +277,13 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
   }
   else if (data.i<0) {
     rdata->proxy_request_error=1;
-    if (!rdata->proxy_request_complete) { // ignore errors after request has been completed; keep connection running
+    if (rdata->response_sending_started) {
+      nxweb_log_warning("proxy request conn=%p rc=%d retry=%d error=%d; error while response_sending_started", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
+      // ignore errors after response_sending_started; keep connection running
+    }
+    else {
       nxe_unset_timer(loop, NXWEB_TIMER_BACKEND, &rdata->timer_backend);
-      if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT || rdata->hpx->hcp.req_body_sending_started || rdata->response_sending_started) {
+      if (rdata->retry_count>=NXWEB_PROXY_RETRY_COUNT || rdata->hpx->hcp.req_body_sending_started /*|| rdata->response_sending_started*/) {
         nxweb_log_error("proxy request conn=%p rc=%d retry=%d error=%d; failed", conn, rdata->hpx->hcp.request_count, rdata->retry_count, data.i);
         fail_proxy_request(rdata);
       }

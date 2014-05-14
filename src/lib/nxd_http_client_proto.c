@@ -134,16 +134,10 @@ static void data_in_do_read(nxe_ostream* os, nxe_istream* is) {
         }
         nxe_ostream_unset_ready(os);
         nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_RESPONSE_RECEIVED);
-        if (hcp->resp.content_length && !hcp->req->head_method) { // is body expected?
-          hcp->state=HCP_RECEIVING_BODY;
-          nxe_istream_set_ready(loop, &hcp->resp_body_out);
-          if (hcp->resp_body_out.pair) {
-            nxe_ostream_set_ready(loop, os);
-          }
-        }
-        else {
-          // rearm connection
-          request_complete(hcp, loop);
+        hcp->state=HCP_RECEIVING_BODY;
+        nxe_istream_set_ready(loop, &hcp->resp_body_out);
+        if (hcp->resp_body_out.pair) {
+          nxe_ostream_set_ready(loop, os);
         }
       }
       else {
@@ -180,7 +174,6 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
   nxweb_log_debug("http_client data_out_do_write");
 
   nxe_unset_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
-  nxe_set_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
 
   if (hcp->state==HCP_CONNECTING) {
     nxe_publish(&hcp->events_pub, (nxe_data)NXD_HCP_CONNECTED);
@@ -192,6 +185,8 @@ static void data_out_do_write(nxe_istream* is, nxe_ostream* os) {
       return;
     }
   }
+
+  nxe_set_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
 
   if (hcp->state==HCP_SENDING_HEADERS) {
     if (hcp->req_headers_ptr && *hcp->req_headers_ptr) {
@@ -469,6 +464,11 @@ void nxd_http_client_proto_finalize(nxd_http_client_proto* hcp) {
   }
 }
 
+void nxd_http_client_proto_connect(nxd_http_client_proto* hcp, nxe_loop* loop) {
+  hcp->state=HCP_CONNECTING;
+  nxe_set_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
+}
+
 void nxd_http_client_proto_start_request(nxd_http_client_proto* hcp, nxweb_http_request* req) {
 
   nxweb_log_debug("nxd_http_client_proto_start_request");
@@ -488,8 +488,12 @@ void nxd_http_client_proto_start_request(nxd_http_client_proto* hcp, nxweb_http_
     nxd_obuffer_init(&hcp->ob, req->content, req->content_length);
     nxe_connect_streams(loop, &hcp->ob.data_out, &hcp->req_body_in);
   }
-  if (hcp->state==HCP_IDLE) hcp->state=HCP_SENDING_HEADERS;
-  nxe_unset_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hcp->timer_keep_alive);
+  assert(hcp->state==HCP_CONNECTING || hcp->state==HCP_IDLE);
+  if (hcp->state==HCP_IDLE) {
+    hcp->state=HCP_SENDING_HEADERS;
+    nxe_unset_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hcp->timer_keep_alive);
+    nxe_set_timer(loop, NXWEB_TIMER_WRITE, &hcp->timer_write);
+  }
   hcp->req_body_sending_started=0;
   hcp->receiving_100_continue=0;
   hcp->request_complete=0;

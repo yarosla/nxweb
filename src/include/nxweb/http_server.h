@@ -136,6 +136,8 @@ typedef struct nxweb_module {
   void (*on_thread_shutdown)();
   void (*on_server_shutdown)();
   void (*on_config)(const struct nx_json* js);
+  void (*on_server_diagnostics)();
+  void (*on_thread_diagnostics)();
 } nxweb_module;
 
 typedef struct nxweb_http_server_listening_socket {
@@ -166,6 +168,9 @@ typedef struct nxweb_net_thread_data {
   char* access_log_block_ptr;
 
   nxd_http_proxy_pool proxy_pool[NXWEB_MAX_PROXY_POOLS];
+
+  nxe_eventfd_source diagnostics_efs;
+  nxe_subscriber diagnostics_sub;
 } nxweb_net_thread_data __attribute__ ((aligned(64)));
 
 typedef struct nxweb_http_server_connection {
@@ -189,6 +194,7 @@ typedef struct nxweb_http_server_connection {
   _Bool in_worker:1;
   _Bool connection_closing:1;
   uint64_t uid; // unique connection id
+  nxe_time_t connected_time;
   struct nxweb_http_server_connection* parent;
   struct nxweb_http_server_connection* subrequests;
   struct nxweb_http_server_connection* next;
@@ -256,6 +262,7 @@ void _nxweb_define_handler_base(nxweb_handler* handler);
 void _nxweb_define_filter(nxweb_filter* filter);
 void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base);
 nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp);
+void _nxweb_launch_diagnostics(void);
 
 int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_handler* handler, nxe_data handler_param);
 

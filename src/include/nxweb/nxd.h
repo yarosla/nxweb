@@ -185,6 +185,7 @@ typedef struct nxd_streamer {
   nxd_streamer_node* head;
   nxd_streamer_node* current;
   unsigned running:1;
+  unsigned force_eof:1;
 } nxd_streamer;
 
 void nxd_streamer_init(nxd_streamer* strm);
@@ -194,6 +195,7 @@ void nxd_streamer_finalize(nxd_streamer* strm);
 void nxd_streamer_node_init(nxd_streamer_node* snode);
 void nxd_streamer_node_finalize(nxd_streamer_node* snode);
 void nxd_streamer_node_start(nxd_streamer_node* snode);
+void nxd_streamer_close(nxd_streamer* strm);
 
 
 struct nxd_http_server_proto;
@@ -327,6 +329,7 @@ enum nxd_http_client_proto_error_code {
 
 void nxd_http_client_proto_init(nxd_http_client_proto* hcp, nxp_pool* nxb_pool);
 void nxd_http_client_proto_finalize(nxd_http_client_proto* hcp);
+void nxd_http_client_proto_connect(nxd_http_client_proto* hcp, nxe_loop* loop);
 void nxd_http_client_proto_start_request(nxd_http_client_proto* hcp, nxweb_http_request* req);
 void nxd_http_client_proto_rearm(nxd_http_client_proto* hcp);
 

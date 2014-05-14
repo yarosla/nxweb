@@ -55,14 +55,16 @@ static nxweb_composite_stream_node* nxweb_composite_stream_append_node(nxweb_com
 }
 
 void nxweb_composite_stream_append_bytes(nxweb_composite_stream* cs, const char* bytes, int length) {
-  nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
-  nxd_obuffer_init(&csn->buffer.ob, bytes, length);
-  nxe_connect_streams(cs->conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
+  if (length) {
+    nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
+    nxd_obuffer_init(&csn->buffer.ob, bytes, length);
+    nxe_connect_streams(cs->conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
+  }
 }
 
 void nxweb_composite_stream_append_fd(nxweb_composite_stream* cs, int fd, off_t offset, off_t end) {
-  nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
   if (fd!=-1) {
+    nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
     csn->fd=fd;
     nxd_fbuffer_init(&csn->buffer.fb, fd, offset, end);
     nxe_connect_streams(cs->conn->tdata->loop, &csn->buffer.fb.data_out, &csn->snode.data_in);
@@ -107,11 +109,7 @@ void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const 
 }
 
 void nxweb_composite_stream_close(nxweb_composite_stream* cs) { // call this right after appending last node
-  nxweb_composite_stream_node* csn=cs->first_node;
-  if (csn) {
-    while (csn->next) csn=csn->next;
-    csn->snode.final=1;
-  }
+  nxd_streamer_close(&cs->strm);
 }
 
 void nxweb_composite_stream_start(nxweb_composite_stream* cs, nxweb_http_response* resp) {

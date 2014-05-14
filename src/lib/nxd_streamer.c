@@ -31,6 +31,15 @@ static void streamer_data_out_do_write(nxe_istream* is, nxe_ostream* os) {
 
   nxweb_log_debug("streamer_data_out_do_write");
 
+  if (!snode) {
+    assert(strm->force_eof);
+    // write EOF
+    nxe_flags_t flags=NXEF_EOF;
+    OSTREAM_CLASS(os)->write(os, is, 0, 0, (nxe_data)"", 0, &flags);
+    nxe_istream_unset_ready(is);
+    return;
+  }
+
   nxe_istream* prev_is=snode->data_in.pair;
   if (prev_is) {
     if (prev_is->ready) {
@@ -164,4 +173,28 @@ void nxd_streamer_node_start(nxd_streamer_node* snode) {
 void nxd_streamer_start(nxd_streamer* strm) {
   strm->running=1;
   if (strm->head) nxd_streamer_node_start(strm->head);
+  else if (strm->force_eof) {
+    // empty streamer has been closed beforehand => activate data_out to send EOF
+    nxe_istream_set_ready(strm->data_out.super.loop, &strm->data_out);
+  }
+}
+
+void nxd_streamer_close(nxd_streamer* strm) {
+  nxd_streamer_node* snode=strm->head;
+  if (!snode) { // closing empty streamer
+    strm->force_eof=1;
+  }
+  else {
+    while (snode->next) snode=snode->next; // find last node
+    snode->final=1;
+    if (snode->complete) {
+      // final node has already been transmitted => force EOF
+      strm->force_eof=1;
+    }
+  }
+  if (strm->running && strm->force_eof) {
+    // activate data_out to send EOF
+    if (strm->data_out.super.loop) nxe_istream_set_ready(strm->data_out.super.loop, &strm->data_out);
+    else strm->data_out.ready=1;
+  }
 }
