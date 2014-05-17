@@ -49,7 +49,7 @@ static pthread_t main_thread_id=0;
 static volatile int shutdown_in_progress=0;
 static volatile int num_connections=0;
 
-static nxweb_net_thread_data net_threads[NXWEB_MAX_NET_THREADS];
+nxweb_net_thread_data _nxweb_net_threads[NXWEB_MAX_NET_THREADS];
 int _nxweb_num_net_threads;
 __thread nxweb_net_thread_data* _nxweb_net_thread_data;
 
@@ -879,7 +879,7 @@ static void on_sigterm(int sig) {
 
   int i;
   nxweb_net_thread_data* tdata;
-  for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
+  for (i=0, tdata=_nxweb_net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
 /*
     // wake up workers
     pthread_mutex_lock(&tdata->job_queue_mux);
@@ -906,7 +906,7 @@ void _nxweb_launch_diagnostics() {
 
   int i;
   nxweb_net_thread_data* tdata;
-  for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
+  for (i=0, tdata=_nxweb_net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
     nxe_trigger_eventfd(&tdata->diagnostics_efs);
   }
 }
@@ -922,8 +922,17 @@ static void on_sigusr1(int sig) {
   nxweb_access_log_restart();
 }
 
-static void on_sigusr2(int sig) {
+static void* diagnostic_thread_main(void* ptr) {
   _nxweb_launch_diagnostics();
+}
+
+static void on_sigusr2(int sig) {
+  // launch diagnostics on a separate thread (not within signal handler)
+  pthread_t t;
+  pthread_attr_t tattr;
+  pthread_attr_init(&tattr);
+  pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+  pthread_create(&t, 0, &diagnostic_thread_main, 0);
 }
 
 void nxweb_set_timeout(enum nxweb_timers timer_idx, nxe_time_t timeout) {
@@ -1034,7 +1043,7 @@ void nxweb_run() {
   }
 
   nxweb_net_thread_data* tdata;
-  for (i=0, tdata=net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
+  for (i=0, tdata=_nxweb_net_threads; i<_nxweb_num_net_threads; i++, tdata++) {
     tdata->thread_num=i;
     pthread_attr_t tattr;
     cpu_set_t cpuset;
@@ -1065,7 +1074,7 @@ void nxweb_run() {
   }
 
   for (i=0; i<_nxweb_num_net_threads; i++) {
-    pthread_join(net_threads[i].thread_id, 0);
+    pthread_join(_nxweb_net_threads[i].thread_id, 0);
   }
 
   mod=nxweb_server_config.module_list;

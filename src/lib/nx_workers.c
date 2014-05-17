@@ -28,6 +28,7 @@
 #include "nx_event.h"
 #include "nx_workers.h"
 
+__thread nxw_worker* _nxweb_worker_thread_data;
 
 static void* nxw_worker_main(void* ptr);
 static nxw_worker* nxw_create_worker(nxw_factory* f);
@@ -154,6 +155,7 @@ static void nxw_destroy_worker(nxw_worker* w) { // must be called from factory t
 
 static void* nxw_worker_main(void* ptr) {
   nxw_worker* w=ptr;
+  _nxweb_worker_thread_data=w;
 
   while (1) {
     // wait for start

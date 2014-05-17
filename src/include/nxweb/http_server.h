@@ -255,7 +255,10 @@ typedef struct nxweb_image_filter_cmd {
 } nxweb_image_filter_cmd;
 
 extern struct nxweb_server_config nxweb_server_config;
+extern nxweb_net_thread_data _nxweb_net_threads[];
+extern int _nxweb_num_net_threads;
 extern __thread struct nxweb_net_thread_data* _nxweb_net_thread_data;
+extern __thread struct nxw_worker* _nxweb_worker_thread_data;
 
 void _nxweb_register_module(nxweb_module* module);
 void _nxweb_define_handler_base(nxweb_handler* handler);
