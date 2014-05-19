@@ -932,7 +932,7 @@ static void on_sigusr2(int sig) {
   pthread_attr_t tattr;
   pthread_attr_init(&tattr);
   pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-  pthread_create(&t, 0, &diagnostic_thread_main, 0);
+  pthread_create(&t, &tattr, &diagnostic_thread_main, 0);
 }
 
 void nxweb_set_timeout(enum nxweb_timers timer_idx, nxe_time_t timeout) {

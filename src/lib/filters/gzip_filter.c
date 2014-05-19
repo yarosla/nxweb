@@ -91,13 +91,11 @@ static int copy_file(const char* src, const char* dst) {
 }
 */
 
-void* myalloc(void* q, unsigned n, unsigned m) {
-  q=Z_NULL;
-  return nx_calloc(n*m);
+void* nxweb_gzip_filter_alloc(void* q, unsigned n, unsigned m) {
+  return nx_alloc(n*m);
 }
 
-void myfree(void* q, void* p) {
-  q=Z_NULL;
+void nxweb_gzip_filter_free(void* q, void* p) {
   nx_free(p);
 }
 
@@ -126,8 +124,8 @@ static int gzip_file_fd(const char* src, int sfd, const char* dst, struct stat* 
     return -1;
   }
   z_stream zs;
-  zs.zalloc=myalloc;
-  zs.zfree=myfree;
+  zs.zalloc=nxweb_gzip_filter_alloc;
+  zs.zfree=nxweb_gzip_filter_free;
   zs.opaque=Z_NULL;
   zs.next_in=Z_NULL;
   if (deflateInit2(&zs, 8, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY)!=Z_OK) { // level 0-9
@@ -174,8 +172,8 @@ static int gzip_file_fd(const char* src, int sfd, const char* dst, struct stat* 
 
 static int gzip_mem_buf(const void* src, unsigned src_size, nxb_buffer* nxb, const void** dst, unsigned* dst_size) {
   z_stream zs;
-  zs.zalloc=myalloc;
-  zs.zfree=myfree;
+  zs.zalloc=nxweb_gzip_filter_alloc;
+  zs.zfree=nxweb_gzip_filter_free;
   zs.opaque=Z_NULL;
   zs.next_in=Z_NULL;
   if (deflateInit2(&zs, 5, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY)!=Z_OK) { // level 0-9
@@ -286,6 +284,7 @@ static void gzip_finalize(nxweb_filter* filter, nxweb_http_server_connection* co
   if (gdata->rb.data_in.pair)
     nxe_disconnect_streams(gdata->rb.data_in.pair, &gdata->rb.data_in);
   if (gdata->input_fd) close(gdata->input_fd);
+  deflateEnd(&gdata->zs); // this is safe to call twice
 }
 
 static nxweb_result gzip_serve_from_cache(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, time_t check_time) {
@@ -329,8 +328,8 @@ static nxweb_result gzip_do_filter(nxweb_filter* filter, nxweb_http_server_conne
   // do gzip
   nxweb_log_info("gzipping %s", fdata->cache_key);
   nxd_rbuffer_init_ptr(&gdata->rb, nxb_alloc_obj(req->nxb, 16384), 16384);
-  gdata->zs.zalloc=myalloc;
-  gdata->zs.zfree=myfree;
+  gdata->zs.zalloc=nxweb_gzip_filter_alloc;
+  gdata->zs.zfree=nxweb_gzip_filter_free;
   gdata->zs.opaque=Z_NULL;
   gdata->zs.next_in=Z_NULL;
   if (deflateInit2(&gdata->zs, ((nxweb_filter_gzip*)filter)->compression_level, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY)!=Z_OK) { // level 0-9

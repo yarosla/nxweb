@@ -196,6 +196,7 @@ static void find_crop_offset(MagickWand* image, int* x, int* y) {
     if (v) {
       parse_crop_offset(v, len, x, y);
     }
+    MagickRelinquishMemory(profile);
   }
 }
 
