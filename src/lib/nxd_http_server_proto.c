@@ -106,6 +106,7 @@ static void request_cleanup(nxe_loop* loop, nxd_http_server_proto* hsp) {
   else {
     nxe_ostream* os=hsp->data_out.pair;
     if (os && OSTREAM_CLASS(os)->shutdown) OSTREAM_CLASS(os)->shutdown(os);
+    nxe_set_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hsp->timer_keep_alive); // do not rely on other end properly reacting to shutdown
   }
   memset(&hsp->req, 0, sizeof(nxweb_http_request));
   memset(&hsp->_resp, 0, sizeof(nxweb_http_response));

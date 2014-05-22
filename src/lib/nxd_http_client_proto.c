@@ -54,6 +54,12 @@ static inline void request_complete(nxd_http_client_proto* hcp, nxe_loop* loop) 
   nxe_ostream_unset_ready(&hcp->data_in);
   nxe_istream_unset_ready(&hcp->data_out);
   nxe_unset_timer(loop, NXWEB_TIMER_READ, &hcp->timer_read);
+  /* not sure if we need this; nxd_http_proxy_pool_return() terminates non-keep-alive connections anyway (with RST)
+  if (!hcp->resp.keep_alive) {
+    nxe_ostream* os=hcp->data_out.pair;
+    if (os && OSTREAM_CLASS(os)->shutdown) OSTREAM_CLASS(os)->shutdown(os);
+  }
+  */
   nxe_set_timer(loop, NXWEB_TIMER_KEEP_ALIVE, &hcp->timer_keep_alive);
   hcp->request_complete=1;
   hcp->state=HCP_IDLE;

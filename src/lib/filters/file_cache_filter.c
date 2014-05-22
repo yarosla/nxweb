@@ -100,10 +100,10 @@ typedef struct fc_filter_data {
 static void fc_store_abort(fc_filter_data* fcdata);
 
 static int fc_store_begin(fc_filter_data* fcdata) {
-  assert(!fcdata->fd);
+  assert(!fcdata->fd || fcdata->fd==-1);
   fcdata->fd=open(fcdata->tmp_fpath, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
   if (fcdata->fd==-1) {
-    nxweb_log_error("fc_store_begin(): can't create cache file %s; could be open by another request", fcdata->tmp_fpath);
+    nxweb_log_error("fc_store_begin(): can't create cache file %s; could be open by another request; errno=%d", fcdata->tmp_fpath, errno);
     return NXWEB_OK;
   }
   nxweb_http_response* resp=fcdata->resp;
@@ -179,7 +179,13 @@ static int fc_read_header(fc_filter_data* fcdata) {
   }
   fcdata->fd=open(fcdata->cache_fpath, O_RDONLY);
   if (fcdata->fd==-1) {
-    nxweb_log_error("fc_read_header(): can't open cache file %s", fcdata->cache_fpath);
+    nxweb_log_debug("fc_read_header(): can't open cache file %s", fcdata->cache_fpath);
+    return -1;
+  }
+  if (fstat(fcdata->fd, &fcdata->cache_finfo)==-1) {
+    nxweb_log_error("fc_read_header(): can't fstat cache file %s", fcdata->cache_fpath);
+    close(fcdata->fd);
+    fcdata->fd=0;
     return -1;
   }
   fc_file_header* hdr=&fcdata->hdr;
@@ -213,13 +219,8 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
   hdr->cache_control.cptrc=hdr->cache_control.u64? data+hdr->cache_control.u64 : 0;
   hdr->extra_raw_headers.cptrc=hdr->extra_raw_headers.u64? data+hdr->extra_raw_headers.u64 : 0;
 
-  struct stat finfo;
-  if (fstat(fd, &finfo)==-1) {
-    nxweb_log_error("fc_read(): can't get content length from cache file %s", fcdata->cache_fpath);
-    goto E2;
-  }
   if (hdr->content_length.ssz<0) {
-    hdr->content_length.ssz=finfo.st_size - hdr->content_offset.offs;
+    hdr->content_length.ssz=fcdata->cache_finfo.st_size - hdr->content_offset.offs;
   }
 
   resp->status_code=hdr->status_code;
@@ -227,7 +228,7 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
   resp->status="OK";
   resp->content_length=hdr->content_length.ssz;
   resp->last_modified=hdr->last_modified.tim;
-  resp->expires=hdr->expires.tim;
+  // resp->expires=hdr->expires.tim;
   resp->max_age=hdr->max_age.tim;
   resp->gzip_encoded=hdr->gzip_encoded;
   resp->ssi_on=hdr->ssi_on;
@@ -238,7 +239,7 @@ static int fc_read_data(fc_filter_data* fcdata, nxweb_http_response* resp) {
   resp->cache_control=hdr->cache_control.cptrc;
   resp->extra_raw_headers=hdr->extra_raw_headers.cptrc;
 
-  resp->sendfile_info=finfo;
+  resp->sendfile_info=fcdata->cache_finfo;
   resp->sendfile_path=fcdata->cache_fpath;
   fcdata->input_fd=resp->sendfile_fd; // save to close on finalize
   resp->sendfile_fd=fd; // shall auto-close
@@ -279,16 +280,22 @@ static int fc_store_append(fc_filter_data* fcdata, const void* ptr, nxe_size_t s
 }
 
 static int fc_store_close(fc_filter_data* fcdata) {
+  struct timeval mtimes[2]={
+    {.tv_sec=fcdata->expires_time},
+    {.tv_sec=fcdata->expires_time}
+  };
+  futimes(fcdata->fd, mtimes);
   close(fcdata->fd);
   fcdata->fd=0;
-  if (rename(fcdata->tmp_fpath, fcdata->cache_fpath)==-1) {
+  // use link/unlink instead of rename to preserve timestamp
+  unlink(fcdata->cache_fpath);
+  if (link(fcdata->tmp_fpath, fcdata->cache_fpath)==-1) {
     nxweb_log_error("fc_store_close(): can't rename %s cache file into %s", fcdata->tmp_fpath, fcdata->cache_fpath);
     unlink(fcdata->tmp_fpath);
     fcdata->tmp_fpath=0;
     return -1;
   }
-  struct utimbuf ut={.actime=fcdata->expires_time, .modtime=fcdata->expires_time};
-  utime(fcdata->cache_fpath, &ut);
+  unlink(fcdata->tmp_fpath);
   return 0;
 }
 
@@ -402,12 +409,12 @@ void _nxweb_fc_finalize(fc_filter_data* fcdata) {
     nxe_disconnect_streams(fcdata->data_in.pair, &fcdata->data_in);
   if (fcdata->fd && fcdata->fd!=-1) {
     close(fcdata->fd);
+    if (fcdata->tmp_fpath) unlink(fcdata->tmp_fpath);
   }
   nxd_fbuffer_finalize(&fcdata->fb);
   if (fcdata->input_fd && fcdata->input_fd!=-1) {
     close(fcdata->input_fd);
   }
-  if (fcdata->tmp_fpath) unlink(fcdata->tmp_fpath);
 }
 
 static nxweb_filter_data* fc_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
@@ -458,9 +465,7 @@ static nxweb_result fc_serve(fc_filter_data* fcdata, nxweb_http_request* req, nx
 
 static nxweb_result fc_initiate_revalidation(fc_filter_data* fcdata, nxweb_http_request* req) {
   nxweb_log_info("revalidating cache file %s for uri %s", fcdata->cache_fpath, req->uri);
-  if (fc_read_header(fcdata)==-1) {
-    return NXWEB_ERROR;
-  }
+  assert(fcdata->fd && fcdata->fd!=-1);
   fc_file_header* hdr=&fcdata->hdr;
   fcdata->if_modified_since_original=req->if_modified_since;
   req->if_modified_since=hdr->last_modified.tim;
@@ -474,7 +479,7 @@ nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* con
   nxweb_log_debug("_nxweb_fc_serve_from_cache");
 
   fc_build_cache_fpath(req->nxb, fcdata, cache_key);
-  if (stat(fcdata->cache_fpath, &fcdata->cache_finfo)==-1) {
+  if (fc_read_header(fcdata)==-1) {
     if (req->if_modified_since) {
       // content not cached although it must be
       // remove if_modified_since
@@ -490,6 +495,7 @@ nxweb_result _nxweb_fc_serve_from_cache(struct nxweb_http_server_connection* con
     return fc_initiate_revalidation(fcdata, req);
   }
   else { // cache valid & not expired
+    // raise(SIGABRT);
     return fc_serve(fcdata, req, resp, check_time);
   }
 }
@@ -535,6 +541,7 @@ nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxw
     }
   }
   else if (resp->status_code/100==5) { // backend error => use cached data
+    nxweb_log_error("backend returned %d; serving from cache req_id=%" PRIx64, resp->status_code, req->uid);
     if (fc_serve(fcdata, req, resp, cur_time)!=NXWEB_OK) {
       nxweb_send_http_error(resp, 500, "Internal Server Error");
       return NXWEB_ERROR;
@@ -566,7 +573,7 @@ nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_ht
     expires_time=resp->expires;
   }
   else if (resp->last_modified) {
-    expires_time=cur_time-1; // one second back in time => cache but require revalidation
+    expires_time=cur_time-5; // five seconds back in time => cache but require revalidation
   }
   else {
     return NXWEB_NEXT;

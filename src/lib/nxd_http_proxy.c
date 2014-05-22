@@ -184,7 +184,7 @@ nxd_http_proxy* nxd_http_proxy_pool_connect(nxd_http_proxy_pool* pp) {
 void nxd_http_proxy_pool_return(nxd_http_proxy* hpx, int closed) {
   nxd_http_proxy_pool* pp=hpx->pool;
   pp->conn_count--;
-  if (closed || !hpx->hcp.request_complete || hpx->hcp.state!=HCP_IDLE) {
+  if (closed || !hpx->hcp.request_complete || hpx->hcp.state!=HCP_IDLE || !hpx->hcp.resp.keep_alive) {
     nxd_http_proxy_finalize(hpx, 0);
     nxp_free(pp->free_pool, hpx);
   }
