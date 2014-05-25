@@ -247,8 +247,8 @@ static nxweb_result tf_do_filter(nxweb_filter* filter, nxweb_http_server_connect
 
   nxweb_log_debug("tf_do_filter");
 
-  tf_filter_data* tfdata=(tf_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200 && resp->status_code!=404) return NXWEB_OK;
+  if (!resp->content_length) return NXWEB_OK;
 
   if (resp->gzip_encoded) {
     fdata->bypass=1;
@@ -269,6 +269,7 @@ static nxweb_result tf_do_filter(nxweb_filter* filter, nxweb_http_server_connect
 
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
+  tf_filter_data* tfdata=(tf_filter_data*)fdata;
   tfdata->conn=conn;
   tfdata->ctx=nxb_alloc_obj(req->nxb, sizeof(nxt_context));
   nxt_init(tfdata->ctx, req->nxb, tf_load, (nxe_data)(void*)tfdata);

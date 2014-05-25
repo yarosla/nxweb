@@ -120,7 +120,6 @@ static const nxweb_mime_type const mime_types[] = {
   {"ttf", "application/x-font-ttf", 0},
   {"otf", "application/x-font-otf", 0},
   {"dat", "application/octet-stream", 0},
-  {0}
 };
 
 static const nxweb_mime_type* default_mime_type=&mime_types[0];
@@ -132,11 +131,11 @@ void nxweb_add_mime_type(const nxweb_mime_type* type) {
   ah_iter_t ci;
   int ret=0;
   ci=alignhash_set(mime_cache, _mime_cache_by_ext, type->ext, &ret);
-  if (ret!=AH_INS_ERR && ci!=alignhash_end(_mime_cache_by_ext)) {
+  if (/*ret!=AH_INS_ERR &&*/ ci!=alignhash_end(_mime_cache_by_ext)) {
     alignhash_value(_mime_cache_by_ext, ci)=type;
   }
   ci=alignhash_set(mime_cache, _mime_cache_by_type, type->mime, &ret);
-  if (ret!=AH_INS_ERR && ci!=alignhash_end(_mime_cache_by_type)) {
+  if (/*ret!=AH_INS_ERR &&*/ ci!=alignhash_end(_mime_cache_by_type)) {
     alignhash_value(_mime_cache_by_type, ci)=type;
   }
 }
@@ -146,9 +145,10 @@ static void init_mime_cache() {
   _mime_cache_by_ext=alignhash_init(mime_cache);
   _mime_cache_by_type=alignhash_init(mime_cache);
   const nxweb_mime_type* type=mime_types;
-  while (type->ext) {
-    nxweb_add_mime_type(type);
-    type++;
+  int i;
+  for (i=sizeof(mime_types)/sizeof(nxweb_mime_type)-1; i>=0; i--) {
+    // go from array end so first entries have higher priority (override last ones)
+    nxweb_add_mime_type(&mime_types[i]);
   }
 }
 

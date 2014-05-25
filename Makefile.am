@@ -5,6 +5,6 @@ EXTRA_DIST = configure www/root/index.htm www/root/watermark.png www/root/pic.jp
 	     python/nxwebpy.py python/hello.py nxweb_config.json
 
 SUBDIRS = src/include src/lib src/bin
-if WITH_SSL
+if GENERATE_CERTIFICATES
 SUBDIRS += ssl
 endif

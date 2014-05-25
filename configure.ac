@@ -54,6 +54,9 @@ then
 fi
 AM_CONDITIONAL([WITH_SSL], [test $with_gnutls != "no"])
 
+AC_ARG_ENABLE(certificates, AS_HELP_STRING([--disable-certificates], [disable SSL certificate generation]), , enable_certificates="yes")
+AM_CONDITIONAL([GENERATE_CERTIFICATES], [test $enable_certificates = "yes"])
+
 AC_ARG_WITH(imagemagick, AS_HELP_STRING([--with-imagemagick[=PATH]], [compile with ImageMagick support]), , with_imagemagick="no")
 if test $with_imagemagick != "no"
 then
