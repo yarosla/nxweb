@@ -42,7 +42,7 @@ typedef struct ssi_filter_data {
   int input_fd;
 } ssi_filter_data;
 
-#define MAX_SSI_SIZE (1000000)
+#define MAX_SSI_SIZE (20000000)
 
 #ifndef max
 #define max(a,b) \

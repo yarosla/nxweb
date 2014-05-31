@@ -41,7 +41,7 @@ typedef struct tf_filter_data {
   nxweb_http_server_connection* conn;
 } tf_filter_data;
 
-#define MAX_TEMPLATE_SIZE (5000000)
+#define MAX_TEMPLATE_SIZE (20000000)
 
 #ifndef max
 #define max(a,b) \

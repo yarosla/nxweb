@@ -242,6 +242,14 @@ int nxweb_select_handler(nxweb_http_server_connection* conn, nxweb_http_request*
   return r;
 }
 
+static inline _Bool is_method_allowed(nxweb_http_request* req, nxweb_handler_flags flags) {
+  if (!(flags&_NXWEB_HANDLE_MASK)) return 1; // method not specified
+  if (req->get_method) return flags&NXWEB_HANDLE_GET;
+  if (req->post_method) return flags&NXWEB_HANDLE_POST;
+  if (req->other_method) return flags&NXWEB_HANDLE_OTHER;
+  return 0;
+}
+
 nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_handler* h=nxweb_server_config.handler_list;
   const char* uri=req->uri;
@@ -259,21 +267,23 @@ nxweb_result _nxweb_default_request_dispatcher(nxweb_http_server_connection* con
   int uri_len=strlen(uri);
   while (h) {
     if ((secure && !h->insecure_only) || (!secure && !h->secure_only)) {
-      if (!h->vhost_len || (host_len && nxweb_vhost_match(host, host_len, h->vhost, h->vhost_len))) {
-        if (!h->prefix_len || nxweb_url_prefix_match(uri, uri_len, h->prefix, h->prefix_len)) {
-          nxweb_result res=nxweb_select_handler(conn, req, resp, h, h->param);
-          if (res!=NXWEB_NEXT) {
-            if (res==NXWEB_ERROR) {
-              // request processing terminated by http error response
-              if (req->content_length) resp->keep_alive=0; // close connection if there is body pending
-              nxweb_start_sending_response(conn, resp);
-              return NXWEB_ERROR;
+      if (is_method_allowed(req, h->flags)) {
+        if (!h->vhost_len || (host_len && nxweb_vhost_match(host, host_len, h->vhost, h->vhost_len))) {
+          if (!h->prefix_len || nxweb_url_prefix_match(uri, uri_len, h->prefix, h->prefix_len)) {
+            nxweb_result res=nxweb_select_handler(conn, req, resp, h, h->param);
+            if (res!=NXWEB_NEXT) {
+              if (res==NXWEB_ERROR) {
+                // request processing terminated by http error response
+                if (req->content_length) resp->keep_alive=0; // close connection if there is body pending
+                nxweb_start_sending_response(conn, resp);
+                return NXWEB_ERROR;
+              }
+              if (res!=NXWEB_OK) {
+                nxweb_log_error("handler %s on_select() returned error %d", h->name, res);
+                break;
+              }
+              return NXWEB_OK;
             }
-            if (res!=NXWEB_OK) {
-              nxweb_log_error("handler %s on_select() returned error %d", h->name, res);
-              break;
-            }
-            return NXWEB_OK;
           }
         }
       }
@@ -652,6 +662,7 @@ nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_serv
   //nxweb_http_server_connection_init(conn, tdata, lconf_idx);
   memset(conn, 0, sizeof(nxweb_http_server_connection));
   conn->uid=nxweb_generate_unique_id();
+  conn->connected_time=loop->current_time;
   conn->secure=parent_conn->secure;
   conn->tdata=tdata;
   conn->parent=parent_conn;
