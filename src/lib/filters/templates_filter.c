@@ -190,7 +190,7 @@ static void tf_on_subrequest_ready(nxe_data data) {
   }
   else {
     // subrequest error
-    nxweb_log_warning("subrequest failed: %s%s", subconn->hsp.req.host, subconn->hsp.req.uri);
+    nxweb_log_warning("templates subrequest failed: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, conn->hsp.req.uri);
     tfdata->ctx->files_pending--;
     tf_check_complete(tfdata);
   }

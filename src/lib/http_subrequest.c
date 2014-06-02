@@ -97,7 +97,7 @@ static void nxweb_composite_stream_subrequest_on_response_ready(nxe_data data) {
   else {
     nxd_obuffer_init(&csn->buffer.ob, "<!--[ssi error]-->", sizeof("<!--[ssi error]-->")-1);
     nxe_connect_streams(conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
-    nxweb_log_warning("subrequest failed: %s%s", subconn->hsp.req.host, subconn->hsp.req.uri);
+    nxweb_log_warning("subrequest failed: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, req->uri);
     return;
   }
 }

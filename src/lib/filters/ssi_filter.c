@@ -33,6 +33,8 @@ typedef struct ssi_buffer {
   char* data_ptr;
   int data_size;
   nxweb_composite_stream* cs;
+  nxweb_http_request* req;
+  nx_simple_map_entry* var_map;
   int parse_start_idx;
 } ssi_buffer;
 
@@ -58,36 +60,196 @@ typedef struct ssi_filter_data {
      _a < _b ? _a : _b; })
 #endif
 
+static const char ssib_req_key; // variable's address only matters
+#define SSIB_REQ_KEY ((nxe_data)&ssib_req_key)
+
 #define SPACE 32U
 
+#define SSI_MAX_ATTRS 16
+#define SSI_MAX_EXPR_LEN 4096
+
+static const char* lookup_var(const ssi_buffer* ssib, const char* var_name, int var_name_len) {
+  nx_simple_map_entry* e;
+  for (e=nx_simple_map_itr_begin(ssib->var_map); e; e=nx_simple_map_itr_next(e)) {
+    if (strlen(e->name)==var_name_len && !strncmp(var_name, e->name, var_name_len)) {
+      return e->value;
+    }
+  }
+  // lookup through all parent requests' vars
+  nxweb_http_request* req=ssib->req->parent_req;
+  while (req) {
+    // find first req with SSIB
+    const ssi_buffer* parent_ssib=nxweb_get_request_data(req, SSIB_REQ_KEY).cptr;
+    if (parent_ssib) return lookup_var(parent_ssib, var_name, var_name_len);
+    req=req->parent_req;
+  }
+  return 0;
+}
+
+static char* expand_var(ssi_buffer* ssib, const char* var_name, int var_name_len, char* dst, int max_dst_len) {
+  if (var_name_len==12 && !strncmp(var_name, "QUERY_STRING", var_name_len)) {
+    char* query_string=strchr(ssib->req->uri, '?');
+    if (query_string) {
+      query_string++;
+      int len=strlen(query_string);
+      if (len>max_dst_len) return 0;
+      memcpy(dst, query_string, len);
+      return dst+len;
+    }
+    else {
+      return dst;
+    }
+  }
+  else if ((var_name_len==12 && !strncmp(var_name, "DOCUMENT_URI", var_name_len))
+        || (var_name_len==11 && !strncmp(var_name, "REQUEST_URI", var_name_len))) {
+    const char* request_uri=ssib->req->uri;
+    char* query_string=strchr(request_uri, '?');
+    int len=query_string? (query_string-request_uri) : strlen(request_uri);
+    if (len>max_dst_len) return 0;
+    memcpy(dst, request_uri, len);
+    return dst+len;
+  }
+  else {
+    const char* value=lookup_var(ssib, var_name, var_name_len);
+    if (value) {
+      int len=strlen(value);
+      if (len>max_dst_len) return 0;
+      memcpy(dst, value, len);
+      return dst+len;
+    }
+    nxweb_log_warning("unknown ssi variable: %.*s ref: %s", var_name_len, var_name, ssib->req->uri);
+    return dst;
+  }
+}
+
+#define exp_append(ptr, len) { if (d+(len)>de) return 0; if (len) { memcpy(d, ptr, len); d+=len; } }
+#define exp_append_char(c) { if (d+1>de) return 0; *d++=c; }
+#define exp_append_var(var_name, var_name_len) { char* r=expand_var(ssib, var_name, var_name_len, d, de-d); if (!r) return 0; d=r; }
+
+static const char* expand_vars(ssi_buffer* ssib, const char* expr) {
+  char expanded[SSI_MAX_EXPR_LEN];
+  char *d=expanded, *de=d+SSI_MAX_EXPR_LEN-1;
+
+  const char* start=expr;
+  const char *p, *pp;
+  while ((p=strchr(start, '$'))) {
+    if (p>start && *(p-1)=='\\') {
+      // escaped \$
+      exp_append(start, p-start-1);
+      exp_append_char('$');
+      start=p+1;
+      continue;
+    }
+    exp_append(start, p-start);
+    p++;
+    if (*p=='{') {
+      pp=strchr(p+1, '}');
+      if (!pp) return 0;
+      exp_append_var(p+1, pp-(p+1));
+      start=pp+1;
+    }
+    else {
+      for (pp=p; (*pp>='a' && *pp<='z')||(*pp>='A' && *pp<='Z')||(*pp>='0' && *pp<='9')||*pp=='_'; pp++) ;
+      exp_append_var(p, pp-p);
+      start=pp;
+    }
+  }
+
+  if (d==expanded) return expr; // unchanged
+  else {
+    exp_append(start, strlen(start));
+    *d++='\0';
+    return nxb_copy_obj(ssib->nxb, expanded, d-expanded);
+  }
+}
 
 static int parse_directive(ssi_buffer* ssib, char* str, int len) {
   assert(!str[len]); // zero-terminated
   char* p=str;
   char* pe=str+len;
+  char* attr_name[SSI_MAX_ATTRS];
+  char* attr_value[SSI_MAX_ATTRS];
+  int num_attr=0;
   while ((unsigned char)*p<=SPACE && p<pe) p++;
   if (p>=pe) return -1;
   char* cmd=p;
   while ((unsigned char)*p>SPACE) p++;
   *p++='\0';
-  if (!strncmp(cmd, "include", 7)) {
-    for (;;) {
-      while ((unsigned char)*p<=SPACE && p<pe) p++;
-      if (p>=pe) return -1;
-      char* attr=p;
-      p=strchr(p, '=');
-      if (!p) return -1;
-      *p++='\0';
-      while ((unsigned char)*p<=SPACE && p<pe) p++;
-      if (p>=pe) return -1;
-      char q=*p++;
-      if (q!='\"' && q!='\'') return -1;
-      char* value=p;
-      p=strchr(p, q);
-      if (!p) return -1;
-      *p++='\0';
-      if (!strncmp(attr, "virtual", 7)) {
-        nxweb_composite_stream_append_subrequest(ssib->cs, ssib->cs->req->host, value);
+  while (num_attr<SSI_MAX_ATTRS) {
+    attr_name[num_attr]=p;
+    p=strchr(p, '=');
+    if (!p) break;
+    *p++='\0';
+    attr_name[num_attr]=nxweb_trunc_space(attr_name[num_attr]);
+    while ((unsigned char)*p<=SPACE && p<pe) p++;
+    if (p>=pe) return -1;
+    char q=*p++;
+    if (q!='\"' && q!='\'') return -1;
+    attr_value[num_attr]=p;
+    p=strchr(p, q);
+    if (!p) return -1;
+    *p++='\0';
+    num_attr++;
+  }
+
+  if (!strcmp(cmd, "include")) {
+    int i;
+    for (i=0; i<num_attr; i++) {
+      if (!strcmp(attr_name[i], "virtual")) {
+        const char* expanded=expand_vars(ssib, attr_value[i]);
+        if (!expanded) {
+          nxweb_log_warning("ssi variables expansion failure: %s @ %s", attr_value[i], ssib->req->uri);
+          return -1;
+        }
+        // nxweb_log_error("ssi variables expanded: %s -> %s", attr_value[i], expanded);
+        nxweb_composite_stream_append_subrequest(ssib->cs, ssib->cs->req->host, expanded);
+        return 0;
+      }
+    }
+  }
+  else if (!strcmp(cmd, "set")) {
+    int i;
+    const char* var_name=0;
+    const char* var_value=0;
+    nx_simple_map_entry* param;
+    for (i=0; i<num_attr; i++) {
+      if (!strcmp(attr_name[i], "var")) {
+        var_name=attr_value[i];
+      }
+      else if (!strcmp(attr_name[i], "value")) {
+        var_value=expand_vars(ssib, attr_value[i]);
+        if (!var_value) {
+          nxweb_log_warning("ssi set variable expansion failure: %s @ %s", attr_value[i], ssib->req->uri);
+          return -1;
+        }
+        // nxweb_log_error("ssi variables expanded: %s -> %s", attr_value[i], var_value);
+      }
+    }
+    if (var_name && var_value) {
+      param=nx_simple_map_find(ssib->var_map, var_name);
+      if (!param) {
+        param=nxb_calloc_obj(ssib->nxb, sizeof(nx_simple_map_entry));
+        ssib->var_map=nx_simple_map_add(ssib->var_map, param);
+        param->name=var_name;
+      }
+      param->value=var_value;
+      return 0;
+    }
+  }
+  else if (!strcmp(cmd, "echo")) {
+    int i;
+    for (i=0; i<num_attr; i++) {
+      if (!strcmp(attr_name[i], "var")) {
+        const char* var_name=attr_value[i];
+        char expanded[SSI_MAX_EXPR_LEN];
+        char* end=expand_var(ssib, var_name, strlen(var_name), expanded, SSI_MAX_EXPR_LEN);
+        if (!end) {
+          // nxweb_log_warning("ssi echo variable expansion failure: %s @ %s", var_name, ssib->req->uri);
+          return -1;
+        }
+        int len=end-expanded;
+        char* buf=nxb_copy_obj(ssib->nxb, expanded, len);
+        nxweb_composite_stream_append_bytes(ssib->cs, buf, len);
         return 0;
       }
     }
@@ -179,9 +341,10 @@ static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, in
 
 static const nxe_ostream_class ssi_buffer_data_in_class={.write=ssi_buffer_data_in_write};
 
-void ssi_buffer_init(ssi_buffer* ssib, nxb_buffer* nxb) {
+void ssi_buffer_init(ssi_buffer* ssib, nxweb_http_request* req) {
   memset(ssib, 0, sizeof(ssi_buffer));
-  ssib->nxb=nxb;
+  ssib->req=req;
+  ssib->nxb=req->nxb;
   ssib->data_in.super.cls.os_cls=&ssi_buffer_data_in_class;
   ssib->data_in.ready=1;
 }
@@ -244,9 +407,11 @@ static nxweb_result ssi_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
   // attach content_out to ssi_buffer
-  ssi_buffer_init(&sfdata->ssib, req->nxb);
+  ssi_buffer_init(&sfdata->ssib, req);
   if (resp->content_length>0) ssi_buffer_make_room(&sfdata->ssib, min(MAX_SSI_SIZE, resp->content_length));
   nxe_connect_streams(conn->tdata->loop, resp->content_out, &sfdata->ssib.data_in);
+
+  nxweb_set_request_data(req, SSIB_REQ_KEY, (nxe_data)(void*)&sfdata->ssib, 0); // will be used for variable lookups in parent requests
 
   // replace content_out with composite stream
   nxweb_composite_stream* cs=nxweb_composite_stream_init(conn, req);

@@ -278,20 +278,30 @@ static inline int nx_strncasecmp(const char* s1, const char* s2, int len) {
   return result;
 }
 
-static inline const char* nx_simple_map_get(nx_simple_map_entry* map, const char* name) {
+static inline nx_simple_map_entry* nx_simple_map_find(nx_simple_map_entry* map, const char* name) {
   while (map) {
-    if (strcmp(map->name, name)==0) return map->value;
+    if (strcmp(map->name, name)==0) return map;
+    map=map->next;
+  }
+  return 0;
+}
+
+static inline const char* nx_simple_map_get(nx_simple_map_entry* map, const char* name) {
+  nx_simple_map_entry* e=nx_simple_map_find(map, name);
+  return e? e->value : 0;
+}
+
+static inline nx_simple_map_entry* nx_simple_map_find_nocase(nx_simple_map_entry* map, const char* name) {
+  while (map) {
+    if (nx_strcasecmp(map->name, name)==0) return map;
     map=map->next;
   }
   return 0;
 }
 
 static inline const char* nx_simple_map_get_nocase(nx_simple_map_entry* map, const char* name) {
-  while (map) {
-    if (nx_strcasecmp(map->name, name)==0) return map->value;
-    map=map->next;
-  }
-  return 0;
+  nx_simple_map_entry* e=nx_simple_map_find_nocase(map, name);
+  return e? e->value : 0;
 }
 
 static inline nx_simple_map_entry* nx_simple_map_add(nx_simple_map_entry* map, nx_simple_map_entry* new_entry) {
