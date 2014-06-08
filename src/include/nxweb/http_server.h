@@ -198,7 +198,8 @@ typedef struct nxweb_http_server_connection {
   struct nxweb_http_server_connection* parent;
   struct nxweb_http_server_connection* subrequests;
   struct nxweb_http_server_connection* next;
-  void (*on_response_ready)(nxe_data data);
+  void (*on_response_ready)(struct nxweb_http_server_connection* conn, nxe_data data);
+  nxe_data on_response_ready_data;
   nxd_ibuffer ib;
 } nxweb_http_server_connection;
 
@@ -316,7 +317,7 @@ void nxweb_start_sending_response(nxweb_http_server_connection* conn, nxweb_http
 
 void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, int good);
 
-nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri);
+nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxweb_http_server_connection* conn, nxe_data data), nxe_data on_response_ready_data, const char* host, const char* uri);
 void nxweb_http_server_connection_finalize_subrequests(nxweb_http_server_connection* conn, int good);
 
 static inline nxe_time_t nxweb_get_loop_time(nxweb_http_server_connection* conn) {

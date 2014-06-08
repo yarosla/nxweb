@@ -23,9 +23,6 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 
-static const char nxweb_composite_stream_key; // variable's address only matters
-#define NXWEB_COMPOSITE_STREAM_KEY ((nxe_data)&nxweb_composite_stream_key)
-
 static void nxweb_composite_stream_finalize(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxe_data data);
 
 nxweb_composite_stream* nxweb_composite_stream_init(nxweb_http_server_connection* conn, nxweb_http_request* req) {
@@ -33,7 +30,7 @@ nxweb_composite_stream* nxweb_composite_stream_init(nxweb_http_server_connection
   cs->req=req;
   cs->conn=conn;
   nxd_streamer_init(&cs->strm);
-  nxweb_set_request_data(req, NXWEB_COMPOSITE_STREAM_KEY, (nxe_data)(void*)cs, nxweb_composite_stream_finalize);
+  nxweb_set_request_data(req, (nxe_data)0, (nxe_data)(void*)cs, nxweb_composite_stream_finalize);
   return cs;
 }
 
@@ -74,11 +71,10 @@ void nxweb_composite_stream_append_fd(nxweb_composite_stream* cs, int fd, off_t 
   }
 }
 
-static void nxweb_composite_stream_subrequest_on_response_ready(nxe_data data) {
-  nxweb_http_server_connection* subconn=(nxweb_http_server_connection*)data.ptr;
+static void nxweb_composite_stream_subrequest_on_response_ready(nxweb_http_server_connection* subconn, nxe_data data) {
   nxweb_http_server_connection* conn=subconn->parent;
   nxweb_http_request* req=&conn->hsp.req;
-  nxweb_composite_stream* cs=nxweb_get_request_data(req, NXWEB_COMPOSITE_STREAM_KEY).ptr;
+  nxweb_composite_stream* cs=data.ptr;
   assert(cs);
   nxweb_composite_stream_node* csn=cs->first_node;
   while (csn && csn->subconn!=subconn) csn=csn->next; // find corresponding node
@@ -95,17 +91,24 @@ static void nxweb_composite_stream_subrequest_on_response_ready(nxe_data data) {
     }
   }
   else {
-    nxd_obuffer_init(&csn->buffer.ob, "<!--[ssi error]-->", sizeof("<!--[ssi error]-->")-1);
-    nxe_connect_streams(conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
-    nxweb_log_warning("subrequest failed: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, req->uri);
-    return;
+    // this might happen after first successful call to on_response_ready()
+    if (csn->snode.data_in.pair) {
+      // response streaming have already started
+      nxweb_log_error("subrequest failed after response streaming started: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, req->uri);
+      nxweb_http_server_connection_finalize(cs->conn, 0);
+    }
+    else {
+      nxd_obuffer_init(&csn->buffer.ob, "<!--[ssi error]-->", sizeof("<!--[ssi error]-->")-1);
+      nxe_connect_streams(conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
+      nxweb_log_warning("subrequest failed: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, req->uri);
+    }
   }
 }
 
 void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const char* host, const char* url) {
   nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
 
-  csn->subconn=nxweb_http_server_subrequest_start(cs->conn, nxweb_composite_stream_subrequest_on_response_ready, host, url);
+  csn->subconn=nxweb_http_server_subrequest_start(cs->conn, nxweb_composite_stream_subrequest_on_response_ready, (nxe_data)(void*)cs, host, url);
 }
 
 void nxweb_composite_stream_close(nxweb_composite_stream* cs) { // call this right after appending last node

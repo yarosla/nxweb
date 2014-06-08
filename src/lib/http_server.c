@@ -522,8 +522,9 @@ static void nxweb_http_server_connection_events_sub_on_message(nxe_subscriber* s
     nxweb_log_debug("nxweb_http_server_connection_events_sub_on_message NXD_HSP_RESPONSE_READY");
 
     // this must be subrequest
+    assert(!conn->response_ready); // make sure this happens only once
     conn->response_ready=1;
-    if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
+    if (conn->on_response_ready) conn->on_response_ready(conn, conn->on_response_ready_data);
   }
   else if (data.i<0) {
 
@@ -644,7 +645,7 @@ void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, i
     if (!conn->subrequest_failed) { // therefore protect by boolean flag
       // this will only execute once per connection failure
       conn->subrequest_failed=1;
-      if (conn->on_response_ready) conn->on_response_ready((nxe_data)(void*)conn);
+      if (conn->on_response_ready) conn->on_response_ready(conn, conn->on_response_ready_data);
     }
     // to be finalized with parent connection
   }
@@ -654,7 +655,7 @@ void nxweb_http_server_connection_finalize(nxweb_http_server_connection* conn, i
   }
 }
 
-nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxe_data data), const char* host, const char* uri) {
+nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_server_connection* parent_conn, void (*on_response_ready)(nxweb_http_server_connection* conn, nxe_data data), nxe_data on_response_ready_data, const char* host, const char* uri) {
   if (parent_conn->connection_closing) return 0; // do not start subrequests if already closing
   nxweb_net_thread_data* tdata=_nxweb_net_thread_data;
   nxe_loop* loop=parent_conn->tdata->loop;
@@ -669,6 +670,7 @@ nxweb_http_server_connection* nxweb_http_server_subrequest_start(nxweb_http_serv
   conn->next=parent_conn->subrequests;
   parent_conn->subrequests=conn;
   conn->on_response_ready=on_response_ready;
+  conn->on_response_ready_data=on_response_ready_data;
   nxd_http_server_proto_subrequest_init(&conn->hsp, tdata->free_conn_nxb_pool);
   conn->events_sub.super.cls.sub_cls=&nxweb_http_server_connection_events_sub_class;
   conn->worker_complete.super.cls.sub_cls=&nxweb_http_server_connection_worker_complete_class;

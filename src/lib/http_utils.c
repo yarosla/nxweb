@@ -700,13 +700,14 @@ nxweb_http_response* _nxweb_http_response_init(nxweb_http_response* resp, nxb_bu
 nxweb_http_request_data* nxweb_find_request_data(nxweb_http_request* req, nxe_data key) {
   nxweb_http_request_data* rdata=req->data_chain;
   while (rdata) {
-    if (rdata->key.cptr==key.cptr) break;
+    if (rdata->key.cptr && rdata->key.cptr==key.cptr) break; // null keys never found
     rdata=rdata->next;
   }
   return rdata;
 }
 
 void nxweb_set_request_data(nxweb_http_request* req, nxe_data key, nxe_data value, nxweb_http_request_data_finalizer finalize) {
+  // key can be null, meaning that only finalizer is installed
   nxweb_http_request_data* rdata=nxweb_find_request_data(req, key);
   if (!rdata) {
     rdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_http_request_data));

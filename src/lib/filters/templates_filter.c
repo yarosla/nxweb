@@ -59,9 +59,6 @@ typedef struct tf_filter_data {
 
 #define SPACE 32U
 
-static const char tfb_key; // variable's address only matters
-#define TFB_KEY ((nxe_data)&tfb_key)
-
 static void tf_check_complete(tf_filter_data* tfdata) {
   nxt_context* ctx=tfdata->ctx;
   if (nxt_is_complete(ctx)) {
@@ -159,17 +156,16 @@ static void tf_buffer_make_room(tf_buffer* tfb, int data_size) {
   nxb_make_room(tfb->nxb, data_size);
 }
 
-static void tf_on_subrequest_ready(nxe_data data) {
+static void tf_on_subrequest_ready(nxweb_http_server_connection* subconn, nxe_data data) {
 
   nxweb_log_debug("tf_on_subrequest_ready");
 
-  nxweb_http_server_connection* subconn=(nxweb_http_server_connection*)data.ptr;
-  nxweb_http_request* subreq=&subconn->hsp.req;
-  nxweb_http_server_connection* conn=subconn->parent;
+  //nxweb_http_request* subreq=&subconn->hsp.req;
+  //nxweb_http_server_connection* conn=subconn->parent;
   //nxweb_http_request* req=&conn->hsp.req;
   nxweb_http_response* resp=subconn->hsp.resp;
 
-  tf_buffer* tfb=nxweb_get_request_data(subreq, TFB_KEY).ptr;
+  tf_buffer* tfb=data.ptr;
   assert(tfb);
   tf_filter_data* tfdata=tfb->tfdata;
 
@@ -190,7 +186,9 @@ static void tf_on_subrequest_ready(nxe_data data) {
   }
   else {
     // subrequest error
-    nxweb_log_warning("templates subrequest failed: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, conn->hsp.req.uri);
+    // this might happen after first successful call to tf_on_subrequest_ready()
+    nxweb_log_warning("templates subrequest failed: %s%s ref: %s", subconn->hsp.req.host, subconn->hsp.req.uri, subconn->parent->hsp.req.uri);
+    nxb_unfinish_stream(tfb->nxb); // clean up in case we have already started collecting response
     tfdata->ctx->files_pending--;
     tf_check_complete(tfdata);
   }
@@ -213,9 +211,9 @@ static int tf_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_bl
     assert(dst_file);
     tf_buffer_init(tfb, ctx->nxb, tfdata, dst_file, 0);
   }
-  nxweb_http_server_connection* subconn=nxweb_http_server_subrequest_start(tfdata->conn, tf_on_subrequest_ready, 0, uri);
+  nxweb_http_server_connection* subconn=nxweb_http_server_subrequest_start(tfdata->conn, tf_on_subrequest_ready, (nxe_data)(void*)tfb, 0, uri);
   nxweb_http_request* subreq=&subconn->hsp.req;
-  nxweb_set_request_data(subreq, TFB_KEY, (nxe_data)(void*)tfb, tf_subreq_finalize);
+  nxweb_set_request_data(subreq, (nxe_data)0, (nxe_data)(void*)tfb, tf_subreq_finalize);
   if (dst_file) subreq->templates_no_parse=1;
 }
 
