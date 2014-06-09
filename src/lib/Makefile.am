@@ -1,7 +1,9 @@
 #CFLAGS = -pthread -Wno-deprecated-declarations -O2 -g
 AM_CFLAGS = -pthread $(GNUTLS_CFLAGS) $(IMAGEMAGICK_CFLAGS)
 
-INCLUDES = -I$(top_srcdir)/src/include -I$(top_srcdir)/src/include/nxweb
+AM_CPPFLAGS = -I$(top_srcdir)/src/include -I$(top_srcdir)/src/include/nxweb
+
+AUTOMAKE_OPTIONS = subdir-objects
 
 lib_LTLIBRARIES = libnxweb.la
 

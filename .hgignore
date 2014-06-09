@@ -36,7 +36,9 @@ _strace
 /nbproject$
 ^Makefile\.nb$
 ^autom4te\.cache/
+\.dirstamp$
 ^configure$
+^compile$
 ^install-sh$
 ^config.guess$
 ^config.sub$

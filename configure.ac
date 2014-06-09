@@ -20,6 +20,7 @@ AC_CONFIG_HEADER(src/include/nxweb/config.h)
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 AC_PROG_CC([gcc])
+AM_PROG_CC_C_O
 AC_PROG_LIBTOOL
 
 m4_include([m4/m4_ax_python_devel.m4])
