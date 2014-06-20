@@ -560,7 +560,7 @@ nxweb_result _nxweb_fc_revalidate(struct nxweb_http_server_connection* conn, nxw
 nxweb_result _nxweb_fc_store(struct nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, fc_filter_data* fcdata) {
   if (!fcdata->cache_fpath) return NXWEB_OK; // no cache key
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
-  if (resp->no_cache) return NXWEB_OK;
+  if (resp->no_cache || resp->cache_private) return NXWEB_OK;
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
   if (!resp->content_out) return NXWEB_OK;
 

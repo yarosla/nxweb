@@ -775,6 +775,7 @@ void nxweb_add_response_header_safe(nxweb_http_response* resp, const char* name,
             cc_value=nxweb_trunc_space(cc_value);
           }
           if (!nx_strcasecmp(cc_name, "no-cache")) resp->no_cache=1;
+          else if (!nx_strcasecmp(cc_name, "private")) resp->cache_private=1;
           else if (!nx_strcasecmp(cc_name, "max-age") && cc_value) {
             if (cc_value[0]=='0' && !cc_value[1]) resp->max_age=-1;
             else resp->max_age=atol(cc_value);
@@ -905,16 +906,28 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
     nxb_append_str(nxb, resp->cache_control);
     nxb_append(nxb, "\r\n", 2);
   }
-  else if (resp->no_cache) {
-    nxb_append_str(nxb, "Cache-Control: no-cache\r\n");
-  }
-  else if (resp->max_age) {
-    nxb_append_str(nxb, "Cache-Control: max-age=");
-    if (resp->max_age==-1) { // special case => response is cacheable but must be revalidated every time
-      nxb_append(nxb, "0\r\n", 3);
+  else if (resp->no_cache || resp->cache_private || resp->max_age) {
+    _Bool comma=0;
+    nxb_append_str(nxb, "Cache-Control: ");
+    if (resp->cache_private) {
+      if (comma) nxb_append(nxb, ", ", 2);
+      nxb_append_str(nxb, "private");
+      comma=1;
     }
-    else {
-      nxb_append_str(nxb, uint_to_decimal_string(resp->max_age, buf, sizeof(buf)));
+    if (resp->no_cache) {
+      if (comma) nxb_append(nxb, ", ", 2);
+      nxb_append_str(nxb, "no-cache");
+      comma=1;
+    }
+    if (resp->max_age) {
+      if (comma) nxb_append(nxb, ", ", 2);
+      nxb_append_str(nxb, "max-age=");
+      if (resp->max_age==-1) { // special case => response is cacheable but must be revalidated every time
+        nxb_append_char(nxb, '0');
+      }
+      else {
+        nxb_append_str(nxb, uint_to_decimal_string(resp->max_age, buf, sizeof(buf)));
+      }
     }
     nxb_append(nxb, "\r\n", 2);
   }
@@ -1281,6 +1294,7 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
         value=nxweb_trunc_space(value);
       }
       if (!nx_strcasecmp(name, "no-cache")) resp->no_cache=1;
+      else if (!nx_strcasecmp(name, "private")) resp->cache_private=1;
       else if (!nx_strcasecmp(name, "max-age") && value) {
         if (value[0]=='0' && !value[1]) resp->max_age=-1;
         else resp->max_age=atol(value);

@@ -108,6 +108,7 @@ void nxw_gc_factory(nxw_factory* f) {
 }
 
 nxw_worker* nxw_get_worker(nxw_factory* f) {
+  if (f->shutdown_in_progress) return 0;
   nxw_worker* w;
   if (nx_queue_workers_pop(&f->queue, &w)) {
     if (f->worker_count>NXWEB_MAX_WORKERS) return 0; // no more workers

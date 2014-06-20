@@ -270,6 +270,7 @@ static void nxweb_http_server_proxy_events_sub_on_message(nxe_subscriber* sub, n
     resp->cache_control=presp->cache_control;
     resp->max_age=presp->max_age;
     resp->no_cache=presp->no_cache;
+    resp->cache_private=presp->cache_private;
     resp->content_out=&rdata->rb_resp.data_out;
     nxweb_start_sending_response(conn, resp);
     rdata->response_sending_started=1;

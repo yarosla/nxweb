@@ -176,6 +176,7 @@ typedef struct nxweb_http_response {
   unsigned ssi_on:1;
   unsigned templates_on:1;
   unsigned no_cache:1;
+  unsigned cache_private:1;
 
   int run_filter_idx;
 
