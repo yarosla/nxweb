@@ -143,6 +143,7 @@ static const nxe_ostream_class tf_buffer_data_in_class={.write=tf_buffer_data_in
 
 static void tf_buffer_init(tf_buffer* tfb, nxb_buffer* nxb, tf_filter_data* tfdata, nxt_file* file, nxt_block* blk) {
   memset(tfb, 0, sizeof(tf_buffer));
+  nxb_start_stream(nxb);
   tfb->nxb=nxb;
   tfb->data_in.super.cls.os_cls=&tf_buffer_data_in_class;
   tfb->data_in.ready=1;
@@ -230,6 +231,10 @@ static void tf_finalize(nxweb_filter* filter, nxweb_http_server_connection* conn
     close(tfdata->input_fd);
     tfdata->input_fd=0;
   }
+  if (tfdata->ctx && tfdata->ctx->nxb) {
+    nxb_empty(tfdata->ctx->nxb);
+    nxp_free(conn->hsp.nxb_pool, tfdata->ctx->nxb);
+  }
 }
 
 static nxweb_result tf_translate_cache_key(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata, const char* key) {
@@ -269,10 +274,12 @@ static nxweb_result tf_do_filter(nxweb_filter* filter, nxweb_http_server_connect
 
   tf_filter_data* tfdata=(tf_filter_data*)fdata;
   tfdata->conn=conn;
+  nxb_buffer* nxb=nxp_alloc(conn->hsp.nxb_pool); // allocate separate nxb to not interfere with other filters
+  nxb_init(nxb, NXWEB_CONN_NXB_SIZE);
   tfdata->ctx=nxb_alloc_obj(req->nxb, sizeof(nxt_context));
-  nxt_init(tfdata->ctx, req->nxb, tf_load, (nxe_data)(void*)tfdata);
+  nxt_init(tfdata->ctx, nxb, tf_load, (nxe_data)(void*)tfdata);
   tfdata->tfb=nxb_calloc_obj(req->nxb, sizeof(tf_buffer));
-  tf_buffer_init(tfdata->tfb, req->nxb, tfdata, nxt_file_create(tfdata->ctx, req->uri), 0);
+  tf_buffer_init(tfdata->tfb, nxb, tfdata, nxt_file_create(tfdata->ctx, req->uri), 0);
 
   // attach content_out to tf_buffer
   if (resp->content_length>0) tf_buffer_make_room(tfdata->tfb, min(MAX_TEMPLATE_SIZE, resp->content_length));

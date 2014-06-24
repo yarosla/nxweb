@@ -84,6 +84,7 @@ static nxweb_result curtime_on_request(nxweb_http_server_connection* conn, nxweb
 
 static nxweb_result curtime_generate_cache_key(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   if (!req->get_method || req->content_length) return NXWEB_OK; // do not cache POST requests, etc.
+  nxb_start_stream(req->nxb);
   _nxb_append_encode_file_path(req->nxb, req->host);
   if (conn->secure) nxb_append_str(req->nxb, "_s");
   _nxb_append_encode_file_path(req->nxb, req->uri);

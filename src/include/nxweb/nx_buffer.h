@@ -91,6 +91,13 @@ static inline void nxb_unfinish_stream(nxb_buffer* nxb) {
   nxb->ptr=nxb->base;
 }
 
+static inline void nxb_start_stream(nxb_buffer* nxb) {
+  if (nxb->ptr!=nxb->base) {
+    nxweb_log_warning("unfinished stream found in nxb %p", nxb);
+    nxb_unfinish_stream(nxb);
+  }
+}
+
 static inline void* nxb_get_room(nxb_buffer* nxb, int* room_size) {
   if (room_size) *room_size=nxb->end - nxb->ptr;
   return nxb->ptr;

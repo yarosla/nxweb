@@ -409,6 +409,7 @@ static inline nxweb_result invoke_request_handler(nxweb_http_server_connection* 
   if (conn->connection_closing) return; // do not process if already closing
   if (flags&NXWEB_PARSE_PARAMETERS) nxweb_parse_request_parameters(req, 1); // !!(flags&NXWEB_PRESERVE_URI)
   if (flags&NXWEB_PARSE_COOKIES) nxweb_parse_request_cookies(req);
+  nxb_start_stream(req->nxb);
   nxweb_result res=NXWEB_OK;
   if (h->on_request) {
     if (flags&NXWEB_INWORKER) {

@@ -110,6 +110,7 @@ static int fc_store_begin(fc_filter_data* fcdata) {
   assert(resp);
   nxb_buffer* nxb=resp->nxb;
   assert(nxb);
+  nxb_start_stream(nxb);
   fc_file_header* hdr=&fcdata->hdr;
 
   memset(hdr, 0, sizeof(*hdr));
@@ -432,6 +433,7 @@ static nxweb_result fc_translate_cache_key(nxweb_filter* filter, nxweb_http_serv
 }
 
 static void fc_build_cache_fpath(nxb_buffer* nxb, fc_filter_data* fcdata, const char* cache_key) {
+  nxb_start_stream(nxb);
   nxb_append_str(nxb, fcdata->cache_dir);
   if (cache_key[0]=='.' && cache_key[1]=='.' && cache_key[2]=='/') cache_key+=2; // avoid going up dir tree
   if (*cache_key!='/') nxb_append_char(nxb, '/');

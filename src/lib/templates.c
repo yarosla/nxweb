@@ -417,6 +417,7 @@ static void nxt_serialize_block(nxt_context* ctx, nxt_block* blk) {
 
 char* nxt_serialize(nxt_context* ctx) {
   if (ctx->error) return "<!--[template error; check error log]-->";
+  nxb_start_stream(ctx->nxb);
   if (ctx->block_names[0].block) {
     nxt_serialize_block(ctx, ctx->block_names[0].block);
   }

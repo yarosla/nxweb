@@ -33,6 +33,7 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
   assert(document_root);
   assert(handler->index_file);
   nxb_buffer* nxb=req->nxb;
+  nxb_start_stream(nxb);
 
   int rlen=strlen(document_root);
   nxb_append(nxb, document_root, rlen);

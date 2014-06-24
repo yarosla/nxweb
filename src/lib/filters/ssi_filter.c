@@ -341,10 +341,11 @@ static nxe_ssize_t ssi_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, in
 
 static const nxe_ostream_class ssi_buffer_data_in_class={.write=ssi_buffer_data_in_write};
 
-void ssi_buffer_init(ssi_buffer* ssib, nxweb_http_request* req) {
+void ssi_buffer_init(ssi_buffer* ssib, nxweb_http_server_connection* conn, nxweb_http_request* req) {
   memset(ssib, 0, sizeof(ssi_buffer));
   ssib->req=req;
-  ssib->nxb=req->nxb;
+  ssib->nxb=nxp_alloc(conn->hsp.nxb_pool); // allocate separate nxb to not interfere with other filters
+  nxb_init(ssib->nxb, NXWEB_CONN_NXB_SIZE);
   ssib->data_in.super.cls.os_cls=&ssi_buffer_data_in_class;
   ssib->data_in.ready=1;
 }
@@ -375,6 +376,10 @@ static void ssi_finalize(nxweb_filter* filter, nxweb_http_server_connection* con
   if (sfdata->input_fd) {
     close(sfdata->input_fd);
     sfdata->input_fd=0;
+  }
+  if (sfdata->ssib.nxb) {
+    nxb_empty(sfdata->ssib.nxb);
+    nxp_free(conn->hsp.nxb_pool, sfdata->ssib.nxb);
   }
 }
 
@@ -407,7 +412,7 @@ static nxweb_result ssi_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   nxd_http_server_proto_setup_content_out(&conn->hsp, resp);
 
   // attach content_out to ssi_buffer
-  ssi_buffer_init(&sfdata->ssib, req);
+  ssi_buffer_init(&sfdata->ssib, conn, req);
   if (resp->content_length>0) ssi_buffer_make_room(&sfdata->ssib, min(MAX_SSI_SIZE, resp->content_length));
   nxe_connect_streams(conn->tdata->loop, resp->content_out, &sfdata->ssib.data_in);
 

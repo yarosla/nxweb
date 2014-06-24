@@ -133,6 +133,7 @@ void nxweb_access_log_write(nxweb_http_request* req) { // write request's log re
   if (!nxweb_server_config.access_log_fd) return; \
   int size; \
   nxb_buffer* nxb=req->nxb; \
+  nxb_start_stream(nxb); \
   nxb_blank(nxb, offsetof(nxweb_log_fragment, content))
 
 #define BUILD_FRAG_END \

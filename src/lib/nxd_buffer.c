@@ -64,6 +64,7 @@ static const nxe_ostream_class ibuffer_data_in_class={.do_read=ibuffer_data_in_d
 
 void nxd_ibuffer_init(nxd_ibuffer* ib, nxb_buffer* nxb, int max_data_size) {
   memset(ib, 0, sizeof(nxd_ibuffer));
+  nxb_start_stream(nxb);
   ib->nxb=nxb;
   ib->max_data_size=max_data_size;
   ib->data_in.super.cls.os_cls=&ibuffer_data_in_class;

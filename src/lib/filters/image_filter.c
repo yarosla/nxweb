@@ -583,6 +583,7 @@ static nxweb_result img_translate_cache_key(nxweb_filter* filter, nxweb_http_ser
   }
   // append previously extracted cmd_string
   nxb_buffer* nxb=req->nxb;
+  nxb_start_stream(nxb);
   nxb_append_str(nxb, cache_key);
   nxb_append_str(nxb, "$img");
   nxb_append_str(nxb, ifdata->cmd.cmd_string);
@@ -601,6 +602,7 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
 
   assert(((nxweb_filter_image*)filter)->cache_dir);
   nxb_buffer* nxb=req->nxb;
+  nxb_start_stream(nxb);
   nxb_append_str(nxb, ((nxweb_filter_image*)filter)->cache_dir);
   const char* cache_key=ifdata->fdata.cache_key;
   if (cache_key[0]=='.' && cache_key[1]=='.' && cache_key[2]=='/') cache_key+=2; // avoid going up dir tree
@@ -611,7 +613,7 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   int cmd_len=ifdata->cmd.cmd_string? strlen(ifdata->cmd.cmd_string) : 0;
   nxb_blank(nxb, cmd_len);
   */
-  char* fpath=nxb_finish_stream(req->nxb, 0);
+  char* fpath=nxb_finish_stream(nxb, 0);
   /*
   if (cmd_len) {
     char* ext=strrchr(fpath, '.');

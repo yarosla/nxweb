@@ -835,6 +835,7 @@ void _nxweb_prepare_response_headers(nxe_loop* loop, nxweb_http_response *resp) 
   struct tm tm;
 
   nxb_buffer* nxb=resp->nxb;
+  nxb_start_stream(nxb);
 
   _Bool must_not_have_body=(resp->status_code==304 || resp->status_code==204 || resp->status_code==205);
   if (must_not_have_body) {
@@ -955,6 +956,7 @@ void nxweb_send_redirect2(nxweb_http_response *resp, int code, const char* locat
   char buf[32];
 
   nxb_buffer* nxb=resp->nxb;
+  nxb_start_stream(nxb);
 
   resp->status_code=code;
   resp->status=code==302? "Found":(code==301? "Moved Permanently":"Redirect");
@@ -1005,6 +1007,7 @@ void nxweb_send_http_error(nxweb_http_response *resp, int code, const char* mess
   static const char* response_body3="</h1>\n<p>nxweb/" REVISION "</p>\n</body>\n</html>";
   nxweb_set_response_status(resp, code, message);
   nxb_buffer* nxb=resp->nxb;
+  nxb_start_stream(nxb);
   nxb_append_str(nxb, response_body1);
   nxb_append_str(nxb, message);
   nxb_append_str(nxb, response_body2);
@@ -1083,6 +1086,7 @@ const char* _nxweb_prepare_client_request_headers(nxweb_http_request *req) {
   char buf[32];
 
   nxb_buffer* nxb=req->nxb;
+  nxb_start_stream(nxb);
 
   nxb_make_room(nxb, 250);
   nxb_append_str(nxb, req->head_method? "HEAD" : req->method);
