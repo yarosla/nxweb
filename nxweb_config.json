@@ -24,6 +24,21 @@
     "python":{
       "project_path":".", // python module search root; relative to workdir/python folder
       "wsgi_application":"hello.hello_world_app" // full python name of WSGI entry point
+    },
+    "image_filter":{
+      "allowed_cmds":[
+        {"cmd":"scale", "width":50, "height":50}, // eg. /path/to/image.50x50.jpg
+        {"cmd":"crop", "width":50, "height":50}, // eg. /path/to/image.c50x50.jpg
+        {"cmd":"scale", "width":100, "height":100}, // eg. /path/to/image.100x100.jpg
+        {"cmd":"crop", "width":100, "height":100}, // eg. /path/to/image.c100x100.jpg
+        {"cmd":"fill", "width":100, "height":100, "bgcolor":"#FF8800"}, // eg. /path/to/image.f100x100xFF8800.jpg
+        {"cmd":"fill", "width":500, "height":500, "bgcolor":"#FF8800"}, // eg. /path/to/image.f500x500xFF8800.jpg
+      ],
+      // don't forget to change secret key in your setup
+      "sign_key":"xbLBZeqSsUgfKWooMKoh0r1gjzqG856yVCMLf1pz"
+    },
+    "draw_filter":{
+      "font_file":"www/fonts/Sansation/Sansation_Bold.ttf"
     }
   },
   "routing":[
@@ -39,6 +54,7 @@
     { // see modules/hello.c
       "prefix":"/hello", "handler":"hello",
       "filters":[
+        {"type":"cors", "allow_hosts":[], "allow_credentials":true, "max_age":"3600"},
         {"type":"gzip", "compression":4}
       ]
     },
@@ -57,7 +73,7 @@
     { // see modules/subrequests.c
       "prefix":"/captcha", "handler":"captcha",
       "filters":[
-        {"type":"draw", "font_file":"www/fonts/Sansation/Sansation_Bold.ttf"},
+        {"type":"draw"},
       ]
     },
     {
@@ -95,19 +111,7 @@
       "filters":[
         {"type":"templates"},
         {"type":"ssi"},
-        {
-          "type":"image", "cache_dir":"www/cache/img",
-          "allowed_cmds":[
-            {"cmd":"scale", "width":50, "height":50}, // eg. /path/to/image.50x50.jpg
-            {"cmd":"crop", "width":50, "height":50}, // eg. /path/to/image.c50x50.jpg
-            {"cmd":"scale", "width":100, "height":100}, // eg. /path/to/image.100x100.jpg
-            {"cmd":"crop", "width":100, "height":100}, // eg. /path/to/image.c100x100.jpg
-            {"cmd":"fill", "width":100, "height":100, "bgcolor":"#FF8800"}, // eg. /path/to/image.f100x100xFF8800.jpg
-            {"cmd":"fill", "width":500, "height":500, "bgcolor":"#FF8800"}, // eg. /path/to/image.f500x500xFF8800.jpg
-          ],
-          // don't forget to change secret key in your setup
-          "sign_key":"XbLBZeqSsUgfKWooMKoh0r1gjzqG856yVCMLf1pz"
-        },
+        {"type":"image", "cache_dir":"www/cache/img"},
         {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
       ]
     },

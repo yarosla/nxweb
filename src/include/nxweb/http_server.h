@@ -123,6 +123,9 @@ typedef struct nxweb_handler {
   nxweb_handler_callback on_complete;
   nxweb_handler_callback on_error;
 
+  nxweb_result (*on_config)(struct nxweb_handler* handler, const struct nx_json* js);
+  nxe_data config;
+
   struct nxweb_handler* next_defined; // next in chain of defined handlers
 } nxweb_handler;
 

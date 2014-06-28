@@ -24,16 +24,18 @@
 #include <wand/MagickWand.h>
 
 
-static int on_startup() {
+static int on_module_startup() {
   MagickWandGenesis();
   return 0;
 }
 
-static void on_shutdown() {
+static void on_module_shutdown() {
   MagickWandTerminus();
 }
 
-NXWEB_MODULE(draw_filter, .on_server_startup=on_startup, .on_server_shutdown=on_shutdown);
+static void on_module_config(const nx_json* js);
+
+NXWEB_MODULE(draw_filter, .on_server_startup=on_module_startup, .on_server_shutdown=on_module_shutdown, .on_config=on_module_config);
 
 
 typedef struct nxweb_filter_draw {
@@ -174,7 +176,8 @@ static nxweb_result draw_do_filter(nxweb_filter* filter, nxweb_http_server_conne
 static nxweb_filter* draw_config(nxweb_filter* base, const nx_json* json) {
   nxweb_filter_draw* f=calloc(1, sizeof(nxweb_filter_draw)); // NOTE this will never be freed
   *f=*(nxweb_filter_draw*)base;
-  f->font_file=nx_json_get(json, "font_file")->text_value;
+  const char* font_file=nx_json_get(json, "font_file")->text_value;
+  if (font_file) f->font_file=font_file;
   return (nxweb_filter*)f;
 }
 
@@ -190,4 +193,9 @@ nxweb_filter* nxweb_draw_filter_setup(const char* font_file) {
   *f=draw_filter;
   f->font_file=font_file;
   return (nxweb_filter*)f;
+}
+
+static void on_module_config(const nx_json* json) {
+  const char* font_file=nx_json_get(json, "font_file")->text_value;
+  if (font_file) draw_filter.font_file=font_file;
 }

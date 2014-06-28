@@ -102,7 +102,7 @@ typedef struct nxweb_filter_image {
  * Signature calculated as SHA1(uri_path+CMD_SIGN_SECRET_KEY)
  */
 
-static nxweb_image_filter_cmd allowed_cmds[]={
+static nxweb_image_filter_cmd default_allowed_cmds[]={
   {.cmd='s', .width=50, .height=50},
   {.cmd='s', .width=100, .height=100},
   {.cmd='s', .width=100, .height=0},
@@ -127,7 +127,9 @@ static void image_filter_finalize() {
   MagickWandTerminus();
 }
 
-NXWEB_MODULE(image_filter, .on_server_startup=image_filter_init, .on_server_shutdown=image_filter_finalize);
+static void image_filter_on_config(const nx_json* js);
+
+NXWEB_MODULE(image_filter, .on_server_startup=image_filter_init, .on_server_shutdown=image_filter_finalize, .on_config=image_filter_on_config);
 
 static int locate_watermark(const char* fpath, int doc_root_len, char* wpath) {
   strcpy(wpath, fpath);
@@ -720,13 +722,14 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
 }
 
 static nxweb_filter* img_config(nxweb_filter* base, const nx_json* json) {
+  // handler level config (overrides module-level config for specific handler)
   nxweb_filter_image* f=calloc(1, sizeof(nxweb_filter_image)); // NOTE this will never be freed
   *f=*(nxweb_filter_image*)base;
   f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
   const char* sign_key=nx_json_get(json, "sign_key")->text_value;
   if (sign_key) f->sign_key=sign_key;
   const nx_json* allowed_cmds_json=nx_json_get(json, "allowed_cmds");
-  if (allowed_cmds_json) {
+  if (allowed_cmds_json->type!=NX_JSON_NULL) {
     nxweb_image_filter_cmd* allowed_cmds=calloc(allowed_cmds_json->length+1, sizeof(nxweb_image_filter_cmd));
     int i;
     nxweb_image_filter_cmd* cmd=allowed_cmds;
@@ -753,7 +756,7 @@ static nxweb_filter_image image_filter={.base={
         .init=img_init, .finalize=img_finalize,
         .translate_cache_key=img_translate_cache_key,
         .decode_uri=img_decode_uri, .do_filter=img_do_filter},
-        .allowed_cmds=allowed_cmds, .sign_key=CMD_SIGN_SECRET_KEY};
+        .allowed_cmds=default_allowed_cmds, .sign_key=CMD_SIGN_SECRET_KEY};
 
 NXWEB_DEFINE_FILTER(image, image_filter.base);
 
@@ -764,4 +767,30 @@ nxweb_filter* nxweb_image_filter_setup(const char* cache_dir, nxweb_image_filter
   if (allowed_cmds) f->allowed_cmds=allowed_cmds;
   if (sign_key) f->sign_key=sign_key;
   return (nxweb_filter*)f;
+}
+
+static void image_filter_on_config(const nx_json* json) {
+  // module level config
+  const char* sign_key=nx_json_get(json, "sign_key")->text_value;
+  if (sign_key) image_filter.sign_key=sign_key;
+  const nx_json* allowed_cmds_json=nx_json_get(json, "allowed_cmds");
+  if (allowed_cmds_json->type!=NX_JSON_NULL) {
+    nxweb_image_filter_cmd* allowed_cmds=calloc(allowed_cmds_json->length+1, sizeof(nxweb_image_filter_cmd));
+    int i;
+    nxweb_image_filter_cmd* cmd=allowed_cmds;
+    for (i=0; i<allowed_cmds_json->length; i++) {
+      const nx_json* js=nx_json_item(allowed_cmds_json, i);
+      const char* c=nx_json_get(js, "cmd")->text_value;
+      if (!c || !*c) continue;
+      cmd->cmd=*c;
+      cmd->width=(int)nx_json_get(js, "width")->int_value;
+      cmd->height=(int)nx_json_get(js, "height")->int_value;
+      const char* color=nx_json_get(js, "bgcolor")->text_value;
+      if (color && *color=='#' && strlen(color)==7) {
+        strcpy(cmd->color, color);
+      }
+      cmd++;
+    }
+    image_filter.allowed_cmds=allowed_cmds;
+  }
 }

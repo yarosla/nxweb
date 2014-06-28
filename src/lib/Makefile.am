@@ -22,6 +22,7 @@ libnxweb_la_SOURCES = \
 	filters/ssi_filter.c \
 	filters/templates_filter.c \
 	filters/file_cache_filter.c \
+	filters/cors_filter.c \
 	\
 	deps/ulib/hash.c \
 	deps/sha1-c/sha1.c

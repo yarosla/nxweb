@@ -23,16 +23,41 @@ static nxweb_result host_redirect_on_select(nxweb_http_server_connection* conn, 
   if (req->parent_req) // this is subrequest
     return NXWEB_NEXT;
 
+  const char* host=req->host;
   const char* host_wanted=conn->handler->host;
   assert(host_wanted); // host must be set to desired host and port
 
-  if (req->host && !strcmp(req->host, host_wanted)) // this is what we want
+  if (host && !strcmp(host, host_wanted)) // this is what we want
     return NXWEB_NEXT; // pass to next handler
+
+  if (host && conn->handler->config.cptr) { // this is what we pass
+    const char* const* ph;
+    for (ph=conn->handler->config.cptr; *ph; ph++) {
+      if (!strcmp(host, *ph)) // matches
+        return NXWEB_NEXT; // pass to next handler
+    }
+  }
 
   resp->host=host_wanted;
   nxweb_send_redirect2(resp, 301, req->uri, 0, conn->secure);
   return NXWEB_ERROR;
 }
 
-NXWEB_DEFINE_HANDLER(host_redirect, .on_select=host_redirect_on_select,
+static nxweb_result host_redirect_on_config(nxweb_handler* handler, const struct nx_json* json) {
+  const nx_json* pass_hosts_json=nx_json_get(json, "pass"); // list of domains to pass (no redirect)
+  if (pass_hosts_json->type!=NX_JSON_NULL) {
+    const char** pass_hosts=calloc(pass_hosts_json->length+1, sizeof(char*));
+    int i;
+    const char** ph=pass_hosts;
+    for (i=0; i<pass_hosts_json->length; i++) {
+      const char* host=nx_json_item(pass_hosts_json, i)->text_value;
+      if (!host || !*host) continue;
+      *ph++=host;
+    }
+    handler->config.ptr=pass_hosts;
+  }
+  return NXWEB_OK;
+}
+
+NXWEB_DEFINE_HANDLER(host_redirect, .on_select=host_redirect_on_select, .on_config=host_redirect_on_config,
         .flags=NXWEB_HANDLE_ANY);

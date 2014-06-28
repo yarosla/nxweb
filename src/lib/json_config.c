@@ -233,6 +233,13 @@ int nxweb_load_config(const char* filename) {
       new_handler->size=nx_json_get(js, "size")->int_value;
       new_handler->priority=nx_json_get(js, "priority")->int_value;
       if (!new_handler->priority) new_handler->priority=(i+1)*1000;
+      if (base_handler->on_config) {
+        nxweb_result r=base_handler->on_config(new_handler, js);
+        if (r!=NXWEB_OK) {
+          nxweb_log_error("error configuring handler '%s' specified for routing record #%d", handler_name, i);
+          continue;
+        }
+      }
       _nxweb_register_handler(new_handler, base_handler);
     }
   }
