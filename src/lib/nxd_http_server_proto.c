@@ -32,10 +32,17 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
 
   nxweb_log_debug("_nxweb_call_request_finalizers");
 
-  nxweb_http_request_data* rdata=hsp->req.data_chain;
+  // it is not very good that we access higher level (connection) object here but...
   nxweb_http_server_connection* conn=(nxweb_http_server_connection*)((char*)hsp-offsetof(nxweb_http_server_connection, hsp));
+
+  nxweb_http_server_connection_finalize_subrequests(conn, 0);
+
   nxweb_http_request* req=&hsp->req;
   nxweb_http_response* resp=hsp->resp;
+
+  if (resp && resp->content_out && resp->content_out->pair) {
+    nxe_disconnect_streams(resp->content_out, resp->content_out->pair);
+  }
 
   if (req->access_log) {
     nxweb_server_config.access_log_on_request_complete(conn, req, resp);
@@ -48,7 +55,7 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
     hsp->req_finalize=0; // call no more
     hsp->req_data=0;
   }
-  // it is not very good that we access higher level (connection) object here but...
+  nxweb_http_request_data* rdata=hsp->req.data_chain;
   while (rdata) {
     if (rdata->finalize) {
       rdata->finalize(conn, req, resp, rdata->value);
@@ -75,7 +82,6 @@ void _nxweb_call_request_finalizers(nxd_http_server_proto* hsp) {
     conn->handler->on_complete(conn, req, resp);
     conn->handler->on_complete=0; // call no more
   }
-  nxweb_http_server_connection_finalize_subrequests(conn, 0);
   conn->handler=0;
   conn->handler_param=(nxe_data)0;
 }

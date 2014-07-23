@@ -146,6 +146,7 @@ void nxp_free(nxp_pool* pool, void* ptr) {
       obj->prev=0;
     }
   }
+  // memset(ptr, 0xff, pool->object_size-sizeof(nxp_object)); // DEBUG ONLY - wipe freed data
 }
 
 void nxp_gc(nxp_pool* pool) {

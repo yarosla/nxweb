@@ -619,9 +619,11 @@ static void nxweb_http_server_connection_do_finalize(nxweb_http_server_connectio
 
 void nxweb_http_server_connection_finalize_subrequests(nxweb_http_server_connection* conn, int good) {
   nxweb_http_server_connection* sub=conn->subrequests;
+  nxweb_http_server_connection* next;
   while (sub) {
+    next=sub->next;
     nxweb_http_server_connection_do_finalize(sub, good);
-    sub=sub->next;
+    sub=next;
   }
   conn->subrequests=0;
 }
