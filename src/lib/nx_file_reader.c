@@ -68,8 +68,13 @@ static inline int load_page(nx_file_reader* fr, nxfr_size_t offset) {
     fr->mbuf_offset=offset;
     fr->mbuf_size=min(NX_FILE_READER_MALLOC_SIZE, fr->file_size - fr->mbuf_offset);
     fr->mbuf=nx_alloc(fr->mbuf_size);
-    if (lseek(fr->fd, fr->mbuf_offset, SEEK_SET)!=fr->mbuf_offset) return -1;
-    if (read(fr->fd, fr->mbuf, fr->mbuf_size) < fr->mbuf_size) return -1;
+    if ( (lseek(fr->fd, fr->mbuf_offset, SEEK_SET)!=fr->mbuf_offset)
+      || (read(fr->fd, fr->mbuf, fr->mbuf_size) < fr->mbuf_size) ) {
+      // file read failed: file content disappeared, concurrent modification, etc.
+      // fill in mbuf with spaces to be on a safe side
+      memset(fr->mbuf, ' ', fr->mbuf_size);
+      return -1;
+    }
 #ifdef NXFR_USE_MMAP
   }
   else {
@@ -77,7 +82,14 @@ static inline int load_page(nx_file_reader* fr, nxfr_size_t offset) {
     fr->mbuf_offset=offset & PAGE_SIZE_MASK;
     fr->mbuf_size=min(NX_FILE_READER_MMAP_SIZE, fr->file_size - fr->mbuf_offset);
     fr->mbuf=mmap(0, fr->mbuf_size, PROT_READ, MAP_PRIVATE|MAP_NORESERVE|MAP_POPULATE, fr->fd, fr->mbuf_offset); // MAP_SHARED or MAP_PRIVATE|MAP_NORESERVE|MAP_POPULATE
-    if (fr->mbuf==(void *)-1) return -1;
+    if (fr->mbuf==(void *)-1) {
+      // file read failed: file content disappeared, concurrent modification, etc.
+      // fill in mbuf with spaces to be on a safe side
+      fr->mmapped=0;
+      fr->mbuf=nx_alloc(fr->mbuf_size);
+      memset(fr->mbuf, ' ', fr->mbuf_size);
+      return -1;
+    }
     madvise(fr->mbuf, fr->mbuf_size, MADV_WILLNEED);
   }
 #endif
@@ -95,8 +107,8 @@ const char* nx_file_reader_get_mbuf_ptr(nx_file_reader* fr, int fd, nxfr_size_t 
     fr->fd=fd;
     fr->file_size=file_size;
     if (load_page(fr, offset)) {
-      nxweb_log_error("nx_file_reader: load_page() failed for fd=%d, file_size=%ld, offeset=%ld", fd, file_size, offset);
-      return 0;
+      nxweb_log_error("nx_file_reader: load_page() failed for fd=%d, file_size=%ld, offeset=%ld; concurrent file modification?", fd, file_size, offset);
+      // return 0; -- do not do this as it may cause segfaults; no safe checks by clients
     }
   }
   offset-=fr->mbuf_offset;

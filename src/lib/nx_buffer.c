@@ -178,13 +178,18 @@ void* nxb_alloc_obj(nxb_buffer* nxb, int size) {
 
 
 int nxb_printf_va(nxb_buffer* nxb, const char* fmt, va_list ap) {
+  va_list ap_copy;
   int room_size=nxb->end - nxb->ptr;
-  int len=vsnprintf(nxb->ptr, room_size, fmt, ap);
+  va_copy(ap_copy, ap); // preserve original va_list
+  int len=vsnprintf(nxb->ptr, room_size, fmt, ap_copy);
+  va_end(ap_copy);
   if (len<0) return 0; // output error
   if (len>=room_size) {
     if (nxb_realloc_chunk(nxb, len+1)) return 0; // need space for null-terminator
     room_size=nxb->end - nxb->ptr;
-    int len2=vsnprintf(nxb->ptr, room_size, fmt, ap);
+    va_copy(ap_copy, ap); // preserve original va_list
+    int len2=vsnprintf(nxb->ptr, room_size, fmt, ap_copy);
+    va_end(ap_copy);
     assert(len2==len);
   }
   nxb->ptr+=len;
