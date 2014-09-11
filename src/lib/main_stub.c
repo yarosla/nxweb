@@ -40,18 +40,20 @@ static void show_help(void) {
 #endif
           " -c file  load configuration file (default: nxweb_config.json)\n"
           " -T targ  set configuration target\n"
+          " -P dir   set python root dir\n"
+          " -W name  set python WSGI app fully qualified name\n"
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
           "example:  nxweb -d -l nxweb_error_log -H :80\n\n"
+#ifdef NXWEB_SYSCONFDIR
+          "default config dir: " NXWEB_SYSCONFDIR "\n\n"
+#endif
          );
 }
 
 // Command-line defaults
 nxweb_main_args_t nxweb_main_args={
-  .config_file="nxweb_config.json",
-  .http_listening_host_and_port=":8055",
-  .https_listening_host_and_port=":8056"
 };
 
 int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
@@ -63,7 +65,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file=0;
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -109,7 +111,20 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         nxweb_main_args.config_file=optarg;
         break;
       case 'T':
-        nxweb_main_args.config_target=optarg;
+        {
+          char *tok, *p=optarg;
+          int i;
+          for (i=0, tok=strsep(&p, ",;/ "); tok && i<15; i++, tok=strsep(&p, ",;/ ")) {
+            if (*tok) // skip empty tokens
+              nxweb_main_args.config_targets[i]=tok;
+          }
+        }
+        break;
+      case 'P':
+        nxweb_main_args.python_root=optarg;
+        break;
+      case 'W':
+        nxweb_main_args.python_wsgi_app=optarg;
         break;
       case '?':
         fprintf(stderr, "unkown option: -%c\n\n", optopt);
@@ -124,7 +139,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
     return EXIT_FAILURE;
   }
 
-  if (!pid_file) pid_file="nxweb.pid";
+  // if (!pid_file) pid_file="nxweb.pid";
 
   if (shutdown) {
     nxweb_shutdown_daemon(work_dir, pid_file);

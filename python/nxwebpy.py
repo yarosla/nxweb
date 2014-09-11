@@ -35,7 +35,7 @@ WSGI_APP=None
 
 if len(sys.argv)>=3:
   if sys.argv[1]:
-    project_path=os.path.realpath(os.path.join(os.path.dirname(__file__), sys.argv[1]))
+    project_path=os.path.realpath(os.path.join(os.getcwd(), sys.argv[1]))
     sys.path.append(project_path)
     print 'python project path:', project_path
   project_app=sys.argv[2]

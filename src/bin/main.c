@@ -42,9 +42,9 @@ static void server_config() {
 static void server_config() {
 
   // Bind listening interfaces:
-  if (nxweb_listen(nxweb_main_args.http_listening_host_and_port, 4096)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen(nxweb_main_args.http_listening_host_and_port? nxweb_main_args.http_listening_host_and_port : ":8055", 4096)) return; // simulate normal exit so nxweb is not respawned
 #ifdef WITH_SSL
-  if (nxweb_listen_ssl(nxweb_main_args.https_listening_host_and_port, 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
+  if (nxweb_listen_ssl(nxweb_main_args.https_listening_host_and_port? nxweb_main_args.https_listening_host_and_port : ":8056", 1024, 1, SSL_CERT_FILE, SSL_KEY_FILE, SSL_DH_PARAMS_FILE, SSL_PRIORITIES)) return; // simulate normal exit so nxweb is not respawned
 #endif // WITH_SSL
 
   // Drop privileges:

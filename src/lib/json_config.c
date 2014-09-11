@@ -21,6 +21,8 @@
 
 #include <fcntl.h>
 
+#define DEFAULT_SSL_PRIORITIES "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"
+
 static nxweb_handler* find_handler(const char* name) {
   nxweb_handler* h;
   for (h=nxweb_server_config.handlers_defined; h; h=h->next_defined) {
@@ -38,10 +40,22 @@ static nxweb_filter* find_filter(const char* name) {
 }
 
 int nxweb_load_config(const char* filename) {
+  if (!filename || !*filename) filename="nxweb_config.json";
   struct stat st;
   if (stat(filename, &st)==-1) {
-    nxweb_log_error("can't find config file %s", filename);
-    return -1;
+
+#ifdef NXWEB_SYSCONFDIR
+    filename=NXWEB_SYSCONFDIR "/nxweb_config.json";
+    if (stat(filename, &st)==-1) {
+#endif
+
+      nxweb_log_error("can't find config file %s", filename);
+      return -1;
+
+#ifdef NXWEB_SYSCONFDIR
+    }
+#endif
+
   }
   int fd=open(filename, O_RDONLY);
   if (fd==-1) {
@@ -64,45 +78,65 @@ int nxweb_load_config(const char* filename) {
 
   int i;
 
+  _Bool listen_http=0, listen_https=0;
   const nx_json* listen=nx_json_get(json, "listen");
   if (listen->type!=NX_JSON_NULL) {
     for (i=0; i<listen->length; i++) {
       const nx_json* l=nx_json_item(listen, i);
-      const char* itf=nx_json_get(l, "interface")->text_value;
-      int backlog=(int)nx_json_get(l, "backlog")->int_value;
       int secure=(int)nx_json_get(l, "secure")->int_value;
+      const char* itf;
+      if (!secure && nxweb_main_args.http_listening_host_and_port && !listen_http) {
+        itf=nxweb_main_args.http_listening_host_and_port;
+      }
+      else if (secure && nxweb_main_args.https_listening_host_and_port && !listen_https) {
+        itf=nxweb_main_args.https_listening_host_and_port;
+      }
+      else {
+        itf=nx_json_get(l, "interface")->text_value;
+      }
+      int backlog=(int)nx_json_get(l, "backlog")->int_value;
       if (!backlog) backlog=1024;
       if (itf) {
         if (!secure) {
           if (nxweb_listen(itf, backlog)) return -1;
+          listen_http=1;
         }
 #ifdef WITH_SSL
         else {
-          if (nxweb_listen_ssl(itf, backlog, 1, nx_json_get(l, "cert")->text_value, nx_json_get(l, "key")->text_value, nx_json_get(l, "dh")->text_value, nx_json_get(l, "priorities")->text_value)) return -1;
+          const char* priorities=nx_json_get(l, "priorities")->text_value;
+          if (!priorities) priorities=DEFAULT_SSL_PRIORITIES;
+          if (nxweb_listen_ssl(itf, backlog, 1, nx_json_get(l, "cert")->text_value, nx_json_get(l, "key")->text_value, nx_json_get(l, "dh")->text_value, priorities)) return -1;
+          listen_https=1;
         }
 #endif // WITH_SSL
       }
     }
   }
-  else { // fallback to command line arguments
-    if (nxweb_main_args.http_listening_host_and_port) {
-      if (nxweb_listen(nxweb_main_args.http_listening_host_and_port, 4096)) return -1;
-    }
+  if (!listen_http) {
+    const char* itf;
+    if (nxweb_main_args.http_listening_host_and_port) itf=nxweb_main_args.http_listening_host_and_port;
+    else itf=":8055";
+    if (nxweb_listen(itf, 4096)) return -1;
+  }
 #ifdef WITH_SSL
-    if (nxweb_main_args.https_listening_host_and_port) {
-      if (nxweb_listen_ssl(nxweb_main_args.https_listening_host_and_port, 1024, 1,
-                           "ssl/server_cert.pem", "ssl/server_key.pem", "ssl/dh.pem",
-                           "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1")) return -1;
-    }
+  if (!listen_https && stat("ssl/server_key.pem", &st)!=-1) {
+    const char* itf;
+    if (nxweb_main_args.https_listening_host_and_port) itf=nxweb_main_args.https_listening_host_and_port;
+    else itf=":8056";
+    if (nxweb_listen_ssl(itf, 1024, 1,
+                         "ssl/server_cert.pem", "ssl/server_key.pem", "ssl/dh.pem",
+                         DEFAULT_SSL_PRIORITIES)) return -1;
+  }
 #endif // WITH_SSL
-  }
 
-  const nx_json* drop_privileges=nx_json_get(json, "drop_privileges");
-  if (drop_privileges->type!=NX_JSON_NULL) {
-    if (nxweb_drop_privileges(nx_json_get(drop_privileges, "group")->text_value, nx_json_get(drop_privileges, "user")->text_value)==-1) return -1;
-  }
-  else { // fallback to command line arguments
+  if (nxweb_main_args.group_name && nxweb_main_args.user_name) { // use command line arguments if given
     if (nxweb_drop_privileges(nxweb_main_args.group_name, nxweb_main_args.user_name)==-1) return -1;
+  }
+  else {
+    const nx_json* drop_privileges=nx_json_get(json, "drop_privileges");
+    if (drop_privileges->type!=NX_JSON_NULL) {
+      if (nxweb_drop_privileges(nx_json_get(drop_privileges, "group")->text_value, nx_json_get(drop_privileges, "user")->text_value)==-1) return -1;
+    }
   }
 
   nxweb_error_log_level=NXWEB_LOG_WARNING;
@@ -117,9 +151,11 @@ int nxweb_load_config(const char* filename) {
       else if (!strcmp(log_level, "ERROR")) nxweb_error_log_level=NXWEB_LOG_ERROR;
       else if (!strcmp(log_level, "NONE")) nxweb_error_log_level=NXWEB_LOG_NONE;
     }
-    const char* access_log=nx_json_get(logging, "access_log")->text_value;
-    if (access_log) {
-      nxweb_server_config.access_log_fpath=access_log;
+    if (!nxweb_server_config.access_log_fpath) { // command-line value takes precedence
+      const char* access_log=nx_json_get(logging, "access_log")->text_value;
+      if (access_log) {
+        nxweb_server_config.access_log_fpath=access_log;
+      }
     }
   }
 
@@ -145,6 +181,7 @@ int nxweb_load_config(const char* filename) {
         while (mod) {
           if (mod->name && !strcmp(mod->name, module_name)) {
             if (mod->on_config) mod->on_config(js);
+            mod->configured=1;
             break;
           }
           mod=mod->next;
@@ -153,14 +190,37 @@ int nxweb_load_config(const char* filename) {
     }
   }
 
+  // configure modules that have not been configured explicitely
+  nxweb_module* mod=nxweb_server_config.module_list;
+  while (mod) {
+    if (!mod->configured) {
+      if (mod->on_config) mod->on_config(0); // pass NULL instead of JSON
+      mod->configured=1;
+    }
+    mod=mod->next;
+  }
+
   const nx_json* routing=nx_json_get(json, "routing");
   if (routing->type!=NX_JSON_NULL) {
     for (i=0; i<routing->length; i++) {
       const nx_json* js=nx_json_item(routing, i);
       const char* targets=nx_json_get(js, "targets")->text_value;
       if (targets) {
-        if (!nxweb_main_args.config_target || !strstr(nxweb_main_args.config_target, targets)) continue;
+        char *p=(char*)targets, *tok;
+        const char **t;
+        _Bool matched=0;
+        while ((tok=strsep(&p, ",;/ "))) {
+          if (!*tok) continue; // skip empty tokens
+          if (!strcmp(tok, "none") && !nxweb_main_args.config_targets[0]) goto TARGET_MATCHED;
+          else {
+            for (t=nxweb_main_args.config_targets; *t; t++) {
+              if (!strcmp(tok, *t)) goto TARGET_MATCHED;
+            }
+          }
+        }
+        continue; // skip this routing record
       }
+      TARGET_MATCHED: /* empty statement */;
       const char* handler_name=nx_json_get(js, "handler")->text_value;
       if (!handler_name || !*handler_name) {
         nxweb_log_error("no handler specified for routing record #%d", i);

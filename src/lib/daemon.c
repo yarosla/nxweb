@@ -134,20 +134,22 @@ int nxweb_shutdown_daemon(const char* work_dir, const char* pid_file) {
   if (work_dir && chdir(work_dir)<0) {
     nxweb_die("chdir(work_dir) failed");
   }
-  int fd=open(pid_file, O_RDONLY);
-  if (fd!=-1) {
-    char pid_str[20];
-    pid_t pid=0;
-    int len=read(fd, pid_str, sizeof(pid_str)-1);
-    if (len>0) {
-      pid_str[len]='\0';
-      pid=strtol(pid_str, 0, 10);
-    }
-    close(fd);
-    //unlink(pid_file);
-    if (pid) {
-      kill(pid, SIGTERM);
-      return EXIT_SUCCESS;
+  if (pid_file) {
+    int fd=open(pid_file, O_RDONLY);
+    if (fd!=-1) {
+      char pid_str[20];
+      pid_t pid=0;
+      int len=read(fd, pid_str, sizeof(pid_str)-1);
+      if (len>0) {
+        pid_str[len]='\0';
+        pid=strtol(pid_str, 0, 10);
+      }
+      close(fd);
+      //unlink(pid_file);
+      if (pid) {
+        kill(pid, SIGTERM);
+        return EXIT_SUCCESS;
+      }
     }
   }
   fprintf(stderr, "Could not find PID file %s of running NXWEB\n", pid_file);

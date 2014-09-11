@@ -1,0 +1,39 @@
+/* NXWEB default config file */
+{
+  // "listen":[ // interfaces can be overriden by command-line arguments
+    // {"interface":":8081", "backlog":4096},
+    // {"interface":":8082", "backlog":1024, "secure":true,
+    //   "cert":"ssl/server_cert.pem", "key":"ssl/server_key.pem", "dh":"ssl/dh.pem",
+    //   "priorities":"NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"}
+  // ],
+  // uncomment if needed
+  // "drop_privileges":{ // these settings can be overriden by command-line arguments
+  //   "group":"www-data", "user":"www-data",
+  // },
+  "logging":{
+    "log_level":"INFO"
+  },
+  "modules":{
+    "python":{
+      "project_path":null, // python module search root; relative to workdir
+      "wsgi_application":null // full python name of WSGI entry point
+    }
+  },
+  "routing":[
+    {
+      "prefix":null, // null matches all requests
+      "handler":"sendfile",
+      "targets":"none,static",
+      "dir":".", // aka document root
+      "memcache":true, // cache small files in memory
+      "charset":"utf-8", // charset for text files
+      "index_file":"index.htm" // directory index
+    },
+    {
+      "prefix":null, "handler":"python",
+      "targets":"python",
+      "dir":".nxweb/cache/upload_temp", // temp dir for large uploads
+      "size":50000000 /* 50 Mb */ // max upload size
+    },
+  ]
+}

@@ -1,5 +1,5 @@
 #CFLAGS = -pthread -Wno-deprecated-declarations -O2 -g
-AM_CFLAGS = -pthread $(GNUTLS_CFLAGS) $(IMAGEMAGICK_CFLAGS)
+AM_CFLAGS = -pthread $(GNUTLS_CFLAGS) $(IMAGEMAGICK_CFLAGS) -DNXWEB_SYSCONFDIR='"$(sysconfdir)/nxweb"' -DNXWEB_LIBDIR='"$(libdir)/nxweb"'
 
 AM_CPPFLAGS = -I$(top_srcdir)/src/include -I$(top_srcdir)/src/include/nxweb
 

@@ -72,3 +72,4 @@ _strace
 ^python/flask
 ^python/mysite/
 ^fupl-\d+$
+^pkg/

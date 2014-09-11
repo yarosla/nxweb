@@ -196,6 +196,7 @@ nxweb_filter* nxweb_draw_filter_setup(const char* font_file) {
 }
 
 static void on_module_config(const nx_json* json) {
+  if (!json) return; // default config
   const char* font_file=nx_json_get(json, "font_file")->text_value;
   if (font_file) draw_filter.font_file=font_file;
 }

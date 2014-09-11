@@ -770,6 +770,7 @@ nxweb_filter* nxweb_image_filter_setup(const char* cache_dir, nxweb_image_filter
 }
 
 static void image_filter_on_config(const nx_json* json) {
+  if (!json) return; // default config
   // module level config
   const char* sign_key=nx_json_get(json, "sign_key")->text_value;
   if (sign_key) image_filter.sign_key=sign_key;

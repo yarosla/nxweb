@@ -132,6 +132,7 @@ typedef struct nxweb_handler {
 typedef struct nxweb_module {
   const char* name;
   int priority;
+  _Bool configured:1;
   struct nxweb_module* next;
   nxweb_handler_callback request_dispatcher;
   int (*on_server_startup)();

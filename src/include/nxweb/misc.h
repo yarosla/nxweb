@@ -45,7 +45,9 @@ typedef struct nxweb_main_args_t {
   const char* http_listening_host_and_port;
   const char* https_listening_host_and_port;
   const char* config_file;
-  const char* config_target;
+  const char* config_targets[16]; // up to 15 targets in command line
+  const char* python_root;
+  const char* python_wsgi_app;
 } nxweb_main_args_t;
 
 extern nxweb_main_args_t nxweb_main_args;
