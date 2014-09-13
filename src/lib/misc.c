@@ -95,7 +95,7 @@ void nxweb_log_info(const char* fmt, ...) {
   va_end(ap);
 }
 
-#if ENABLE_LOG_DEBUG
+#ifdef ENABLE_LOG_DEBUG
 
 void nxweb_log_debug(const char* fmt, ...) {
   static int count=1000; // max. number of messages to log; can't run infinitely - might fill up disk

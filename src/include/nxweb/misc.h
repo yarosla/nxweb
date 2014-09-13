@@ -59,7 +59,7 @@ void nxweb_log_error(const char* fmt, ...) __attribute__((format (printf, 1, 2))
 void nxweb_log_warning(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 void nxweb_log_info(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 
-#if ENABLE_LOG_DEBUG
+#ifdef ENABLE_LOG_DEBUG
 
 void nxweb_log_debug(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
 

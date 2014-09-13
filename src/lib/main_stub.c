@@ -46,8 +46,31 @@ static void show_help(void) {
           " -v       show version\n"
           "\n"
           "example:  nxweb -d -l nxweb_error_log -H :80\n\n"
+         );
+}
+
+static void show_version(void) {
+  printf( "NXWEB - ultra-fast and super-lightweight web server\n"
+          "project page:        https://bitbucket.org/yarosla/nxweb/\n"
+          "version:             nxweb/" REVISION "\n"
+          "build-date:          " __DATE__ " " __TIME__ "\n"
+#ifdef WITH_ZLIB
+          "gzip support:        ON\n"
+#endif
+#ifdef WITH_SSL
+          "SSL support:         ON\n"
+#endif
+#ifdef WITH_IMAGEMAGICK
+          "ImageMagick support: ON\n"
+#endif
+#ifdef WITH_PYTHON
+          "Python support:      ON\n"
+#endif
 #ifdef NXWEB_SYSCONFDIR
-          "default config dir: " NXWEB_SYSCONFDIR "\n\n"
+          "default config dir:  " NXWEB_SYSCONFDIR "\n"
+#endif
+#ifdef NXWEB_LIBDIR
+          "lib dir:             " NXWEB_LIBDIR "\n"
 #endif
          );
 }
@@ -71,11 +94,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         show_help();
         return 0;
       case 'v':
-        printf( "NXWEB - ultra-fast and super-lightweight web server\n"
-                "version:      nxweb/" REVISION "\n"
-                "build-date:   " __DATE__ " " __TIME__ "\n"
-                "project page: https://bitbucket.org/yarosla/nxweb/\n"
-               );
+        show_version();
         return 0;
       case 'd':
         daemon=1;

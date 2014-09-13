@@ -1,0 +1,13 @@
+# pkg-config descriptor for NXWEB.
+#
+# After installing this file the following command can be used
+# to compile and link modules to libnxweb:
+#  gcc -O2 -g main.c modules/*.c -o mynxweb `pkg-config --cflags --libs nxweb`
+
+
+Name: nxweb
+Description: NXWEB - ultra-fast and super-lightweight web server
+URL: https://bitbucket.org/yarosla/nxweb/
+Version: @PACKAGE_VERSION@
+Libs: -L@CMAKE_INSTALL_LIBDIR@ -lnxweb @EXTRA_LIBS_STR@
+Cflags: -I@CMAKE_INSTALL_INCLUDEDIR@ @EXTRA_INCLUDES_STR@
