@@ -47,3 +47,11 @@ libnxweb_la_LDFLAGS = -version-info $(NXWEB_LIB_VERSION_INFO)
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = nxweb.pc
 DISTCLEANFILES = $(pkgconfig_DATA)
+
+# run ldconfig after install; unless disabled
+if ENABLE_POSTINSTALL
+POST_INSTALL_CMD=ldconfig
+endif
+
+install-exec-hook:
+	$(POST_INSTALL_CMD)
