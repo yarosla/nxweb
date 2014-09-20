@@ -39,7 +39,7 @@
 
 static const char* project_root="."; // defaults to workdir
 static const char* project_app;
-static const char* virtualenv_path;
+static const char* virtualenv_path="";
 
 static PyThreadState* py_main_thread_state;
 static PyObject* py_module;
