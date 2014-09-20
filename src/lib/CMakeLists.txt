@@ -34,7 +34,7 @@ if (WITH_PYTHON)
 endif (WITH_PYTHON)
 
 
-include_directories(../include/nxweb ${EXTRA_INCLUDES})
+include_directories(../include ../include/nxweb ${EXTRA_INCLUDES})
 
 #set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS} "-pthread -O2 -g")
 add_compile_options(-pthread)

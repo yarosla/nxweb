@@ -42,6 +42,7 @@ static void show_help(void) {
           " -T targ  set configuration target\n"
           " -P dir   set python root dir\n"
           " -W name  set python WSGI app fully qualified name\n"
+          " -V path  set python virtualenv path\n"
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
@@ -88,7 +89,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file=0;
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:V:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -144,6 +145,9 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         break;
       case 'W':
         nxweb_main_args.python_wsgi_app=optarg;
+        break;
+      case 'V':
+        nxweb_main_args.python_virtualenv_path=optarg;
         break;
       case '?':
         fprintf(stderr, "unkown option: -%c\n\n", optopt);

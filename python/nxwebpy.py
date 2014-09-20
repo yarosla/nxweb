@@ -29,13 +29,20 @@ def _disable_stdout_buffering():
 
 _disable_stdout_buffering()
 
-print 'python module parameters:', ', '.join(sys.argv)
+# print 'python module parameters:', ', '.join(sys.argv)
 
 WSGI_APP=None
 
+if len(sys.argv)>=4 and sys.argv[3]:
+  activate_this=os.path.abspath(os.path.join(sys.argv[3], 'bin/activate_this.py'))
+  if os.path.isfile(activate_this):
+    execfile(activate_this, dict(__file__=activate_this))
+  else:
+    print 'python config error: cannot activate virtualenv', activate_this
+
 if len(sys.argv)>=3:
   if sys.argv[1]:
-    project_path=os.path.realpath(os.path.join(os.getcwd(), sys.argv[1]))
+    project_path=os.path.abspath(sys.argv[1])
     sys.path.append(project_path)
     print 'python project path:', project_path
   project_app=sys.argv[2]
@@ -43,11 +50,16 @@ if len(sys.argv)>=3:
     p=project_app.rsplit('.', 1)
     if len(p)==2:
       module_name, app_name=p
-      mod=__import__(module_name, globals(), locals(), [app_name])
-      if mod and hasattr(mod, app_name):
-        WSGI_APP=getattr(mod, app_name)
+      try:
+        mod=__import__(module_name, globals(), locals(), [app_name])
+        if mod and hasattr(mod, app_name):
+          WSGI_APP=getattr(mod, app_name)
+        else:
+          print 'python config error: there is no', app_name, 'in module', module_name
+      except:
+        print 'python config error: failed to import module', module_name
     else:
-      print 'python wsgi_application is expected in form <module>.<app>'
+      print 'python config error: wsgi_application is expected in form <module>.<app>'
 
 if not WSGI_APP:
   print 'python config error: no WSGI_APP defined; using stub'

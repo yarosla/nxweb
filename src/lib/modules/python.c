@@ -39,6 +39,7 @@
 
 static const char* project_root="."; // defaults to workdir
 static const char* project_app;
+static const char* virtualenv_path;
 
 static PyThreadState* py_main_thread_state;
 static PyObject* py_module;
@@ -55,7 +56,12 @@ static void on_config(const nx_json* js) {
     const char* v=nx_json_get(js, "wsgi_application")->text_value;
     if (v) project_app=v;
   }
-  nxweb_log_debug("python config: %s, %s", project_root, project_app);
+  if (nxweb_main_args.python_virtualenv_path) virtualenv_path=nxweb_main_args.python_virtualenv_path;
+  else if (js) {
+    const char* v=nx_json_get(js, "virtualenv_path")->text_value;
+    if (v) virtualenv_path=v;
+  }
+  nxweb_log_error("python config: root=%s, app=%s, virtualenv=%s", project_root, project_app, virtualenv_path);
 }
 
 static int on_startup() {
@@ -85,8 +91,8 @@ static int on_startup() {
   // initialize thread support
   PyEval_InitThreads();
   Py_Initialize();
-  char *a[]={(char*)prog_name, (char*)project_root, (char*)project_app};
-  PySys_SetArgv(3, a);
+  char *a[]={(char*)prog_name, (char*)project_root, (char*)project_app, (char*)virtualenv_path};
+  PySys_SetArgv(4, a);
   PyObject* py_module_name=PyString_FromString(MODULE_NAME);
   assert(py_module_name);
   // save a pointer to the main PyThreadState object

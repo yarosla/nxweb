@@ -48,6 +48,7 @@ typedef struct nxweb_main_args_t {
   const char* config_targets[16]; // up to 15 targets in command line
   const char* python_root;
   const char* python_wsgi_app;
+  const char* python_virtualenv_path;
 } nxweb_main_args_t;
 
 extern nxweb_main_args_t nxweb_main_args;
