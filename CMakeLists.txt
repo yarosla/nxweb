@@ -129,9 +129,10 @@ include_directories("${PROJECT_BINARY_DIR}")
 
 add_subdirectory(src/lib)
 add_subdirectory(src/bin)
+add_subdirectory(sample_config)
 
 
-install(FILES "python/nxwebpy.py" DESTINATION lib/nxweb)
+install(FILES "sample_config/python/nxwebpy.py" DESTINATION lib/nxweb)
 install(FILES "etc/nxweb_config.json" DESTINATION etc/nxweb)
 install(FILES "${PROJECT_BINARY_DIR}/config.h" DESTINATION include/nxweb)
 

@@ -41,6 +41,9 @@ cd nxweb-***
 ./configure --prefix=/path-to-install
   This is how you can change NXWEB binary, includes, and libraries install location.
 
+./configure --disable-certificates
+  This will skip sample SSL certificate generation.
+
 2. Adjust Parameters
 
   You can tune NXWEB parameters by modifying its header files,
@@ -49,15 +52,17 @@ cd nxweb-***
 3. Compile
 
 make
-  After successful compilation the following files become available:
-    - src/bin/nxweb      -- NXWEB binary
-    - src/include        -- NXWEB include headers
-    - src/lib/libnxweb.a -- NXWEB static library to link your modules to.
-        See src/bin/main.c and src/bin/modules/* for examples.
-    - ssl/*              -- sample SSL keys generated for you.
-    - www/root           -- sample static html & images content.
 
-3. Install (optional)
+  After successful compilation the following files become available:
+    - src/bin/nxweb       -- NXWEB binary
+    - src/include         -- NXWEB include headers
+    - src/lib/libnxweb.a  -- NXWEB static library to link your modules to.
+                             See sample_config/modules/* for examples.
+    - sample_config/nxweb_config.json -- sample config file.
+    - sample_config/www   -- sample static html & images content.
+    - sample_config/ssl/* -- sample SSL keys generated for you.
+
+3. Install
 
   You can install compiled binary, include, and library files to your system's
   default location (or location specified by --prefix switch):
@@ -68,9 +73,23 @@ sudo make install
 
 sudo make uninstall
 
-4. Compiling and linking your own main.c & modules:
+4. Run sample configuration
+
+  Change directory to ./sample_config then run:
+
+nxweb
+
+  nxweb shall pick nxweb_config.json file from current directory and behave accordingly.
+
+5. Compiling and linking your own main.c & modules:
 
 gcc -O2 -g main.c modules/*.c -o mynxweb `pkg-config --cflags --libs nxweb`
 
   pkg-config will search for NXWEB libraries at system's default locations
   if not custom configured.
+
+5a. Alternatively you can compile your modules into shared library:
+
+gcc -shared -fPIC modules/*.c -o mymodules.so `pkg-config --cflags nxweb`
+
+  then load it via nxweb_config.json or via command line switch -L.

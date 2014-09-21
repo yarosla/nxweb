@@ -1,12 +1,15 @@
 ACLOCAL_AMFLAGS = -I m4
 
-EXTRA_DIST = configure www/root/index.htm www/root/watermark.png www/root/pic.jpg \
-	     www/root/base.thtml www/root/page1.thtml www/root/ssi.shtml \
-	     python/nxwebpy.py python/hello.py nxweb_config.json etc/nxweb_config.json
+EXTRA_DIST = configure sample_config/www/index.htm sample_config/www/watermark.png sample_config/www/pic.jpg \
+	     sample_config/www/base.thtml sample_config/www/page1.thtml \
+	     sample_config/www/ssi.shtml sample_config/www/ssi_with_cache.shtml \
+	     sample_config/python/nxwebpy.py sample_config/python/hello.py \
+	     sample_config/nxweb_config.json etc/nxweb_config.json
 
-SUBDIRS = src/include src/lib src/bin
+SUBDIRS = src/include src/lib src/bin sample_config/modules
+
 if GENERATE_CERTIFICATES
-SUBDIRS += ssl
+SUBDIRS += sample_config/ssl
 endif
 
 # Default server config
@@ -16,5 +19,5 @@ nxwebconfig_DATA = etc/nxweb_config.json
 # Python WSGI adapter
 if WITH_PYTHON
 nxwebxlibdir = $(libdir)/nxweb
-nxwebxlib_DATA = python/nxwebpy.py
+nxwebxlib_DATA =  sample_config/python/nxwebpy.py
 endif

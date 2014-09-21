@@ -2,31 +2,42 @@
 
 Ultra-fast and super-lightweight web server for applications written in C.
 
+== Home Page ==
+
+Project home page: [[http://nxweb.org|NXWEB.ORG]]
+
 == Rationale ==
 
 Sometimes web applications need small and fast components that are best written in C.
 
 Example: ad banner rotation engine. It gets invoked many times on every page of your site producing little HTML snippets based on predefined configuration. How would you implement it?
 
-CGI is not an option as it gets loaded and unloaded on every request. Writing a module for your main web server such as Apache httpd or nginx gives best performance but server's API isn't very friendly (take a look at basic hello-world module for nginx [[http://blog.zhuzhaoyuan.com/2009/08/creating-a-hello-world-nginx-module/|here]], not talking about dealing with shared memory, etc.). What we need is sort of servlet container for C (just like Java has).
+CGI is not an option as it gets loaded and unloaded on every request. Writing a module for your main web server such as Apache httpd or nginx gives best performance but server's API isn't very friendly (especially when dealing with shared memory, etc.). What we need is sort of servlet container for C (just like Java has).
 
 Before writing NXWEB I evaluated a number of existing light/embeddable web servers (mongoose, microhttpd, libevent, G-WAN) each one having their own drawbacks (see notes to [[Benchmarks|benchmarks]]).
 
 === What NXWEB offers:
 
-* good (if not best) performance; see [[Benchmarks|benchmarks]]
+* good (if not best) **performance**; see [[Benchmarks|benchmarks]]
 * can serve thousands concurrent requests
 * small memory footprint
 * event-driven & multi-threaded model designed to scale
 * exceptionally light code base
-* simple API
+* **simple API**
 * decent HTTP protocol handling
 * keep-alive connections
-* SSL support (via GNUTLS)
-* HTTP proxy (with keep-alive connection pooling)
+* chunked requests and responses
+* **SSL support** (via GNUTLS)
+* **HTTP proxy** (with keep-alive connection pooling)
+* **file cache** for proxied content and custom handlers' output
+* cached content can be served when backend is unavailable
 * non-blocking sendfile support (with configurable small file memory cache)
-* cacheable gzip content encoding
-* cacheable image thumbnails with watermarks (via ImageMagick)
+* cacheable **gzip** content encoding
+* cacheable **image thumbnails** with watermarks (via ImageMagick)
+* basic server-side includes (**SSI**)
+* **templating engine** with page inheritance
+* subrequests
+* integrated **Python WSGI-server**
 * modular design for developers
 * can be run as daemon; relaunches itself on error
 * open source
@@ -48,7 +59,7 @@ After receiving complete HTTP request network thread finds and invokes applicati
 
 == API
 
-See [[https://bitbucket.org/yarosla/nxweb/src|source code]]. {{{hello.c}}} and {{{sendfile.c}}} are examples of user modules. nxweb.h contains function and struct definitions.
+See [[http://nxweb.org|official website]] and [[https://bitbucket.org/yarosla/nxweb/src|source code]]. {{{hello.c}}} is an example of user module. {{{nxweb.h}}} contains function and struct definitions.
 
 == Benchmarks
 
@@ -65,7 +76,6 @@ Please report issues via [[https://bitbucket.org/yarosla/nxweb/issues|issue trac
 
 == Discussions & Announcements
 
-{{http://groups.google.com/intl/en/images/logos/groups_logo_sm.gif}}\\
 **nxweb**\\
 [[http://groups.google.com/group/nxweb?hl=en|Visit this group]]
 

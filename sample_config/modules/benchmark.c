@@ -19,10 +19,6 @@
 
 #include "nxweb/nxweb.h"
 
-#include <malloc.h>
-#include <fcntl.h>
-#include <pthread.h>
-
 static nxweb_result benchmark_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   resp->content_type="text/html";
   resp->content="<p>Hello, world!</p>";

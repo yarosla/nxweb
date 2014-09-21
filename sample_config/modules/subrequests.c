@@ -19,8 +19,6 @@
 
 #include "nxweb/nxweb.h"
 
-#include <unistd.h>
-#include <sys/socket.h>
 #include <fcntl.h>
 
 static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {

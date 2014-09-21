@@ -20,6 +20,7 @@
 #include "nxweb.h"
 
 #include <unistd.h>
+#include <dlfcn.h>
 
 
 // Utility stuff:
@@ -43,6 +44,7 @@ static void show_help(void) {
           " -P dir   set python root dir\n"
           " -W name  set python WSGI app fully qualified name\n"
           " -V path  set python virtualenv path\n"
+          " -L path  load nxweb module from .so file (repeat to load several libs)\n"
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
@@ -89,7 +91,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file=0;
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:V:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:V:L:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -148,6 +150,12 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         break;
       case 'V':
         nxweb_main_args.python_virtualenv_path=optarg;
+        break;
+      case 'L':
+        if (!dlopen(optarg, RTLD_NOW)) {
+          fprintf(stderr, "failed to load shared library %s\n\n", optarg);
+          return EXIT_FAILURE;
+        }
         break;
       case '?':
         fprintf(stderr, "unkown option: -%c\n\n", optopt);

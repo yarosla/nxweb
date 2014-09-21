@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.4)
 
 project(nxweb_exe)
 
-set(EXE_SOURCE_FILES main.c modules/benchmark.c modules/hello.c modules/upload.c modules/subrequests.c)
+set(EXE_SOURCE_FILES main.c)
 
 include_directories(../include ${EXTRA_INCLUDES})
 

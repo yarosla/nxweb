@@ -20,6 +20,7 @@
 #include "nxweb.h"
 
 #include <fcntl.h>
+#include <dlfcn.h>
 
 #define DEFAULT_SSL_PRIORITIES "NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"
 
@@ -62,8 +63,8 @@ int nxweb_load_config(const char* filename) {
     nxweb_log_error("can't open config file %s", filename);
     return -1;
   }
-  char* text=malloc(st.st_size+1); // this is not going to be freed
-  if (st.st_size!=read(fd, text, st.st_size)) {
+  char* text=malloc((size_t)(st.st_size+1)); // this is not going to be freed
+  if (st.st_size!=read(fd, text, (size_t)st.st_size)) {
     nxweb_log_error("can't read config file %s", filename);
     close(fd);
     return -1;
@@ -77,6 +78,18 @@ int nxweb_load_config(const char* filename) {
   }
 
   int i;
+
+  const nx_json* load=nx_json_get(json, "load");
+  if (load->type!=NX_JSON_NULL) {
+    for (i=0; i<load->length; i++) {
+      const nx_json* js=nx_json_item(load, i);
+      const char* so=nx_json_get(js, "so")->text_value;
+      if (!dlopen(so, RTLD_NOW)) {
+        fprintf(stderr, "failed to load shared library %s\n\n", so);
+        continue;
+      }
+    }
+  }
 
   _Bool listen_http=0, listen_https=0;
   const nx_json* listen=nx_json_get(json, "listen");
@@ -190,7 +203,7 @@ int nxweb_load_config(const char* filename) {
     }
   }
 
-  // configure modules that have not been configured explicitely
+  // configure modules that have not been configured explicitly
   nxweb_module* mod=nxweb_server_config.module_list;
   while (mod) {
     if (!mod->configured) {
@@ -257,7 +270,7 @@ int nxweb_load_config(const char* filename) {
         }
       }
       else {
-        new_handler->idx=nx_json_get(js, "idx")->int_value;
+        new_handler->idx=(int)nx_json_get(js, "idx")->int_value;
       }
 
       const nx_json* filters=nx_json_get(js, "filters");
@@ -283,7 +296,7 @@ int nxweb_load_config(const char* filename) {
       new_handler->secure_only=!!nx_json_get(js, "secure_only")->int_value;
       new_handler->insecure_only=!!nx_json_get(js, "insecure_only")->int_value;
       new_handler->memcache=!!nx_json_get(js, "memcache")->int_value;
-      new_handler->flags=nx_json_get(js, "flags")->int_value;
+      new_handler->flags=(nxweb_handler_flags)nx_json_get(js, "flags")->int_value;
       new_handler->charset=nx_json_get(js, "charset")->text_value;
       new_handler->dir=nx_json_get(js, "dir")->text_value;
       new_handler->uri=nx_json_get(js, "uri")->text_value;
@@ -291,7 +304,7 @@ int nxweb_load_config(const char* filename) {
       new_handler->index_file=nx_json_get(js, "index_file")->text_value;
       new_handler->proxy_copy_host=!!nx_json_get(js, "proxy_copy_host")->int_value;
       new_handler->size=nx_json_get(js, "size")->int_value;
-      new_handler->priority=nx_json_get(js, "priority")->int_value;
+      new_handler->priority=(int)nx_json_get(js, "priority")->int_value;
       if (!new_handler->priority) new_handler->priority=(i+1)*1000;
       if (base_handler->on_config) {
         nxweb_result r=base_handler->on_config(new_handler, js);
@@ -305,4 +318,5 @@ int nxweb_load_config(const char* filename) {
   }
 
   nx_json_free(json);
+  return 0;
 }

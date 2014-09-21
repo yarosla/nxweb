@@ -1,5 +1,8 @@
 /* NXWEB sample config file */
 {
+  "load":[ // load custom C modules compiled into shared libraries
+    {"so":"modules/sample_modules.so"}
+  ],
   // "listen":[ // interfaces can be overriden by command-line arguments
     // {"interface":":8081", "backlog":4096},
     // {"interface":":8082", "backlog":1024, "secure":true,
@@ -12,12 +15,12 @@
   // },
   "backends":{
     "backend1":{"connect":"localhost:8000"},
-    "backend2":{"connect":"localhost:8080"},
+    "backend2":{"connect":"localhost:8080"}
   },
   "logging":{
-    "log_level":"INFO",
-    "access_log":"nxweb_access_log"
     // can't set error log here; it is opened before parsing this config file; use command line switch for that
+    "log_level":"INFO"
+    // "access_log":"logs/nxweb_access_log"
   },
   "modules":{
     "python":{
@@ -31,13 +34,13 @@
         {"cmd":"scale", "width":100, "height":100}, // eg. /path/to/image.100x100.jpg
         {"cmd":"crop", "width":100, "height":100}, // eg. /path/to/image.c100x100.jpg
         {"cmd":"fill", "width":100, "height":100, "bgcolor":"#FF8800"}, // eg. /path/to/image.f100x100xFF8800.jpg
-        {"cmd":"fill", "width":500, "height":500, "bgcolor":"#FF8800"}, // eg. /path/to/image.f500x500xFF8800.jpg
+        {"cmd":"fill", "width":500, "height":500, "bgcolor":"#FF8800"}  // eg. /path/to/image.f500x500xFF8800.jpg
       ],
       // don't forget to change secret key in your setup
       "sign_key":"xbLBZeqSsUgfKWooMKoh0r1gjzqG856yVCMLf1pz"
     },
     "draw_filter":{
-      "font_file":"www/fonts/Sansation/Sansation_Bold.ttf"
+      "font_file":"fonts/Sansation/Sansation_Bold.ttf"
     }
   },
   "routing":[
@@ -66,13 +69,13 @@
     { // see modules/subrequests.c
       "prefix":"/curtime", "handler":"curtime",
       "filters":[
-        {"type":"file_cache", "cache_dir":"www/cache/curtime"},
+        {"type":"file_cache", "cache_dir":"cache/curtime"}
       ]
     },
     { // see modules/subrequests.c
       "prefix":"/captcha", "handler":"captcha",
       "filters":[
-        {"type":"draw"},
+        {"type":"draw"}
       ]
     },
     {
@@ -80,10 +83,10 @@
       "uri":"", // prepend this uri prefix to path info
       "proxy_copy_host":true, // copy host header from original request
       "filters":[
-        {"type":"file_cache", "cache_dir":"www/cache/proxy"},
+        {"type":"file_cache", "cache_dir":"cache/proxy"},
         {"type":"templates"},
         {"type":"ssi"},
-        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+        {"type":"gzip", "compression":4, "cache_dir":"cache/gzip"}
       ]
     },
     {
@@ -91,10 +94,10 @@
       "uri":"", // prepend this uri prefix to path info
       "proxy_copy_host":true, // copy host header from original request
       "filters":[
-        {"type":"file_cache", "cache_dir":"www/cache/proxy"},
+        {"type":"file_cache", "cache_dir":"cache/proxy"},
         {"type":"templates"},
         {"type":"ssi"},
-        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+        {"type":"gzip", "compression":4, "cache_dir":"cache/gzip"}
       ]
     },
     {
@@ -103,27 +106,27 @@
       // "vhost":".some.host.com", // match only at this host
       // "secure_only":true, // match under https connection only
       // "insecure_only":true, // match under http (not https) connection only
-      "dir":"www/root", // aka document root
+      "dir":"www", // aka document root
       "memcache":true, // cache small files in memory
       "charset":"utf-8", // charset for text files
       "index_file":"index.htm", // directory index
       "filters":[
         {"type":"templates"},
         {"type":"ssi"},
-        {"type":"image", "cache_dir":"www/cache/img"},
-        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+        {"type":"image", "cache_dir":"cache/img"},
+        {"type":"gzip", "compression":4, "cache_dir":"cache/gzip"}
       ]
     },
     {
       "prefix":"/py", "handler":"python",
-      "dir":"www/cache/upload_temp", // temp dir for large uploads
+      "dir":"cache/upload_temp", // temp dir for large uploads
       "size":50000000 /* 50 Mb */, // max upload size
       "filters":[
-        {"type":"file_cache", "cache_dir":"www/cache/python"},
+        {"type":"file_cache", "cache_dir":"cache/python"},
         {"type":"templates"},
         {"type":"ssi"},
-        {"type":"gzip", "compression":4, "cache_dir":"www/cache/gzip"}
+        {"type":"gzip", "compression":4, "cache_dir":"cache/gzip"}
       ]
-    },
+    }
   ]
 }

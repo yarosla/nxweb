@@ -19,7 +19,6 @@
 
 #include "nxweb/nxweb.h"
 
-#include <unistd.h>
 #include <fcntl.h>
 
 #define MAX_UPLOAD_SIZE 16000

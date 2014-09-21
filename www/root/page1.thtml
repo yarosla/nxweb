@@ -1,3 +1,0 @@
-{% extends /base.thtml %}
-
-{% block name %}Joe{% endblock %}
