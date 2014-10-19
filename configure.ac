@@ -56,7 +56,7 @@ fi
 AM_CONDITIONAL([WITH_SSL], [test $with_gnutls != "no"])
 
 AC_ARG_ENABLE(certificates, AS_HELP_STRING([--disable-certificates], [disable SSL certificate generation]), , enable_certificates="yes")
-AM_CONDITIONAL([GENERATE_CERTIFICATES], [test $enable_certificates = "yes"])
+AM_CONDITIONAL([GENERATE_CERTIFICATES], [test $enable_certificates = "yes" -a $with_gnutls != "no"])
 
 AC_ARG_ENABLE(postinstall, AS_HELP_STRING([--disable-postinstall], [disable post-install ldconfig]), , enable_postinstall="yes")
 AM_CONDITIONAL([ENABLE_POSTINSTALL], [test $enable_postinstall = "yes"])
@@ -107,7 +107,7 @@ AM_COND_IF([ENABLE_LOG_DEBUG], AC_DEFINE([ENABLE_LOG_DEBUG], [1], [Enable debug 
 
 AC_CHECK_FUNC(register_printf_specifier, AC_DEFINE([USE_REGISTER_PRINTF_SPECIFIER], [1], [Use register_printf_specifier() instead of register_printf_function()]))
 
-AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -lrt -lpthread $PYTHON_LDFLAGS")
+AC_SUBST(NXWEB_EXT_LIBS, "$GNUTLS_LIBS $IMAGEMAGICK_LIBS $ZLIB_LIBS -ldl -lrt -lpthread $PYTHON_LDFLAGS")
 AC_SUBST(NXWEB_EXT_CFLAGS, "$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS $PYTHON_CPPFLAGS")
 
 AC_SUBST(NXWEB_LIB_VERSION_INFO, "0:0:0")

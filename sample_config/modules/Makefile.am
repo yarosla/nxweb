@@ -17,5 +17,8 @@ EXTRA_DIST = $(MODULES_SRC)
 
 all-local: sample_modules.so
 
+clean-local:
+	rm sample_modules.so
+
 sample_modules.so: $(MODULES_SRC)
-	gcc -pthread $(GNUTLS_CFLAGS) $(IMAGEMAGICK_CFLAGS) $(PYTHON_CPPFLAGS) $(MODULES_SRC) -fPIC -shared -o sample_modules.so
+	gcc -I$(top_srcdir)/src/include -pthread $(GNUTLS_CFLAGS) $(IMAGEMAGICK_CFLAGS) $(PYTHON_CPPFLAGS) $(MODULES_SRC) -fPIC -shared -o sample_modules.so

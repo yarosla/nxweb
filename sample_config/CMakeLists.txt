@@ -8,6 +8,7 @@ include_directories(../src/include ${EXTRA_INCLUDES})
 
 add_compile_options(-pthread)
 
-add_library(sample_modules_so SHARED ${LIB_SOURCE_FILES})
+add_library(sample_modules_so MODULE ${LIB_SOURCE_FILES})
 set_target_properties(sample_modules_so PROPERTIES SOVERSION 0.0.0)
 set_target_properties(sample_modules_so PROPERTIES OUTPUT_NAME sample_modules)
+set_target_properties(sample_modules_so PROPERTIES PREFIX "")

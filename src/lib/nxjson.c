@@ -29,8 +29,8 @@ extern "C" {
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <malloc.h>
 #include <assert.h>
+#include <errno.h>
 
 #include "nxjson.h"
 
@@ -281,15 +281,15 @@ static char* parse_value(nx_json* parent, const char* key, char* p, nx_json_unic
         {
           js=create_json(NX_JSON_INTEGER, key, parent);
           char* pe;
-          js->int_value=strtol(p, &pe, 0);
-          if (pe==p) {
+          js->int_value=strtoll(p, &pe, 0);
+          if (pe==p || errno==ERANGE) {
             NX_JSON_REPORT_ERROR("invalid number", p);
             return 0; // error
           }
           if (*pe=='.' || *pe=='e' || *pe=='E') { // double value
             js->type=NX_JSON_DOUBLE;
             js->dbl_value=strtod(p, &pe);
-            if (pe==p) {
+            if (pe==p || errno==ERANGE) {
               NX_JSON_REPORT_ERROR("invalid number", p);
               return 0; // error
             }
