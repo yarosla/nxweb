@@ -112,7 +112,7 @@ AC_SUBST(NXWEB_EXT_CFLAGS, "$GNUTLS_CFLAGS $IMAGEMAGICK_CFLAGS $PYTHON_CPPFLAGS"
 
 AC_SUBST(NXWEB_LIB_VERSION_INFO, "0:0:0")
 
-AC_CONFIG_FILES([Makefile src/lib/Makefile src/include/Makefile src/bin/Makefile src/lib/nxweb.pc sample_config/ssl/Makefile  sample_config/modules/Makefile])
+AC_CONFIG_FILES([Makefile src/lib/Makefile src/include/Makefile src/bin/Makefile src/bin/nxwebc src/lib/nxweb.pc sample_config/ssl/Makefile  sample_config/modules/Makefile], [chmod +x src/bin/nxwebc])
 AC_OUTPUT
 
 AC_MSG_NOTICE([Summary of build options:

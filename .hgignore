@@ -69,11 +69,12 @@ _strace
 ^Makefile$
 ^src/bin/Makefile$
 ^src/bin/nxweb$
+^src/bin/nxwebc$
 ^src/include/Makefile$
 ^src/include/nxweb/config\.h$
 ^src/lib/Makefile$
 ^src/lib/nxweb\.pc$
-.*\.sublime-\w+$
+\.sublime-\w+$
 ^fupl-\d+$
 ^pkg/
 ^\.idea/
