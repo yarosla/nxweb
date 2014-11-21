@@ -19,7 +19,6 @@
 
 #include "nxweb.h"
 
-#include <unistd.h>
 #include <dlfcn.h>
 
 
@@ -28,9 +27,10 @@
 static void show_help(void) {
   printf( "usage:    nxweb <options>\n\n"
           " -d       run as daemon\n"
-          " -s       shutdown nxweb\n"
+          " -s       shutdown nxweb daemon\n"
           " -w dir   set work dir        (default: ./)\n"
           " -l file  set error log file  (default: stderr or nxweb_error_log for daemon)\n"
+          " -L level set error log level to INFO/WARN/ERROR/NONE (default: WARN)\n"
           " -a file  set access log file (default: none)\n"
           " -p file  set pid file        (default: none or nxweb.pid for daemon)\n"
           " -u user  set process uid\n"
@@ -44,7 +44,7 @@ static void show_help(void) {
           " -P dir   set python root dir\n"
           " -W name  set python WSGI app fully qualified name\n"
           " -V path  set python virtualenv path\n"
-          " -L path  load nxweb module from .so file (repeat to load several libs)\n"
+          " -M path  load nxweb module from .so file (repeat to load several libs)\n"
           " -h       show this help\n"
           " -v       show version\n"
           "\n"
@@ -54,7 +54,7 @@ static void show_help(void) {
 
 static void show_version(void) {
   printf( "NXWEB - ultra-fast and super-lightweight web server\n"
-          "project page:        https://bitbucket.org/yarosla/nxweb/\n"
+          "project page:        http://nxweb.org/\n"
           "version:             nxweb/" REVISION "\n"
           "build-date:          " __DATE__ " " __TIME__ "\n"
 #ifdef WITH_ZLIB
@@ -91,7 +91,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   const char* pid_file=0;
 
   int c;
-  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:V:L:"))!=-1) {
+  while ((c=getopt(argc, argv, ":hvdsw:l:a:p:u:g:H:S:c:T:P:W:V:L:M:"))!=-1) {
     switch (c) {
       case 'h':
         show_help();
@@ -110,6 +110,14 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         break;
       case 'l':
         error_log_file=optarg;
+        break;
+      case 'L':
+        nxweb_main_args.error_log_level_set=1;
+        if (!strcmp(optarg, "INFO")) nxweb_error_log_level=NXWEB_LOG_INFO;
+        else if (!strcmp(optarg, "WARN")) nxweb_error_log_level=NXWEB_LOG_WARNING;
+        else if (!strcmp(optarg, "ERROR")) nxweb_error_log_level=NXWEB_LOG_ERROR;
+        else if (!strcmp(optarg, "NONE")) nxweb_error_log_level=NXWEB_LOG_NONE;
+        else nxweb_main_args.error_log_level_set=0;
         break;
       case 'a':
         access_log_file=optarg;
@@ -151,13 +159,14 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
       case 'V':
         nxweb_main_args.python_virtualenv_path=optarg;
         break;
-      case 'L':
+      case 'M':
         if (!dlopen(optarg, RTLD_NOW)) {
           fprintf(stderr, "failed to load shared library %s\n\n", optarg);
           return EXIT_FAILURE;
         }
         break;
       case '?':
+      default:
         fprintf(stderr, "unkown option: -%c\n\n", optopt);
         show_help();
         return EXIT_FAILURE;
@@ -170,9 +179,8 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
     return EXIT_FAILURE;
   }
 
-  // if (!pid_file) pid_file="nxweb.pid";
-
   if (shutdown) {
+    if (!pid_file) pid_file="nxweb.pid";
     nxweb_shutdown_daemon(work_dir, pid_file);
     return EXIT_SUCCESS;
   }

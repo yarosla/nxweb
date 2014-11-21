@@ -152,17 +152,17 @@ int nxweb_load_config(const char* filename) {
     }
   }
 
-  nxweb_error_log_level=NXWEB_LOG_WARNING;
-
   const nx_json* logging=nx_json_get(json, "logging");
   if (logging->type!=NX_JSON_NULL) {
-    // set error log verbosity: INFO=most verbose, WARN, ERROR, NONE
-    const char* log_level=nx_json_get(logging, "log_level")->text_value;
-    if (log_level) {
-      if (!strcmp(log_level, "INFO")) nxweb_error_log_level=NXWEB_LOG_INFO;
-      else if (!strcmp(log_level, "WARN")) nxweb_error_log_level=NXWEB_LOG_WARNING;
-      else if (!strcmp(log_level, "ERROR")) nxweb_error_log_level=NXWEB_LOG_ERROR;
-      else if (!strcmp(log_level, "NONE")) nxweb_error_log_level=NXWEB_LOG_NONE;
+    if (!nxweb_main_args.error_log_level_set) { // command-line value takes precedence
+      // set error log verbosity: INFO=most verbose, WARN, ERROR, NONE
+      const char* log_level=nx_json_get(logging, "log_level")->text_value;
+      if (log_level) {
+        if (!strcmp(log_level, "INFO")) nxweb_error_log_level=NXWEB_LOG_INFO;
+        else if (!strcmp(log_level, "WARN")) nxweb_error_log_level=NXWEB_LOG_WARNING;
+        else if (!strcmp(log_level, "ERROR")) nxweb_error_log_level=NXWEB_LOG_ERROR;
+        else if (!strcmp(log_level, "NONE")) nxweb_error_log_level=NXWEB_LOG_NONE;
+      }
     }
     if (!nxweb_server_config.access_log_fpath) { // command-line value takes precedence
       const char* access_log=nx_json_get(logging, "access_log")->text_value;
@@ -221,7 +221,6 @@ int nxweb_load_config(const char* filename) {
       if (targets) {
         char *p=(char*)targets, *tok;
         const char **t;
-        _Bool matched=0;
         while ((tok=strsep(&p, ",;/ "))) {
           if (!*tok) continue; // skip empty tokens
           if (!strcmp(tok, "none") && !nxweb_main_args.config_targets[0]) goto TARGET_MATCHED;
@@ -277,8 +276,8 @@ int nxweb_load_config(const char* filename) {
       if (filters->type!=NX_JSON_NULL) {
         int j, k=0;
         for (j=0; j<filters->length; j++) {
-          const nx_json* js=nx_json_item(filters, j);
-          const char* filter_name=nx_json_get(js, "type")->text_value;
+          const nx_json* filter_js=nx_json_item(filters, j);
+          const char* filter_name=nx_json_get(filter_js, "type")->text_value;
           if (!filter_name || !*filter_name) {
             nxweb_log_error("no filter type specified for routing record #%d, filter record #%d", i, j);
             continue;
@@ -288,7 +287,7 @@ int nxweb_load_config(const char* filename) {
             nxweb_log_error("can't find filter '%s' specified for routing record #%d, filter record #%d", filter_name, i, j);
             continue;
           }
-          new_handler->filters[k++]=base_filter->config? base_filter->config(base_filter, js) : base_filter;
+          new_handler->filters[k++]=base_filter->config? base_filter->config(base_filter, filter_js) : base_filter;
         }
       }
 

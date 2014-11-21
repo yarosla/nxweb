@@ -25,7 +25,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
@@ -33,12 +32,10 @@
 #include <pthread.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <arpa/inet.h>
 #include <netdb.h>
 
-//#include "nxweb_internal.h"
 
-int nxweb_error_log_level=3; // 0=nothing; 1=errors; 2=warnings; 3=info
+int nxweb_error_log_level=NXWEB_LOG_WARNING; // 0=nothing; 1=errors; 2=warnings; 3=info; 4=debug
 
 void nxweb_die(const char* fmt, ...) {
   va_list ap;
@@ -55,7 +52,7 @@ static const char* get_current_time(char* buf, int max_buf_size) {
   struct tm tm;
   time(&t);
   localtime_r(&t, &tm);
-  strftime(buf, max_buf_size, "%F %T", &tm); // %F=%Y-%m-%d %T=%H:%M:%S
+  strftime(buf, (size_t)max_buf_size, "%F %T", &tm); // %F=%Y-%m-%d %T=%H:%M:%S
   return buf;
 }
 
@@ -72,7 +69,7 @@ static void _nxweb_log_error(int level, const char* fmt, va_list ap) {
 }
 
 void nxweb_log_error(const char* fmt, ...) {
-  if (nxweb_error_log_level<1) return;
+  if (nxweb_error_log_level<NXWEB_LOG_ERROR) return;
   va_list ap;
   va_start(ap, fmt);
   _nxweb_log_error(1, fmt, ap);
@@ -80,7 +77,7 @@ void nxweb_log_error(const char* fmt, ...) {
 }
 
 void nxweb_log_warning(const char* fmt, ...) {
-  if (nxweb_error_log_level<2) return;
+  if (nxweb_error_log_level<NXWEB_LOG_WARNING) return;
   va_list ap;
   va_start(ap, fmt);
   _nxweb_log_error(2, fmt, ap);
@@ -88,7 +85,7 @@ void nxweb_log_warning(const char* fmt, ...) {
 }
 
 void nxweb_log_info(const char* fmt, ...) {
-  if (nxweb_error_log_level<3) return;
+  if (nxweb_error_log_level<NXWEB_LOG_INFO) return;
   va_list ap;
   va_start(ap, fmt);
   _nxweb_log_error(3, fmt, ap);
@@ -99,7 +96,7 @@ void nxweb_log_info(const char* fmt, ...) {
 
 void nxweb_log_debug(const char* fmt, ...) {
   static int count=1000; // max. number of messages to log; can't run infinitely - might fill up disk
-  if (nxweb_error_log_level<4) return;
+  if (nxweb_error_log_level<NXWEB_LOG_DEBUG) return;
   va_list ap;
   va_start(ap, fmt);
   _nxweb_log_error(4, fmt, ap);
@@ -112,7 +109,7 @@ void nxweb_log_debug(const char* fmt, ...) {
 int _nxweb_set_non_block(int fd) {
   int flags=fcntl(fd, F_GETFL);
   if (flags<0) return flags;
-  if (fcntl(fd, F_SETFL, flags|=O_NONBLOCK)<0) return -1;
+  if (fcntl(fd, F_SETFL, flags|O_NONBLOCK)<0) return -1;
   return 0;
 }
 
@@ -176,7 +173,7 @@ void _nxweb_close_bad_socket(int fd) {
   struct linger linger;
   linger.l_onoff=1;
   linger.l_linger=0; // timeout for completing writes
-  setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
+  setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger, (socklen_t)sizeof(linger));
   close(fd);
 }
 
