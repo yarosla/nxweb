@@ -30,14 +30,16 @@ extern "C" {
 
 #include "config.h"
 
-void nxweb_open_log_file(const char* log_file);
-void nxweb_continue_as_daemon(const char* work_dir, const char* log_file);
-void nxweb_create_pid_file(const char* pid_file, pid_t pid);
+void nxweb_open_log_file(char const* log_file, gid_t i, uid_t i1);
+void nxweb_continue_as_daemon(char const* work_dir, char const* log_file, gid_t i, uid_t i1);
+void nxweb_create_pid_file(char const* pid_file, __pid_t pid, gid_t i, uid_t i1);
 int nxweb_relauncher(void (*main_func)(), const char* pid_file);
 int nxweb_shutdown_daemon(const char* work_dir, const char* pid_file);
-int nxweb_run_daemon(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)());
-int nxweb_run_normal(const char* work_dir, const char* log_file, const char* pid_file, void (*main_func)());
-int nxweb_drop_privileges(const char* group_name, const char* user_name);
+int nxweb_run_daemon(char const* work_dir, char const* log_file, char const* pid_file, void (* main_func)(), gid_t i, uid_t i1);
+int nxweb_run_normal(char const* work_dir, char const* log_file, char const* pid_file, void (* main_func)(), gid_t i, uid_t i1);
+int nxweb_drop_privileges(gid_t gid, uid_t uid);
+uid_t nxweb_get_uid_by_name(const char* user_name);
+gid_t nxweb_get_gid_by_name(const char* group_name);
 
 typedef struct nxweb_main_args_t {
   const char* group_name;
@@ -49,6 +51,8 @@ typedef struct nxweb_main_args_t {
   const char* python_root;
   const char* python_wsgi_app;
   const char* python_virtualenv_path;
+  gid_t group_gid;
+  uid_t user_uid;
   _Bool error_log_level_set:1;
 } nxweb_main_args_t;
 

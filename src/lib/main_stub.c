@@ -127,9 +127,19 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         break;
       case 'u':
         nxweb_main_args.user_name=optarg;
+        nxweb_main_args.user_uid=nxweb_get_uid_by_name(optarg);
+        if (nxweb_main_args.user_uid==-1) {
+          fprintf(stderr, "unknown user %s\n\n", optarg);
+          return EXIT_FAILURE;
+        }
         break;
       case 'g':
         nxweb_main_args.group_name=optarg;
+        nxweb_main_args.group_gid=nxweb_get_gid_by_name(optarg);
+        if (nxweb_main_args.group_gid==-1) {
+          fprintf(stderr, "unknown group %s\n\n", optarg);
+          return EXIT_FAILURE;
+        }
         break;
       case 'H':
         nxweb_main_args.http_listening_host_and_port=optarg;
@@ -190,11 +200,11 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
   if (daemon) {
     if (!error_log_file) error_log_file="nxweb_error_log";
     nxweb_server_config.error_log_fpath=error_log_file;
-    nxweb_run_daemon(work_dir, error_log_file, pid_file, server_main);
+    nxweb_run_daemon(work_dir, error_log_file, pid_file, server_main, nxweb_main_args.group_gid, nxweb_main_args.user_uid);
   }
   else {
     nxweb_server_config.error_log_fpath=error_log_file;
-    nxweb_run_normal(work_dir, error_log_file, pid_file, server_main);
+    nxweb_run_normal(work_dir, error_log_file, pid_file, server_main, nxweb_main_args.group_gid, nxweb_main_args.user_uid);
   }
   return EXIT_SUCCESS;
 }

@@ -934,7 +934,7 @@ static void on_sigalrm(int sig) {
 
 static void on_sigusr1(int sig) {
   nxweb_log_error("SIGUSR1 or SIGHUP received. Restarting access_log & error_log");
-  if (nxweb_server_config.error_log_fpath) nxweb_open_log_file(nxweb_server_config.error_log_fpath);
+  if (nxweb_server_config.error_log_fpath) nxweb_open_log_file(nxweb_server_config.error_log_fpath, 0, 0);
   nxweb_access_log_restart();
 }
 

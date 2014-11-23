@@ -48,7 +48,7 @@ static void server_config() {
 #endif // WITH_SSL
 
   // Drop privileges:
-  if (nxweb_drop_privileges(nxweb_main_args.group_name, nxweb_main_args.user_name)==-1) return;
+  if (nxweb_drop_privileges(nxweb_main_args.group_gid, nxweb_main_args.user_uid)==-1) return;
 
   // Setup proxies:
   nxweb_setup_http_proxy_pool(0, "localhost:8000"); // backend1

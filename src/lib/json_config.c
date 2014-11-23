@@ -142,13 +142,27 @@ int nxweb_load_config(const char* filename) {
   }
 #endif // WITH_SSL
 
-  if (nxweb_main_args.group_name && nxweb_main_args.user_name) { // use command line arguments if given
-    if (nxweb_drop_privileges(nxweb_main_args.group_name, nxweb_main_args.user_name)==-1) return -1;
+  if (nxweb_main_args.group_gid && nxweb_main_args.user_uid) { // use command line arguments if given
+    if (nxweb_drop_privileges(nxweb_main_args.group_gid, nxweb_main_args.user_uid)==-1) return -1;
   }
   else {
     const nx_json* drop_privileges=nx_json_get(json, "drop_privileges");
     if (drop_privileges->type!=NX_JSON_NULL) {
-      if (nxweb_drop_privileges(nx_json_get(drop_privileges, "group")->text_value, nx_json_get(drop_privileges, "user")->text_value)==-1) return -1;
+      const char* group_name=nx_json_get(drop_privileges, "group")->text_value;
+      const char* user_name=nx_json_get(drop_privileges, "user")->text_value;
+      gid_t gid=nxweb_get_gid_by_name(group_name);
+      uid_t uid=nxweb_get_uid_by_name(user_name);
+      if (nxweb_main_args.group_gid==-1) {
+        nxweb_log_error("unknown group %s\n\n", group_name);
+        return -1;
+      }
+      if (nxweb_main_args.user_uid==-1) {
+        nxweb_log_error("unknown user %s\n\n", user_name);
+        return -1;
+      }
+      nxweb_main_args.group_gid=gid;
+      nxweb_main_args.user_uid=uid;
+      if (nxweb_drop_privileges(gid, uid)==-1) return -1;
     }
   }
 
