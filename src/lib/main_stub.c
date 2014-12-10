@@ -171,7 +171,7 @@ int nxweb_main_stub(int argc, char** argv, void (*server_main)()) {
         break;
       case 'M':
         if (!dlopen(optarg, RTLD_NOW)) {
-          fprintf(stderr, "failed to load shared library %s\n\n", optarg);
+          fprintf(stderr, "failed to load shared library %s: %s\n\n", optarg, dlerror());
           return EXIT_FAILURE;
         }
         break;

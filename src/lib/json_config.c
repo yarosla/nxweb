@@ -85,7 +85,7 @@ int nxweb_load_config(const char* filename) {
       const nx_json* js=nx_json_item(load, i);
       const char* so=nx_json_get(js, "so")->text_value;
       if (!dlopen(so, RTLD_NOW)) {
-        fprintf(stderr, "failed to load shared library %s\n\n", so);
+        fprintf(stderr, "failed to load shared library %s: %s\n\n", so, dlerror());
         continue;
       }
     }
