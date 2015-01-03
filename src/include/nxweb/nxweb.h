@@ -20,7 +20,9 @@
 #ifndef NXWEB_H
 #define	NXWEB_H
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #define _FILE_OFFSET_BITS 64
 
 #define MEM_GUARD 64

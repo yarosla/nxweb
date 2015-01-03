@@ -62,13 +62,7 @@ if len(sys.argv)>=3:
       print 'python config error: wsgi_application is expected in form <module>.<app>'
 
 if not WSGI_APP:
-  print 'python config error: no WSGI_APP defined; using stub'
-
-  def default_app(environ, start_response):
-    start_response('200 OK', [('Content-Type', 'text/html;charset=utf-8')])
-    return ['Python WSGI stub']
-
-  WSGI_APP=default_app
+  raise Exception('python config error: no WSGI_APP defined')
 
 def _nxweb_on_request(environ):
   try:
