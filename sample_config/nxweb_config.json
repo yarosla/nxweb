@@ -33,6 +33,7 @@
         {"cmd":"crop", "width":50, "height":50}, // eg. /path/to/image.c50x50.jpg
         {"cmd":"scale", "width":100, "height":100}, // eg. /path/to/image.100x100.jpg
         {"cmd":"crop", "width":100, "height":100}, // eg. /path/to/image.c100x100.jpg
+        {"cmd":"crop", "width":200, "height":100}, // eg. /path/to/image.c200x100.jpg
         {"cmd":"fill", "width":100, "height":100, "bgcolor":"#FF8800"}, // eg. /path/to/image.f100x100xFF8800.jpg
         {"cmd":"fill", "width":500, "height":500, "bgcolor":"#FF8800"}  // eg. /path/to/image.f500x500xFF8800.jpg
       ],

@@ -57,6 +57,7 @@ if len(sys.argv)>=3:
         else:
           print 'python config error: there is no', app_name, 'in module', module_name
       except:
+        traceback.print_exc()
         print 'python config error: failed to import module', module_name
     else:
       print 'python config error: wsgi_application is expected in form <module>.<app>'

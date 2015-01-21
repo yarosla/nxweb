@@ -146,7 +146,7 @@ static int locate_watermark(const char* fpath, int doc_root_len, char* wpath) {
   return 0; // not found
 }
 
-static void parse_crop_offset(const char* instr, size_t len, int* x, int *y) {
+static void parse_crop_offset(const unsigned char* instr, size_t len, int* x, int *y) {
   // offset format: "co:100,-120"
   *x=*y=0;
   if (!instr || len<6) return;
@@ -154,7 +154,7 @@ static void parse_crop_offset(const char* instr, size_t len, int* x, int *y) {
   char buf[16];
   len-=3;
   if (len>sizeof(buf)-1) return;
-  strncpy(buf, instr+3, len);
+  strncpy(buf, (char*)(instr+3), len);
   buf[len]='\0';
   char* p=buf;
   while (*p!=',') {
@@ -166,7 +166,7 @@ static void parse_crop_offset(const char* instr, size_t len, int* x, int *y) {
   *y=atoi(p);
 }
 
-static char* find_iptc_record(unsigned char* profile, size_t size, unsigned char record_id, unsigned char tag_id, size_t* len) {
+static unsigned char* find_iptc_record(unsigned char* profile, size_t size, unsigned char record_id, unsigned char tag_id, size_t* len) {
   unsigned char* p=profile;
   unsigned char* end=p+size;
   // http://www.iptc.org/std/IIM/4.1/specification/IIMV4.1.pdf
@@ -174,7 +174,7 @@ static char* find_iptc_record(unsigned char* profile, size_t size, unsigned char
     if (*p++!=0x1c) break; // wrong marker; corrupted record
     unsigned char rid=*p++;
     unsigned char tid=*p++;
-    int sz=*p++;
+    size_t sz=*p++;
     sz=(sz<<8)|*p++;
     if (sz&0x8000) { // extended tag
       break; // not supported
@@ -192,9 +192,9 @@ static char* find_iptc_record(unsigned char* profile, size_t size, unsigned char
 static void find_crop_offset(MagickWand* image, int* x, int* y) {
   *x=*y=0;
   size_t len;
-  char* profile=MagickGetImageProfile(image, "iptc", &len);
+  unsigned char* profile=MagickGetImageProfile(image, "iptc", &len);
   if (profile) {
-    char* v=find_iptc_record(profile, len, 2, 0x28, &len); // "Iptc.Application2.SpecialInstructions"
+    unsigned char* v=find_iptc_record(profile, len, 2, 0x28, &len); // "Iptc.Application2.SpecialInstructions"
     if (v) {
       parse_crop_offset(v, len, x, y);
     }
@@ -202,16 +202,96 @@ static void find_crop_offset(MagickWand* image, int* x, int* y) {
   }
 }
 
+static size_t image_width(MagickWand* image) {
+  // take image orientation into account
+  switch(MagickGetImageOrientation(image))
+  {
+    default:
+    case UndefinedOrientation:
+    case TopLeftOrientation:
+    case TopRightOrientation:
+    case BottomLeftOrientation:
+    case BottomRightOrientation:
+      return MagickGetImageWidth(image);
+
+    case LeftTopOrientation:
+    case RightTopOrientation:
+    case RightBottomOrientation:
+    case LeftBottomOrientation:
+      return MagickGetImageHeight(image);
+  }
+}
+
+static size_t image_height(MagickWand* image) {
+  // take image orientation into account
+  switch(MagickGetImageOrientation(image))
+  {
+    default:
+    case UndefinedOrientation:
+    case TopLeftOrientation:
+    case TopRightOrientation:
+    case BottomLeftOrientation:
+    case BottomRightOrientation:
+      return MagickGetImageHeight(image);
+
+    case LeftTopOrientation:
+    case RightTopOrientation:
+    case RightBottomOrientation:
+    case LeftBottomOrientation:
+      return MagickGetImageWidth(image);
+  }
+}
+
+static void image_auto_orient(MagickWand* image) {
+  // fix image orientation
+  OrientationType orientation=MagickGetImageOrientation(image);
+  // nxweb_log_error("orientation %d -> %d", orientation, TopLeftOrientation);
+  PixelWand* pwand=0;
+  switch(orientation)
+  {
+    case UndefinedOrientation:
+    case TopLeftOrientation:
+    default:
+      break;
+    case TopRightOrientation:
+      MagickFlopImage(image);
+      break;
+    case BottomRightOrientation:
+      pwand=NewPixelWand();
+      MagickRotateImage(image, pwand, 180.0);
+    case BottomLeftOrientation:
+      MagickFlipImage(image);
+      break;
+    case LeftTopOrientation:
+      MagickTransposeImage(image);
+      break;
+    case RightTopOrientation:
+      pwand=NewPixelWand();
+      MagickRotateImage(image, pwand, 90.0);
+      break;
+    case RightBottomOrientation:
+      MagickTransverseImage(image);
+      break;
+    case LeftBottomOrientation:
+      pwand=NewPixelWand();
+      MagickRotateImage(image, pwand, 270.0);
+      break;
+  }
+  if (pwand) DestroyPixelWand(pwand);
+  MagickSetImageOrientation(image, TopLeftOrientation);
+}
+
 static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, nxweb_image_filter_cmd* cmd) {
-  int width=MagickGetImageWidth(image);
-  int height=MagickGetImageHeight(image);
+  size_t width=image_width(image);
+  size_t height=image_height(image);
+  // nxweb_log_error("orientation=%d, owidth=%d, oheight=%d, width=%d, height=%d", MagickGetImageOrientation(image), MagickGetImageWidth(image), MagickGetImageHeight(image), width, height);
   if (width<=0 || height<=0) {
     nxweb_log_error("illegal width or height of image %s", fpath);
     return 0;
   }
   int dirty=0;
-  int max_width=cmd->width;
-  int max_height=cmd->height;
+  size_t max_width=(size_t)cmd->width;
+  size_t max_height=(size_t)cmd->height;
   if (cmd->cmd=='s') {
     if (max_width==0) max_width=1000000;
     if (max_height==0) max_height=1000000;
@@ -220,12 +300,13 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
       double scale_y=(double)max_height/(double)height;
       if (scale_x<scale_y) {
         width=max_width;
-        height=round(scale_x*height);
+        height=(size_t)round(scale_x*height);
       }
       else {
-        width=round(scale_y*width);
+        width=(size_t)round(scale_y*width);
         height=max_height;
       }
+      image_auto_orient(image);
       MagickResizeImage(image, width, height, LanczosFilter, 1);
       dirty=1;
     }
@@ -235,8 +316,9 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
     double scale_y=(double)max_height/(double)height;
     double scale=max(scale_x, scale_y);
     if (scale<1.) { // don't enlarge!
-      width=round(scale*width);
-      height=round(scale*height);
+      width=(size_t)round(scale*width);
+      height=(size_t)round(scale*height);
+      image_auto_orient(image);
       MagickResizeImage(image, width, height, LanczosFilter, 1);
       dirty=1;
     }
@@ -244,13 +326,13 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
       int crop_offset_x, crop_offset_y;
       find_crop_offset(image, &crop_offset_x, &crop_offset_y);
       if ((crop_offset_x || crop_offset_y) && scale<1.) {
-        crop_offset_x=round(scale*crop_offset_x);
-        crop_offset_y=round(scale*crop_offset_y);
+        crop_offset_x=(int)round(scale*crop_offset_x);
+        crop_offset_y=(int)round(scale*crop_offset_y);
       }
-      if (cmd->gravity_left) crop_offset_x=-width;
-      else if (cmd->gravity_right) crop_offset_x=width;
-      if (cmd->gravity_top) crop_offset_y=-height;
-      else if (cmd->gravity_bottom) crop_offset_y=height;
+      if (cmd->gravity_left) crop_offset_x=-(int)width;
+      else if (cmd->gravity_right) crop_offset_x=(int)width;
+      if (cmd->gravity_top) crop_offset_y=-(int)height;
+      else if (cmd->gravity_bottom) crop_offset_y=(int)height;
       PixelWand* pwand=0;
       if (max_width>width || max_height>height) {
         pwand=NewPixelWand();
@@ -260,8 +342,8 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
         PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
         MagickSetImageBackgroundColor(image, pwand);
       }
-      int offset_x, offset_y;
-      int cut_x=width-max_width;
+      ssize_t offset_x, offset_y;
+      ssize_t cut_x=width-max_width;
       if (cut_x<=0) {
         offset_x=cut_x/2;
       }
@@ -270,7 +352,7 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
         if (offset_x<0) offset_x=0;
         else if (offset_x>cut_x) offset_x=cut_x;
       }
-      int cut_y=height-max_height;
+      ssize_t cut_y=height-max_height;
       if (cut_y<=0) {
         offset_y=cut_y/2;
       }
@@ -279,6 +361,7 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
         if (offset_y<0) offset_y=0;
         else if (offset_y>cut_y) offset_y=cut_y;
       }
+      image_auto_orient(image);
       MagickExtentImage(image, max_width, max_height, offset_x, offset_y);
       width=max_width;
       height=max_height;
@@ -292,24 +375,27 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
       double scale_y=(double)max_height/(double)height;
       if (scale_x<scale_y) {
         width=max_width;
-        height=round(scale_x*height);
+        height=(size_t)round(scale_x*height);
       }
       else {
-        width=round(scale_y*width);
+        width=(size_t)round(scale_y*width);
         height=max_height;
       }
+      image_auto_orient(image);
       MagickResizeImage(image, width, height, LanczosFilter, 1);
       dirty=1;
     }
     if (width!=max_width || height!=max_height) {
+      image_auto_orient(image);
       PixelWand* pwand=NewPixelWand();
       char* format=MagickGetImageFormat(image); // returns "JPEG", "GIF", or "PNG"
       _Bool supports_transparency=*format!='J'; // only JPEG does not support transparency
       MagickRelinquishMemory(format);
       PixelSetColor(pwand, cmd->color[0]? cmd->color : (supports_transparency?"none":"white"));
       MagickSetImageBackgroundColor(image, pwand);
-      int offset_x=cmd->gravity_left? 0 : (cmd->gravity_right? -(max_width-width) : -(max_width-width)/2);
-      int offset_y=cmd->gravity_top? 0 : (cmd->gravity_bottom? -(max_height-height) : -(max_height-height)/2);
+      ssize_t offset_x=cmd->gravity_left? 0 : (cmd->gravity_right? -(ssize_t)(max_width-width) : -(ssize_t)(max_width-width)/2);
+      ssize_t offset_y=cmd->gravity_top? 0 : (cmd->gravity_bottom? -(ssize_t)(max_height-height) : -(ssize_t)(max_height-height)/2);
+      // nxweb_log_error("%lld %lld MagickExtentImage(%lld, %lld, %lld, %lld)", (long long)width, (long long)height, (long long)max_width, (long long)max_height, (long long)offset_x, (long long)offset_y);
       MagickExtentImage(image, max_width, max_height, offset_x, offset_y);
       width=max_width;
       height=max_height;
@@ -323,8 +409,8 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
     if (locate_watermark(fpath, doc_root_len, wpath)) {
       MagickWand* watermark=NewMagickWand();
       MagickReadImage(watermark, wpath);
-      int wwidth=MagickGetImageWidth(watermark);
-      int wheight=MagickGetImageHeight(watermark);
+      size_t wwidth=MagickGetImageWidth(watermark);
+      size_t wheight=MagickGetImageHeight(watermark);
 
       /*
        * Now use image page definition to scale down and position watermark.
@@ -346,20 +432,22 @@ static int process_cmd(const char* fpath, int doc_root_len, MagickWand* image, n
           double scale_x=(double)width/(double)wpage_width;
           double scale_y=(double)height/(double)wpage_height;
           double scale=scale_x<scale_y? scale_x : scale_y;
-          wwidth=round(scale*wwidth);
-          wheight=round(scale*wheight);
-          woffset_x=round(scale*woffset_x);
-          woffset_y=round(scale*woffset_y);
+          wwidth=(size_t)round(scale*wwidth);
+          wheight=(size_t)round(scale*wheight);
+          woffset_x=(ssize_t)round(scale*woffset_x);
+          woffset_y=(ssize_t)round(scale*woffset_y);
           MagickResizeImage(watermark, wwidth, wheight, LanczosFilter, 1);
         }
         MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
-        ssize_t x=woffset_x<=0? width-wwidth+woffset_x : woffset_x;
-        ssize_t y=woffset_y<=0? height-wheight+woffset_y : woffset_y;
+        ssize_t x=woffset_x<=0? (ssize_t)(width-wwidth+woffset_x) : woffset_x;
+        ssize_t y=woffset_y<=0? (ssize_t)(height-wheight+woffset_y) : woffset_y;
+        image_auto_orient(image);
         MagickCompositeImage(image, watermark, OverCompositeOp, x, y);
         dirty=1;
       }
       else if (width>=2*wwidth && height>=2*wheight) { // don't watermark images smaller than 2 x watermark
         MagickEvaluateImageChannel(watermark, AlphaChannel, MultiplyEvaluateOperator, 0.5);
+        image_auto_orient(image);
         MagickCompositeImage(image, watermark, OverCompositeOp, width-wwidth-10, height-wheight-10);
         dirty=1;
       }
@@ -493,7 +581,7 @@ static int copy_file(const char* src, const char* dst) {
   char buf[4096];
   ssize_t cnt;
   while ((cnt=read(sfd, buf, sizeof(buf)))>0) {
-    if (write(dfd, buf, cnt)!=cnt) {
+    if (write(dfd, buf, (size_t)cnt)!=cnt) {
       close(sfd);
       close(dfd);
       unlink(dst);
