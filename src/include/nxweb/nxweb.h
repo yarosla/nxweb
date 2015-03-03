@@ -376,7 +376,8 @@ static inline int nxweb_url_prefix_match(const char* url, int url_len, const cha
   if (url_len<prefix_len) return 0;
   char endc=url[prefix_len];
   if (endc && endc!='/' && endc!='?' && endc!=';') return 0;
-  if (url[1]!=prefix[1]) return 0;
+  if (prefix_len==1) return 1; // prefix=="/" && endc test passed => match
+  if (url[1]!=prefix[1]) return 0; // test first char after slash to avoid unnecessary strncmp() call (might speed it up)
   return !strncmp(url, prefix, prefix_len);
 }
 
