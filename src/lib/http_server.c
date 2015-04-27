@@ -337,6 +337,8 @@ void _nxweb_register_handler(nxweb_handler* handler, nxweb_handler* base) {
     }
   }
   handler->vhost_len=handler->vhost? strlen(handler->vhost) : 0;
+  if (handler->dir && strstr(handler->dir, "{host}")) handler->flags|=_NXWEB_HOST_DEPENDENT_DIR;
+  else handler->flags&=~_NXWEB_HOST_DEPENDENT_DIR;
   if (base) {
     if (!handler->on_generate_cache_key) handler->on_generate_cache_key=base->on_generate_cache_key;
     if (!handler->on_select) handler->on_select=base->on_select;

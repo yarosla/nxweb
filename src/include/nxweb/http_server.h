@@ -55,7 +55,8 @@ typedef enum nxweb_handler_flags {
   NXWEB_HANDLE_OTHER=0x40,
   NXWEB_HANDLE_ANY=0x70,
   NXWEB_ACCEPT_CONTENT=0x80, // handler accepts request body
-  _NXWEB_HANDLE_MASK=0x70
+  _NXWEB_HANDLE_MASK=0x70,
+  _NXWEB_HOST_DEPENDENT_DIR=0x1000 // sendfile handler to use host name to build root directory
 } nxweb_handler_flags;
 
 struct nxweb_http_server_connection;

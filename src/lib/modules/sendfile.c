@@ -29,14 +29,31 @@ static nxweb_result sendfile_generate_cache_key(nxweb_http_server_connection* co
   if (!req->get_method || req->content_length) return NXWEB_NEXT; // do not respond to POST requests, etc.
 
   nxweb_handler* handler=conn->handler;
-  const char* document_root=handler->dir;
-  assert(document_root);
+  assert(handler->dir);
   assert(handler->index_file);
+  int rlen;
   nxb_buffer* nxb=req->nxb;
-  nxb_start_stream(nxb);
-
-  int rlen=strlen(document_root);
-  nxb_append(nxb, document_root, rlen);
+  if (handler->flags & _NXWEB_HOST_DEPENDENT_DIR) {
+    // validate host name
+    const char* host=req->host;
+    if (*host=='.' || strchr(host, '/')) { // invalid hostname, prevent possible attack
+      return NXWEB_NEXT;
+    }
+    const char* port=strchr(host, ':');
+    int host_len=port? port - host : strlen(host);
+    const char* host_placeholder=strstr(handler->dir, "{host}");
+    assert(host_placeholder); // _NXWEB_HOST_DEPENDENT_DIR flag is only set when {host} is present
+    nxb_start_stream(nxb);
+    nxb_append(nxb, handler->dir, host_placeholder - handler->dir);
+    nxb_append(nxb, host, host_len);
+    nxb_append_str(nxb, host_placeholder+sizeof("{host}")-1);
+    rlen=strlen(handler->dir)-(sizeof("{host}")-1)+host_len;
+  }
+  else {
+    rlen=strlen(handler->dir);
+    nxb_start_stream(nxb);
+    nxb_append(nxb, handler->dir, rlen);
+  }
   const char* q=strchr(req->path_info, '?');
   int plen=q? q-req->path_info : strlen(req->path_info);
   nxb_append(nxb, req->path_info, plen);
@@ -77,8 +94,21 @@ static nxweb_result sendfile_on_select(nxweb_http_server_connection* conn, nxweb
   }
 
   if (S_ISDIR(finfo->st_mode)) {
-    const char* path_info=fpath+strlen(conn->handler->dir);
-    nxweb_send_redirect2(resp, 302, path_info, "/", conn->secure);
+    // this is directory but no trailing slash in uri => append '/' to the end of path and redirect
+    const char* q=strchr(req->uri, '?');
+    if (q) { // have query string
+      nxb_buffer* nxb=resp->nxb;
+      nxb_start_stream(nxb);
+      nxb_append(nxb, req->uri, q - req->uri);
+      nxb_append_char(nxb, '/'); // insert '/' at the end of path before query string
+      nxb_append_str(nxb, q);
+      nxb_append_char(nxb, '\0');
+      const char* new_uri=nxb_finish_stream(nxb, 0);
+      nxweb_send_redirect(resp, 302, new_uri, conn->secure);
+    }
+    else {
+      nxweb_send_redirect2(resp, 302, req->uri, "/", conn->secure);
+    }
     nxweb_start_sending_response(conn, resp);
     return NXWEB_OK;
   }

@@ -159,7 +159,7 @@ time_t nxweb_parse_http_time(const char* str) { // must be GMT
   if (*p++!='M') return 0;
   if (*p++!='T') return 0;
   tm.tm_isdst=-1; // auto-detect
-  time_t t=mktime(&tm) - timezone;
+  time_t t=timegm(&tm); // mktime(&tm) - timezone;
   if (t==-1) return 0;
   return t;
 }

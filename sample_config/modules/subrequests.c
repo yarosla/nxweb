@@ -39,28 +39,6 @@ static nxweb_result subreq_on_request(nxweb_http_server_connection* conn, nxweb_
 
 NXWEB_DEFINE_HANDLER(subreq, .on_request=subreq_on_request, .flags=NXWEB_HANDLE_ANY);
 
-int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len);
-
-static int tmpl_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_block* dst_block) { // function to make subrequests
-  if (dst_block) {
-    nxweb_log_info("including file %s", uri);
-    nxt_block_append_value(ctx, dst_block, "{% This is included file %}", sizeof("{% This is included file %}")-1, 0);
-  }
-  else {
-    nxweb_log_info("loading template from %s", uri);
-    if (!strcmp(uri, "base")) {
-      const char* tmpl_src=" {%block _top_%}{%raw%}{{{{%%%%}}}}{%endraw%}{% include aaa %}AAA-YYY{%block header%}Header{%endblock%} bye...{% endblock %}{% block title %}New Title{% endblock %}";
-      char* tmpl=nxb_copy_obj(ctx->nxb, tmpl_src, strlen(tmpl_src)+1);
-      nxt_parse_file(dst_file, (char*)tmpl, strlen(tmpl));
-    }
-    else if (!strcmp(uri, "ttt")) {
-      const char* tmpl_src=" {% extends 'base'%} {%block header%}Bbbb {%block title%}{%endblock%} {% parent %}{%endblock%}";
-      char* tmpl=nxb_copy_obj(ctx->nxb, tmpl_src, strlen(tmpl_src)+1);
-      nxt_parse_file(dst_file, (char*)tmpl, strlen(tmpl));
-    }
-  }
-}
-
 static nxweb_result curtime_on_request(nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
   nxweb_set_response_content_type(resp, "text/html");
 

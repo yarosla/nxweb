@@ -125,7 +125,6 @@ static nxe_ssize_t tf_buffer_data_in_write(nxe_ostream* os, nxe_istream* is, int
       if (tfb->file) {
         if (nxt_parse_file(tfb->file, ptr, size)==-1) {
           // handle error
-          ctx->files_pending--;
           // it's been logged; ignore it
         }
       }
@@ -176,7 +175,7 @@ static void tf_on_subrequest_ready(nxweb_http_server_connection* subconn, nxe_da
       if (!resp->last_modified) tfdata->last_modified=0;
       else if (resp->last_modified > tfdata->last_modified) tfdata->last_modified=resp->last_modified;
     }
-    if (resp->content_length==0) {
+    if (resp->content_length==0) { // empty response => nothing to parse/include
       tfdata->ctx->files_pending--;
       tf_check_complete(tfdata);
     }
@@ -213,9 +212,11 @@ static int tf_load(nxt_context* ctx, const char* uri, nxt_file* dst_file, nxt_bl
     tf_buffer_init(tfb, ctx->nxb, tfdata, dst_file, 0);
   }
   nxweb_http_server_connection* subconn=nxweb_http_server_subrequest_start(tfdata->conn, tf_on_subrequest_ready, (nxe_data)(void*)tfb, 0, uri);
+  if (!subconn) return NXWEB_ERROR;
   nxweb_http_request* subreq=&subconn->hsp.req;
   nxweb_set_request_data(subreq, (nxe_data)0, (nxe_data)(void*)tfb, tf_subreq_finalize);
   if (dst_file) subreq->templates_no_parse=1;
+  return NXWEB_OK;
 }
 
 static nxweb_filter_data* tf_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {

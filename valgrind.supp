@@ -55,3 +55,21 @@
    ...
    obj:/usr/lib/libpython2.7.so.1.0
 }
+{
+   libpython2.7-3
+   Memcheck:Leak
+   ...
+   obj:/usr/lib/x86_64-linux-gnu/libpython2.7.so.1.0
+}
+{
+   libMagickCore
+   Memcheck:Leak
+   ...
+   obj:/usr/lib/x86_64-linux-gnu/libMagickCore-6.Q16.so.2.0.0
+}
+{
+   nxweb_load_config_json
+   Memcheck:Leak
+   ...
+   fun:nxweb_load_config
+}

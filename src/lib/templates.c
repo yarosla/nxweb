@@ -212,8 +212,10 @@ nxt_file* nxt_file_create(nxt_context* ctx, const char* uri) {
   nxt_file* new_file=nxb_calloc_obj(ctx->nxb, sizeof(nxt_file));
   new_file->ctx=ctx;
   new_file->uri=uri;
-  if (!ctx->start_file) ctx->start_file=new_file;
-  ctx->files_pending++;
+  if (!ctx->start_file) {
+    ctx->start_file=new_file;
+    ctx->files_pending++; // increment for start file only
+  }
   return new_file;
 }
 
@@ -222,8 +224,8 @@ static nxt_block* nxt_include(nxt_file* cur_file, nxt_block* cur_block, const ch
   new_uri=nxt_resolve_uri(ctx, cur_file->uri, new_uri);
   if (!new_uri) return 0;
   nxt_block* include_blk=nxt_block_create(cur_file, 0);
-  ctx->load(ctx, new_uri, 0, include_blk);
-  ctx->files_pending++;
+  if (ctx->load(ctx, new_uri, 0, include_blk)) return 0;
+  ctx->files_pending++; // increment upon successful load
   return include_blk;
 }
 
@@ -231,7 +233,12 @@ static nxt_file* nxt_use(nxt_file* cur_file, const char* new_uri) {
   nxt_context* ctx=cur_file->ctx;
   new_uri=nxt_resolve_uri(ctx, cur_file->uri, new_uri);
   if (!new_uri) return 0;
+  if (cur_file->inheritance_level>=NXT_MAX_INHERITANCE_LEVEL) {
+    nxweb_log_error("template error (%s): maximum inheritance level reached, check for infinite recursion or increase NXT_MAX_INHERITANCE_LEVEL", cur_file->uri);
+    return 0;
+  }
   nxt_file* new_file=nxt_file_create(ctx, new_uri);
+  new_file->inheritance_level=cur_file->inheritance_level+1;
   if (cur_file->parents) {
     nxt_file* f=cur_file->parents;
     while (f->next_parent) f=f->next_parent;
@@ -240,12 +247,8 @@ static nxt_file* nxt_use(nxt_file* cur_file, const char* new_uri) {
   else {
     cur_file->parents=new_file;
   }
-  new_file->inheritance_level=cur_file->inheritance_level+1;
-  if (new_file->inheritance_level>NXT_MAX_INHERITANCE_LEVEL) {
-    nxweb_log_error("template error (%s): maximum inheritance level reached, check for infinite recursion or increase NXT_MAX_INHERITANCE_LEVEL", cur_file->uri);
-    return 0;
-  }
-  ctx->load(ctx, new_uri, new_file, 0);
+  if (ctx->load(ctx, new_uri, new_file, 0)) return 0;
+  ctx->files_pending++; // increment upon successful load
   return new_file;
 }
 
@@ -278,13 +281,11 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
       case NXT_BLOCK:
         if (!args[0] || !args[1]) {
           nxweb_log_error("template error (%s): block without name; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
-          ctx->error=1;
-          return -1;
+          goto ERROR;
         }
         if (block_stack_idx>=NXT_MAX_BLOCK_NESTING-1) {
           nxweb_log_error("template error (%s): block nesting over the limit (NXT_MAX_BLOCK_NESTING=%d); cur_block=%s", file->uri, NXT_MAX_BLOCK_NESTING, ctx->block_names[cur_block->id].name);
-          ctx->error=1;
-          return -1;
+          goto ERROR;
         }
         block_stack[block_stack_idx++]=cur_block;
         *args[1]='\0';
@@ -299,8 +300,7 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
         }
         if (!block_stack_idx) {
           nxweb_log_error("template error (%s): endblock without block; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
-          ctx->error=1;
-          return -1;
+          goto ERROR;
         }
         cur_block=block_stack[--block_stack_idx];
         break;
@@ -312,22 +312,19 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
           if (!args[2*i] || !args[2*i+1]) break;
           *args[2*i+1]='\0';
           if (!nxt_use(file, args[2*i])) {
-            ctx->error=1;
-            return -1;
+            goto ERROR;
           }
         }
         break;
       case NXT_INCLUDE:
         if (!args[0] || !args[1]) {
           nxweb_log_error("template error (%s): block without name; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
-          ctx->error=1;
-          return -1;
+          goto ERROR;
         }
         *args[1]='\0';
         nxt_block* include_blk=nxt_include(file, cur_block, args[0]);
         if (!include_blk) {
-          ctx->error=1;
-          return -1;
+          goto ERROR;
         }
         nxt_block_append_value(ctx, cur_block, text, text_len, include_blk->id);
         break;
@@ -340,8 +337,7 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
 
   if (block_stack_idx) {
     nxweb_log_error("template error (%s): block without endblock; cur_block=%s", file->uri, ctx->block_names[cur_block->id].name);
-    ctx->error=1;
-    return -1;
+    goto ERROR;
   }
 
 #if 0
@@ -352,13 +348,18 @@ int nxt_parse_file(nxt_file* file, char* buf, int buf_len) {
   }
 #endif
 
-  ctx->files_pending--;
+  ctx->files_pending--; // current file done
   return 0;
+
+  ERROR:
+  ctx->error=1;
+  ctx->files_pending--; // current file done
+  return -1;
 }
 
 int nxt_parse(nxt_context* ctx, const char* uri, char* buf, int buf_len) {
   nxt_file* file=nxt_file_create(ctx, uri);
-  nxt_parse_file(file, buf, buf_len);
+  return nxt_parse_file(file, buf, buf_len);
 }
 
 static int nxt_is_top_block_empty(nxt_block* blk) {

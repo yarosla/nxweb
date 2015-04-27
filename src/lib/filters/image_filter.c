@@ -93,6 +93,7 @@ typedef struct nxweb_filter_image {
   const char* cache_dir;
   nxweb_image_filter_cmd* allowed_cmds;
   const char* sign_key;
+  _Bool use_lock:1;
 } nxweb_filter_image;
 
 /**
@@ -117,9 +118,12 @@ static nxweb_image_filter_cmd default_allowed_cmds[]={
   {.cmd=0}
 };
 
+static pthread_mutex_t image_filter_processing_lock;
 
 static int image_filter_init() {
   MagickWandGenesis();
+  nxweb_log_error("MagickResourceLimits: mem=%lu, map=%lu, area=%lu", (long)MagickGetResourceLimit(MemoryResource), (long)MagickGetResourceLimit(MemoryResource), (long)MagickGetResourceLimit(AreaResource));
+  pthread_mutex_init(&image_filter_processing_lock, 0);
   return 0;
 }
 
@@ -682,6 +686,11 @@ static nxweb_result img_translate_cache_key(nxweb_filter* filter, nxweb_http_ser
   return NXWEB_OK;
 }
 
+static inline void _cleanup_magick_wand(MagickWand* image, _Bool use_lock) {
+  DestroyMagickWand(image);
+  if (use_lock) pthread_mutex_unlock(&image_filter_processing_lock);
+}
+
 static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp, nxweb_filter_data* fdata) {
   img_filter_data* ifdata=(img_filter_data*)fdata;
   if (resp->status_code && resp->status_code!=200) return NXWEB_OK;
@@ -690,10 +699,11 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   assert(resp->sendfile_path);
   assert(resp->content_length>0 && resp->sendfile_offset==0 && resp->sendfile_end==resp->sendfile_info.st_size &&  resp->sendfile_end==resp->content_length);
 
-  assert(((nxweb_filter_image*)filter)->cache_dir);
+  nxweb_filter_image* ifilter=(nxweb_filter_image*)filter;
+  assert(ifilter->cache_dir);
   nxb_buffer* nxb=req->nxb;
   nxb_start_stream(nxb);
-  nxb_append_str(nxb, ((nxweb_filter_image*)filter)->cache_dir);
+  nxb_append_str(nxb, ifilter->cache_dir);
   const char* cache_key=ifdata->fdata.cache_key;
   if (cache_key[0]=='.' && cache_key[1]=='.' && cache_key[2]=='/') cache_key+=2; // avoid going up dir tree
   if (*cache_key!='/') nxb_append_char(nxb, '/');
@@ -718,7 +728,7 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
   if (stat(fpath, &finfo)==-1 || finfo.st_mtime!=resp->sendfile_info.st_mtime) {
     if (ifdata->cmd.cmd) {
       // check if cmd is allowed
-      const nxweb_image_filter_cmd* ac=((nxweb_filter_image*)filter)->allowed_cmds;
+      const nxweb_image_filter_cmd* ac=ifilter->allowed_cmds;
       _Bool allowed=0;
       while (ac->cmd) {
         if (ifdata->cmd.cmd==ac->cmd && ifdata->cmd.width==ac->width && ifdata->cmd.height==ac->height
@@ -732,7 +742,7 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
       }
       if (!allowed && ifdata->cmd.query_string) {
         char signature[41];
-        sha1sign(ifdata->cmd.uri_path, strlen(ifdata->cmd.uri_path), ((nxweb_filter_image*)filter)->sign_key, signature);
+        sha1sign(ifdata->cmd.uri_path, strlen(ifdata->cmd.uri_path), ifilter->sign_key, signature);
         if (!strcmp(ifdata->cmd.query_string, signature)) allowed=1;
         else nxweb_log_warning("img cmd not allowed: path=%s sha1sign=%s query_string=%s", ifdata->cmd.uri_path, signature, ifdata->cmd.query_string);
       }
@@ -747,28 +757,41 @@ static nxweb_result img_do_filter(nxweb_filter* filter, nxweb_http_server_connec
       return NXWEB_ERROR;
     }
 
+    _Bool use_lock=ifilter->use_lock; // filter config option
+    if (use_lock) // serialize calls to ImageMagick to minimize memory footprint; not good for performance
+      pthread_mutex_lock(&image_filter_processing_lock);
+
     MagickWand* image=NewMagickWand();
     if (!MagickReadImage(image, resp->sendfile_path)) {
-      DestroyMagickWand(image);
+      _cleanup_magick_wand(image, use_lock);
       nxweb_log_error("MagickReadImage(%s) failed", resp->sendfile_path);
       nxweb_send_http_error(resp, 500, "Internal Server Error");
       return NXWEB_ERROR;
     }
 
-    if (process_cmd(resp->sendfile_path, conn->handler->dir? strlen(conn->handler->dir) : 0, image, &ifdata->cmd)) {
+    int doc_root_len;
+    if (conn->handler->flags & _NXWEB_HOST_DEPENDENT_DIR) {
+      const char* port=strchr(req->host, ':');
+      int host_len=port? port - req->host : strlen(req->host);
+      doc_root_len=strlen(conn->handler->dir)-(sizeof("{host}")-1)+host_len;
+    }
+    else {
+      doc_root_len=conn->handler->dir? strlen(conn->handler->dir) : 0;
+    }
+    if (process_cmd(resp->sendfile_path, doc_root_len, image, &ifdata->cmd)) {
       nxweb_log_info("writing image file %s", fpath);
       MagickStripImage(image);
       if (!MagickWriteImage(image, fpath)) {
-        DestroyMagickWand(image);
+        _cleanup_magick_wand(image, use_lock);
         nxweb_log_error("MagickWriteImage(%s) failed", fpath);
         nxweb_send_http_error(resp, 500, "Internal Server Error");
         return NXWEB_ERROR;
       }
-      DestroyMagickWand(image);
+      _cleanup_magick_wand(image, use_lock);
     }
     else {
       // processing changed nothing => just copy the original
-      DestroyMagickWand(image);
+      _cleanup_magick_wand(image, use_lock);
       nxweb_log_info("copying image file %s", fpath);
       if (copy_file(resp->sendfile_path, fpath)) {
         nxweb_log_error("error %d copying image file %s", errno, fpath);
@@ -816,6 +839,7 @@ static nxweb_filter* img_config(nxweb_filter* base, const nx_json* json) {
   f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
   const char* sign_key=nx_json_get(json, "sign_key")->text_value;
   if (sign_key) f->sign_key=sign_key;
+  f->use_lock=!!nx_json_get(json, "use_lock")->int_value;
   const nx_json* allowed_cmds_json=nx_json_get(json, "allowed_cmds");
   if (allowed_cmds_json->type!=NX_JSON_NULL) {
     nxweb_image_filter_cmd* allowed_cmds=calloc(allowed_cmds_json->length+1, sizeof(nxweb_image_filter_cmd));

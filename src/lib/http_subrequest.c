@@ -109,6 +109,12 @@ void nxweb_composite_stream_append_subrequest(nxweb_composite_stream* cs, const 
   nxweb_composite_stream_node* csn=nxweb_composite_stream_append_node(cs);
 
   csn->subconn=nxweb_http_server_subrequest_start(cs->conn, nxweb_composite_stream_subrequest_on_response_ready, (nxe_data)(void*)cs, host, url);
+  if (!csn->subconn) {
+    nxweb_log_error("nxweb_http_server_subrequest_start failed: %s %s %d", host, url, (int)cs->conn->connection_closing);
+    // append bytes instead
+    nxd_obuffer_init(&csn->buffer.ob, "<!--[subrequest failed]-->", sizeof("<!--[subrequest failed]-->")-1);
+    nxe_connect_streams(cs->conn->tdata->loop, &csn->buffer.ob.data_out, &csn->snode.data_in);
+  }
 }
 
 void nxweb_composite_stream_close(nxweb_composite_stream* cs) { // call this right after appending last node
