@@ -32,6 +32,7 @@ typedef struct nxweb_filter_gzip {
   nxweb_filter base;
   // compression level is between 0 and 9: 1 gives best speed, 9 gives best compression, 0 gives no compression at all
   int compression_level;
+  _Bool dont_cache_queries:1;
   const char* cache_dir;
 } nxweb_filter_gzip;
 
@@ -272,7 +273,10 @@ static nxweb_filter_data* gzip_init(nxweb_filter* filter, nxweb_http_server_conn
   gdata->rb.data_in.super.cls.os_cls=&gzip_data_in_class;
   gdata->rb.data_in.ready=1;
   // gdata->rb.data_out.ready=1;
-  if (((nxweb_filter_gzip*)filter)->cache_dir) gdata->fdata.fcache=_nxweb_fc_create(req->nxb, ((nxweb_filter_gzip*)filter)->cache_dir);
+  if (((nxweb_filter_gzip*)filter)->cache_dir) {
+    if (!(((nxweb_filter_gzip*)filter)->dont_cache_queries && strchr(req->uri, '?'))) // do not cache requests with query string
+      gdata->fdata.fcache=_nxweb_fc_create(req->nxb, ((nxweb_filter_gzip*)filter)->cache_dir);
+  }
   return &gdata->fdata;
 }
 
@@ -359,6 +363,7 @@ static nxweb_filter* gzip_config(nxweb_filter* base, const nx_json* json) {
   *f=*(nxweb_filter_gzip*)base;
   f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
   f->compression_level=(int)nx_json_get(json, "compression")->int_value;
+  f->dont_cache_queries=nx_json_get(json, "dont_cache_queries")->int_value!=0;
   return (nxweb_filter*)f;
 }
 

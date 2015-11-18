@@ -36,6 +36,7 @@
 typedef struct nxweb_filter_file_cache {
   nxweb_filter base;
   const char* cache_dir;
+  _Bool dont_cache_queries:1;
 } nxweb_filter_file_cache;
 
 typedef union nxf_data {
@@ -419,6 +420,7 @@ void _nxweb_fc_finalize(fc_filter_data* fcdata) {
 }
 
 static nxweb_filter_data* fc_init(nxweb_filter* filter, nxweb_http_server_connection* conn, nxweb_http_request* req, nxweb_http_response* resp) {
+  if (((nxweb_filter_file_cache*)filter)->dont_cache_queries && strchr(req->uri, '?')) return 0; // bypass requests with query string
   nxweb_filter_data* fdata=nxb_calloc_obj(req->nxb, sizeof(nxweb_filter_data));
   fdata->fcache=_nxweb_fc_create(req->nxb, ((nxweb_filter_file_cache*)filter)->cache_dir);
   return fdata;
@@ -615,6 +617,7 @@ static nxweb_filter* fc_config(nxweb_filter* base, const nx_json* json) {
   nxweb_filter_file_cache* f=calloc(1, sizeof(nxweb_filter_file_cache)); // NOTE this will never be freed
   *f=*(nxweb_filter_file_cache*)base;
   f->cache_dir=nx_json_get(json, "cache_dir")->text_value;
+  f->dont_cache_queries=nx_json_get(json, "dont_cache_queries")->int_value!=0;
   return (nxweb_filter*)f;
 }
 
