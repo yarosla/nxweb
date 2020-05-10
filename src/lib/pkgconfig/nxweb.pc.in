@@ -7,7 +7,7 @@
 
 Name: nxweb
 Description: NXWEB - ultra-fast and super-lightweight web server
-URL: https://bitbucket.org/yarosla/nxweb/
+URL: https://github.com/yarosla/nxweb
 Version: @PACKAGE_VERSION@
 Libs: -L@CMAKE_INSTALL_LIBDIR@ -lnxweb @EXTRA_LIBS_STR@
 Cflags: -I@CMAKE_INSTALL_INCLUDEDIR@ @EXTRA_INCLUDES_STR@

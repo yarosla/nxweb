@@ -275,8 +275,8 @@ static inline int nx_strncasecmp(const char* s1, const char* s2, int len) {
 
   if (p1==p2 || len<=0) return 0;
 
-  while ((result=nx_tolower(*p1)-nx_tolower(*p2++))==0)
-    if (!len-- || *p1++=='\0') break;
+  while (len-- && (result=nx_tolower(*p1)-nx_tolower(*p2++))==0)
+    if (*p1++=='\0') break;
 
   return result;
 }

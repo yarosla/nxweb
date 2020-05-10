@@ -7,7 +7,7 @@
     // {"interface":":8081", "backlog":4096},
     // {"interface":":8082", "backlog":1024, "secure":true,
     //   "cert":"ssl/server_cert.pem", "key":"ssl/server_key.pem", "dh":"ssl/dh.pem",
-    //   "priorities":"NORMAL:+VERS-TLS-ALL:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"}
+    //   "priorities":"NORMAL:+VERS-TLS-ALL:-VERS-SSL3.0:+COMP-ALL:-CURVE-ALL:+CURVE-SECP256R1"}
   // ],
   // uncomment if needed
   // "drop_privileges":{ // these settings can be overriden by command-line arguments
