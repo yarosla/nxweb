@@ -18,7 +18,7 @@
 AC_INIT([nxweb], [3.3.0-dev])
 AC_CONFIG_HEADER(src/include/nxweb/config.h)
 AC_CONFIG_MACRO_DIR([m4])
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([foreign])
 AC_PROG_CC([gcc])
 AM_PROG_CC_C_O
 AC_PROG_LIBTOOL
