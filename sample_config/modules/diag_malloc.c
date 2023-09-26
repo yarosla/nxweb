@@ -23,7 +23,7 @@ void __libc_free (void *ptr);
 
 #define RETURN_ADDRESS(nr) __builtin_extract_return_addr(__builtin_return_address(nr))
 
-typedef struct nx_meminfo {
+typedef struct __attribute__ ((aligned(64))) nx_meminfo {
   size_t size;
   nxe_time_t tim;
   // nxweb_net_thread_data* tdata;
@@ -38,7 +38,7 @@ typedef struct nx_meminfo {
   uint8_t net_thread_num;
   _Bool worker:1;
   uint32_t checksum;
-} nx_meminfo __attribute__ ((aligned(64)));
+} nx_meminfo;
 
 static long nmalloc=0;
 static long nfree=0;

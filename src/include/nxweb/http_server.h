@@ -154,7 +154,7 @@ typedef struct nxweb_http_server_listening_socket {
 
 #define NXWEB_ACCESS_LOG_BLOCK_SIZE 32768
 
-typedef struct nxweb_net_thread_data {
+typedef struct __attribute__ ((aligned(64))) nxweb_net_thread_data {
   pthread_t thread_id;
   uint8_t thread_num; // up to 256 net threads
   uint64_t unique_num;
@@ -176,7 +176,7 @@ typedef struct nxweb_net_thread_data {
 
   nxe_eventfd_source diagnostics_efs;
   nxe_subscriber diagnostics_sub;
-} nxweb_net_thread_data __attribute__ ((aligned(64)));
+} nxweb_net_thread_data;
 
 typedef struct nxweb_http_server_connection {
   nxd_http_server_proto hsp;
@@ -347,4 +347,3 @@ nxweb_result nxweb_cache_store_response(nxweb_http_server_connection* conn, nxwe
 #endif
 
 #endif	/* NXWEB_SERVER_H */
-
