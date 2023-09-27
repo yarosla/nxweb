@@ -1219,10 +1219,13 @@ int _nxweb_parse_http_response(nxweb_http_response* resp, char* headers, char* e
   while ((unsigned char)*p>SPACE) p++;
   *p++='\0';
   while ((unsigned char)*p<=SPACE && p<pl) p++;
-  if (p>=pl) return -1;
-  resp->status=p;
-  while ((unsigned char)*p>=SPACE && p<pl) p++;
-  *p++='\0';
+  if (p<pl) {
+    resp->status=p;
+    while ((unsigned char)*p>=SPACE && p<pl) p++;
+    *p++='\0';
+  } else { // no status name
+    resp->status=pl;
+  }
 
   resp->keep_alive=
   resp->http11=nx_strcasecmp(http_version, "HTTP/1.0")==0? 0 : 1;
